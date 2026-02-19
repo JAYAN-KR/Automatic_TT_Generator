@@ -1,4 +1,3 @@
-import React from 'react';
 import TimetablePage from './pages/timetable';
 import './App.css';
 
