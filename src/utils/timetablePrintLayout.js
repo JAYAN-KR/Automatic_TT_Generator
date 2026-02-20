@@ -52,20 +52,29 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
             `;
         }
 
+        const renderTeacherCell = (period) => {
+            const entry = schedule[period];
+            if (!entry) return '&nbsp;';
+            const className = typeof entry === 'string' ? entry : entry.className;
+            const isBlock = typeof entry === 'object' && entry.isBlock;
+            const badge = isBlock ? '<div class="block-badge">BLOCK</div>' : '';
+            return `${badge}${className}`;
+        };
+
         const cells = [
             `<td class="day-cell">${days[idx]}</td>`,
-            `<td class="period-cell">${schedule.CT || '&nbsp;'}</td>`,
-            `<td class="period-cell">${schedule.P1 || '&nbsp;'}</td>`,
-            `<td class="period-cell">${schedule.P2 || '&nbsp;'}</td>`,
+            `<td class="period-cell">${renderTeacherCell('CT')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P1')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P2')}</td>`,
             // BREAK 1 index would be here
-            `<td class="period-cell">${schedule.P3 || '&nbsp;'}</td>`,
-            `<td class="period-cell">${schedule.P4 || '&nbsp;'}</td>`,
-            `<td class="period-cell">${schedule.P5 || '&nbsp;'}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P3')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P4')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P5')}</td>`,
             // BREAK 2 index would be here
-            `<td class="period-cell">${schedule.P6 || '&nbsp;'}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P6')}</td>`,
             // LUNCH index would be here
-            `<td class="period-cell">${schedule.P7 || '&nbsp;'}</td>`,
-            `<td class="period-cell">${schedule.P8 || '&nbsp;'}</td>`
+            `<td class="period-cell">${renderTeacherCell('P7')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P8')}</td>`
         ];
 
         // Insert break cells only into the first row
@@ -172,10 +181,12 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
     const tableBody = dayKeys.map((dayKey, idx) => {
         const schedule = classTimetables[className]?.[dayKey] || {};
         const renderCell = (period) => {
-            const subject = schedule[period]?.subject;
-            const teacher = schedule[period]?.teacher;
+            const cell = schedule[period];
+            const subject = cell?.subject;
+            const teacher = cell?.teacher;
             if (!subject) return '&nbsp;';
-            return `${subject}<br><span class="tr-code">${teacher || ''}</span>`;
+            const badge = cell.isBlock ? '<div class="block-badge">BLOCK</div>' : '';
+            return `${badge}${subject}<br><span class="tr-code">${teacher || ''}</span>`;
         };
 
         const cells = [
@@ -362,6 +373,21 @@ export const generatePrintCSS = (bellTimings) => `
             font-size: 6pt;
             color: #444;
             display: block;
+        }
+        .block-badge {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: #000;
+            color: #fff;
+            font-size: 4.5pt;
+            padding: 0 1px;
+            font-weight: 900;
+            line-height: 1;
+            z-index: 5;
+        }
+        .period-cell {
+            position: relative;
         }
         .card-footer {
             display: flex;

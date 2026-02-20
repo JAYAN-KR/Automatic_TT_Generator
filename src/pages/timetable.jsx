@@ -325,7 +325,7 @@ export default function TimetablePage() {
             id: Date.now(),
             teacher: '',
             subject: '',
-            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
+            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, isMerged: false }],
             total: 0
         }];
     });
@@ -347,7 +347,7 @@ export default function TimetablePage() {
             id: Date.now(),
             teacher: '',
             subject: '',
-            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
+            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, isMerged: false }],
             total: 0
         }]);
     };
@@ -373,6 +373,8 @@ export default function TimetablePage() {
                 updatedGroup.classes = [value];
             } else if (field === 'periods') {
                 updatedGroup.periods = Number(value);
+            } else if (field === 'blockPeriods') {
+                updatedGroup.blockPeriods = Number(value);
             }
 
             newGroups[groupIndex] = updatedGroup;
@@ -388,7 +390,7 @@ export default function TimetablePage() {
             if (r.id !== rowId) return r;
             return {
                 ...r,
-                allotments: [...r.allotments, { id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }]
+                allotments: [...r.allotments, { id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, isMerged: false }]
             };
         }));
     };
@@ -398,9 +400,12 @@ export default function TimetablePage() {
 
             // If it's the last group, reset it instead of deleting
             if (r.allotments.length <= 1) {
+                const lastGroup = r.allotments[r.allotments.length - 1];
+                const grade = lastGroup?.classes[0]?.match(/\d+/)?.[0];
+                const newGroup = { id: Date.now() + Math.random(), classes: [grade ? grade + 'A' : '6A'], periods: 0, blockPeriods: 0, isMerged: false };
                 return {
                     ...r,
-                    allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
+                    allotments: [newGroup],
                     total: 0
                 };
             }
@@ -426,6 +431,7 @@ export default function TimetablePage() {
                 id: Date.now() + Math.random(),
                 classes: [c],
                 periods: group.periods,
+                blockPeriods: 0,
                 isMerged: false
             }));
 
@@ -454,6 +460,7 @@ export default function TimetablePage() {
                 id: Date.now() + Math.random(),
                 classes: [...new Set(mergedClasses)], // Dedupe just in case
                 periods: numPeriods,
+                blockPeriods: 0,
                 isMerged: true
             };
 
@@ -1193,7 +1200,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         try {
             // Convert new allotmentRows format to legacy format for the generator
             const legacyMappings = [];
-            const legacyDistribution = { __merged: {} };
+            const legacyDistribution = { __merged: {}, __blocks: {} };
 
             allotmentRows.forEach(row => {
                 if (!row.teacher || !row.subject) return;
@@ -1207,6 +1214,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         selectedClasses.push(cls);
                         if (!legacyDistribution[cls]) legacyDistribution[cls] = {};
                         legacyDistribution[cls][row.subject] = groupPeriods;
+
+                        // Store block periods metadata
+                        if (!legacyDistribution.__blocks[cls]) legacyDistribution.__blocks[cls] = {};
+                        legacyDistribution.__blocks[cls][row.subject] = Number(group.blockPeriods) || 0;
                     });
 
                     if (group.isMerged) {
@@ -1216,6 +1227,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         legacyDistribution.__merged[row.subject].push({
                             classes: group.classes,
                             total: groupPeriods,
+                            blockPeriods: Number(group.blockPeriods) || 0,
                             subject: row.subject
                         });
                     }
@@ -1926,23 +1938,49 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         </select>
                                                                     )}
                                                                     <div style={{ width: '1.5px', background: 'rgba(255,255,255,0.1)', height: '1.4rem', margin: '0 0.1rem' }}></div>
-                                                                    <input
-                                                                        type="number"
-                                                                        title="Periods per week"
-                                                                        value={group.periods}
-                                                                        onChange={e => updateAllotmentGroup(row.id, gIdx, 'periods', e.target.value)}
-                                                                        style={{
-                                                                            width: '2.4rem',
-                                                                            padding: '0.3rem',
-                                                                            background: 'transparent',
-                                                                            color: '#fff',
-                                                                            border: 'none',
-                                                                            fontSize: '0.9rem',
-                                                                            fontWeight: '800',
-                                                                            textAlign: 'center',
-                                                                            outline: 'none'
-                                                                        }}
-                                                                    />
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                                        <span style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' }}>PPS</span>
+                                                                        <input
+                                                                            type="number"
+                                                                            title="Periods per week"
+                                                                            value={group.periods}
+                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'periods', e.target.value)}
+                                                                            style={{
+                                                                                width: '2.4rem',
+                                                                                padding: '0.2rem',
+                                                                                background: 'transparent',
+                                                                                color: '#fff',
+                                                                                border: 'none',
+                                                                                fontSize: '0.9rem',
+                                                                                fontWeight: '800',
+                                                                                textAlign: 'center',
+                                                                                outline: 'none'
+                                                                            }}
+                                                                        />
+                                                                    </div>
+                                                                    <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', height: '1.4rem' }}></div>
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                                        <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 'bold' }}>BLOCKS</span>
+                                                                        <select
+                                                                            value={group.blockPeriods || 0}
+                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'blockPeriods', e.target.value)}
+                                                                            title="Number of block (double) periods per week"
+                                                                            style={{
+                                                                                background: 'transparent',
+                                                                                color: (group.blockPeriods > 0) ? '#fbbf24' : '#94a3b8',
+                                                                                border: 'none',
+                                                                                fontSize: '0.8rem',
+                                                                                fontWeight: '800',
+                                                                                cursor: 'pointer',
+                                                                                outline: 'none',
+                                                                                textAlign: 'center'
+                                                                            }}
+                                                                        >
+                                                                            {[0, 1, 2, 3, 4, 5].map(n => (
+                                                                                <option key={n} value={n} style={{ background: '#0f172a', color: '#fff' }}>{n}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </div>
                                                                     <button
                                                                         title="Delete allotment"
                                                                         onClick={() => deleteAllotmentGroup(row.id, gIdx)}

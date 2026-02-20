@@ -71,69 +71,128 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
     let totalAllocations = 0;
     let skippedMappings = 0;
 
-    mappings.forEach((mapping, index) => {
+    // ============ PREPARE ALL TASKS GLOBALLLY ============
+    const allTasks = [];
+    mappings.forEach((mapping) => {
         const teacher = mapping.teacher;
         const subject = mapping.subject;
-
-        // Get classes array (handle both property names)
         const classes = mapping.selectedClasses || mapping.classes || [];
 
-        if (!teacher || !subject) {
-            console.log(`  ⚠️ Mapping ${index} missing teacher/subject, skipping`);
+        if (!teacher || !subject || classes.length === 0) {
             skippedMappings++;
             return;
         }
 
-        if (classes.length === 0) {
-            console.log(`  ⚠️ ${teacher} - ${subject} has no classes, skipping`);
-            skippedMappings++;
-            return;
-        }
-
-        console.log(`📋 Processing ${teacher} - ${subject} (${classes.length} classes)`);
-
-        // Build a flat list of allocation units taking merged groups into account
-        const allocations = [];
         const mergedForSubject = (distribution && distribution.__merged && distribution.__merged[subject]) || [];
         const handledClasses = new Set();
 
-        // handle groups first
+        // 1. Process merged groups
         mergedForSubject.forEach(g => {
-            // find intersection with this mapping's classes
             const overlap = g.classes.filter(c => classes.includes(c));
             if (overlap.length > 0) {
-                for (let t = 0; t < g.total; t++) {
-                    // use first class name as representative
-                    allocations.push({ className: overlap[0], group: g, classes: overlap });
+                const total = Number(g.total) || 0;
+                const blocks = Number(g.blockPeriods) || 0;
+                const singles = Math.max(0, total - (blocks * 2));
+
+                for (let t = 0; t < blocks; t++) {
+                    allTasks.push({ type: 'BLOCK', teacher, subject, className: overlap[0], classes: overlap });
+                }
+                for (let t = 0; t < singles; t++) {
+                    allTasks.push({ type: 'SINGLE', teacher, subject, className: overlap[0], classes: overlap });
                 }
                 overlap.forEach(c => handledClasses.add(c));
             }
         });
 
-        // handle remaining individual classes using their distribution value
+        // 2. Process individual classes
         classes.forEach(c => {
             if (handledClasses.has(c)) return;
-            const v = (distribution && distribution[c] && distribution[c][subject]) || 0;
-            for (let t = 0; t < v; t++) {
-                allocations.push({ className: c, group: null, classes: [c] });
+            const total = (distribution && distribution[c] && distribution[c][subject]) || 0;
+            const blocks = (distribution && distribution.__blocks && distribution.__blocks[c] && distribution.__blocks[c][subject]) || 0;
+            const singles = Math.max(0, total - (blocks * 2));
+
+            for (let t = 0; t < blocks; t++) {
+                allTasks.push({ type: 'BLOCK', teacher, subject, className: c, classes: [c] });
+            }
+            for (let t = 0; t < singles; t++) {
+                allTasks.push({ type: 'SINGLE', teacher, subject, className: c, classes: [c] });
             }
         });
+    });
 
-        // Perform allocations based on the expanded list
-        allocations.forEach((alloc, allocIdx) => {
-            const dayIndex = (totalAllocations + allocIdx) % days.length;
-            const periodIndex = (totalAllocations + allocIdx) % 8; // 0-7 for P1-P8
+    // Sort tasks: BLOCKS first
+    allTasks.sort((a, b) => (a.type === 'BLOCK' ? -1 : 1));
+    console.log(`📋 Total tasks to place: ${allTasks.length} (${allTasks.filter(t => t.type === 'BLOCK').length} blocks)`);
 
-            const day = days[dayIndex];
-            const period = `P${periodIndex + 1}`;
-            const className = alloc.className;
+    // ============ PLACEMENT ENGINE ============
+    allTasks.forEach((task, taskIdx) => {
+        let placed = false;
 
+        // Randomize day search start to distribute better
+        const dayStart = Math.floor(Math.random() * days.length);
+
+        for (let d = 0; d < days.length && !placed; d++) {
+            const day = days[(dayStart + d) % days.length];
+
+            if (task.type === 'BLOCK') {
+                const pairs = [['P1', 'P2'], ['P3', 'P4'], ['P5', 'P6'], ['P7', 'P8']];
+                for (const [p1, p2] of pairs) {
+                    const teacherFree = teacherTimetables[task.teacher][day][p1] === '' && teacherTimetables[task.teacher][day][p2] === '';
+                    const classesFree = task.classes.every(cn =>
+                        classTimetables[cn] && classTimetables[cn][day] &&
+                        classTimetables[cn][day][p1].subject === '' &&
+                        classTimetables[cn][day][p2].subject === ''
+                    );
+
+                    if (teacherFree && classesFree) {
+                        placeTask(task, day, p1, true);
+                        placeTask(task, day, p2, true);
+                        placed = true;
+                        break;
+                    }
+                }
+            } else {
+                const periodList = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'];
+                const pStart = Math.floor(Math.random() * 8);
+                for (let p = 0; p < 8; p++) {
+                    const period = periodList[(pStart + p) % 8];
+                    const teacherFree = teacherTimetables[task.teacher][day][period] === '';
+                    const classesFree = task.classes.every(cn =>
+                        classTimetables[cn] && classTimetables[cn][day] &&
+                        classTimetables[cn][day][period].subject === ''
+                    );
+
+                    if (teacherFree && classesFree) {
+                        placeTask(task, day, period, false);
+                        placed = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!placed) {
+            console.warn(`  🔴 Conflict: No free slot for ${task.teacher} - ${task.subject} (${task.type}) - Forcing placement`);
+            const day = days[taskIdx % days.length];
+            const period = `P${(taskIdx % 8) + 1}`;
+            placeTask(task, day, period, task.type === 'BLOCK');
+            if (task.type === 'BLOCK') {
+                const pIndex = Number(period.substring(1));
+                const nextPeriod = `P${(pIndex % 8) + 1}`;
+                placeTask(task, day, nextPeriod, true);
+            }
+        }
+    });
+
+    function placeTask(task, day, period, isBlock) {
+        // Update Class Timetables
+        task.classes.forEach(cn => {
             // SAFETY CHECK: Ensure class exists
-            if (!classTimetables[className]) {
-                console.warn(`  ⚠️ Class ${className} not found, creating...`);
-                classTimetables[className] = {};
+            if (!classTimetables[cn]) {
+                console.warn(`  ⚠️ Class ${cn} not found during placement, creating...`);
+                classTimetables[cn] = {};
                 days.forEach(d => {
-                    classTimetables[className][d] = {
+                    classTimetables[cn][d] = {
                         CT: { subject: '', teacher: '' },
                         P1: { subject: '', teacher: '' },
                         P2: { subject: '', teacher: '' },
@@ -146,11 +205,10 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
                     };
                 });
             }
-
             // SAFETY CHECK: Ensure day exists for class
-            if (!classTimetables[className][day]) {
-                console.warn(`  ⚠️ Class ${className} missing day ${day}, creating...`);
-                classTimetables[className][day] = {
+            if (!classTimetables[cn][day]) {
+                console.warn(`  ⚠️ Class ${cn} missing day ${day} during placement, creating...`);
+                classTimetables[cn][day] = {
                     CT: { subject: '', teacher: '' },
                     P1: { subject: '', teacher: '' },
                     P2: { subject: '', teacher: '' },
@@ -163,49 +221,46 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
                 };
             }
 
-            // Place in class timetable; if this is a merged group allocation, fill every class
-            alloc.classes.forEach(cn => {
-                if (!classTimetables[cn]) return;
-                // ensure day record exists (should)
-                classTimetables[cn][day][period] = {
-                    subject: getAbbreviation(subject),
-                    teacher: teacher,
-                    fullSubject: subject
-                };
-            });
+            classTimetables[cn][day][period] = {
+                subject: getAbbreviation(task.subject),
+                teacher: task.teacher,
+                fullSubject: task.subject,
+                isBlock: isBlock
+            };
+        });
 
-            // SAFETY CHECK: Ensure teacher exists
-            if (!teacherTimetables[teacher]) {
-                console.warn(`  ⚠️ Teacher ${teacher} not found, creating...`);
-                teacherTimetables[teacher] = {};
-                days.forEach(d => {
-                    teacherTimetables[teacher][d] = {
-                        CT: '', P1: '', P2: '', P3: '', P4: '', P5: '', P6: '', P7: '', P8: '',
-                        periodCount: 0
-                    };
-                });
-                teacherTimetables[teacher].weeklyPeriods = 0;
-            }
-
-            // SAFETY CHECK: Ensure day exists for teacher
-            if (!teacherTimetables[teacher][day]) {
-                console.warn(`  ⚠️ Teacher ${teacher} missing day ${day}, creating...`);
-                teacherTimetables[teacher][day] = {
+        // Update Teacher Timetables
+        // SAFETY CHECK: Ensure teacher exists
+        if (!teacherTimetables[task.teacher]) {
+            console.warn(`  ⚠️ Teacher ${task.teacher} not found during placement, creating...`);
+            teacherTimetables[task.teacher] = {};
+            days.forEach(d => {
+                teacherTimetables[task.teacher][d] = {
                     CT: '', P1: '', P2: '', P3: '', P4: '', P5: '', P6: '', P7: '', P8: '',
                     periodCount: 0
                 };
-            }
+            });
+            teacherTimetables[task.teacher].weeklyPeriods = 0;
+        }
+        // SAFETY CHECK: Ensure day exists for teacher
+        if (!teacherTimetables[task.teacher][day]) {
+            console.warn(`  ⚠️ Teacher ${task.teacher} missing day ${day} during placement, creating...`);
+            teacherTimetables[task.teacher][day] = {
+                CT: '', P1: '', P2: '', P3: '', P4: '', P5: '', P6: '', P7: '', P8: '',
+                periodCount: 0
+            };
+        }
 
-            // Place in teacher timetable; show all target classes separated by '/'
-            teacherTimetables[teacher][day][period] = alloc.classes.join('/');
-            teacherTimetables[teacher][day].periodCount =
-                (teacherTimetables[teacher][day].periodCount || 0) + 1;
-            teacherTimetables[teacher].weeklyPeriods =
-                (teacherTimetables[teacher].weeklyPeriods || 0) + 1;
-        });
+        teacherTimetables[task.teacher][day][period] = {
+            className: task.classes.join('/'),
+            isBlock: isBlock
+        };
+        teacherTimetables[task.teacher][day].periodCount++;
+        teacherTimetables[task.teacher].weeklyPeriods++;
+        totalAllocations++; // Increment total allocations here
+    }
 
-        totalAllocations += allocations.length;
-    });
+    console.log(`📊 Timetable Generation Completed Globaly`);
 
     console.log(`📊 Total allocations: ${totalAllocations}`);
     console.log(`⏭️ Skipped mappings: ${skippedMappings}`);
