@@ -221,9 +221,21 @@ const GradeDropdown = ({ onSelect, onClose, anchorRect }) => {
           from { opacity: 0; transform: scale(0.95) translateY(-5px); }
           to { opacity: 1; transform: scale(1) translateY(0); }
         }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
       `}</style>
         </div>
     );
+};
+
+const formatClasses = (classes) => {
+    if (!classes || classes.length === 0) return '';
+    if (classes.length === 1) return classes[0];
+    const grade = classes[0].match(/\d+/)?.[0] || '';
+    const sections = classes.map(c => c.replace(grade, '')).sort().join('');
+    return `${grade}${sections}`;
 };
 
 export default function TimetablePage() {
@@ -265,12 +277,28 @@ export default function TimetablePage() {
     });
 
     // -- Classes Alloted (new Tab 1) State --
+    const [selectedGroups, setSelectedGroups] = useState([]); // Array of { rowId, groupIndex }
+    const [mergePopup, setMergePopup] = useState(null); // { rowId, groupIndices, grade, rect }
+
     const [allotmentRows, setAllotmentRows] = useState(() => {
         const saved = localStorage.getItem('tt_allotments');
         if (saved) {
-            try { return JSON.parse(saved).rows; } catch { }
+            try {
+                const data = JSON.parse(saved);
+                const rows = data.rows || [];
+                return rows.map(r => {
+                    // Migrate single allotment object to array
+                    if (r.allotments && !Array.isArray(r.allotments)) {
+                        return {
+                            ...r,
+                            allotments: [{ id: Date.now() + Math.random(), classes: [r.allotments.class || '6A'], periods: r.allotments.periods || 0, isMerged: false }]
+                        };
+                    }
+                    return r;
+                });
+            } catch { }
         }
-        
+
         // build rows directly from teacher-subject pairs (one row per pair)
         const pairs = localStorage.getItem('tt_teacher_subject_pairs');
         if (pairs) {
@@ -281,64 +309,157 @@ export default function TimetablePage() {
                         id: `${p.teacher}||${p.subject}`,
                         teacher: p.teacher,
                         subject: p.subject,
-                        allotments: { class: '6A', periods: 0 },
+                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
                         total: 0
                     }));
                 }
             } catch { }
         }
-        
+
         // fallback single empty row
         return [{
             id: Date.now(),
             teacher: '',
             subject: '',
-            allotments: { class: '6A', periods: 0 },
+            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
             total: 0
         }];
     });
 
     // helper constants for dropdowns
     const CLASS_OPTIONS = [
-        '6A','6B','6C','6D','6E','6F','6G',
-        '7A','7B','7C','7D','7E','7F','7G',
-        '8A','8B','8C','8D','8E',
-        '9A','9B','9C','9D','9E',
-        '10A','10B','10C','10D','10E',
-        '11A','11B','11C','11D','11E',
-        '12A','12B','12C','12D','12E','12F'
+        '6A', '6B', '6C', '6D', '6E', '6F', '6G',
+        '7A', '7B', '7C', '7D', '7E', '7F', '7G',
+        '8A', '8B', '8C', '8D', '8E',
+        '9A', '9B', '9C', '9D', '9E',
+        '10A', '10B', '10C', '10D', '10E',
+        '11A', '11B', '11C', '11D', '11E',
+        '12A', '12B', '12C', '12D', '12E', '12F'
     ];
-    const PERIOD_OPTIONS = Array.from({length: 11}, (_,i)=>i);
+    const PERIOD_OPTIONS = Array.from({ length: 11 }, (_, i) => i);
 
     const addAllotmentRow = () => {
         setAllotmentRows(prev => [...prev, {
             id: Date.now(),
             teacher: '',
             subject: '',
-            allotments: { class: '6A', periods: 0 },
+            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
             total: 0
         }]);
     };
     const deleteAllotmentRow = (id) => {
         setAllotmentRows(prev => {
             if (prev.length <= 1) return prev; // keep at least one
-            return prev.filter(r=>r.id!==id);
+            return prev.filter(r => r.id !== id);
         });
     };
     const updateAllotmentField = (id, field, value) => {
-        setAllotmentRows(prev => prev.map(r=>{
-            if(r.id!==id) return r;
-            const updated = {...r};
-            if(field==='teacher' || field==='subject'){
-                updated[field] = value;
-            } else if(field==='class'){
-                updated.allotments.class = value;
-            } else if(field==='periods'){
-                updated.allotments.periods = Number(value);
-                updated.total = Number(value);
-            }
-            return updated;
+        setAllotmentRows(prev => prev.map(r => {
+            if (r.id !== id) return r;
+            return { ...r, [field]: value };
         }));
+    };
+    const updateAllotmentGroup = (rowId, groupIndex, field, value) => {
+        setAllotmentRows(prev => prev.map(r => {
+            if (r.id !== rowId) return r;
+            const newGroups = [...r.allotments];
+            const updatedGroup = { ...newGroups[groupIndex] };
+
+            if (field === 'class') {
+                updatedGroup.classes = [value];
+            } else if (field === 'periods') {
+                updatedGroup.periods = Number(value);
+            }
+
+            newGroups[groupIndex] = updatedGroup;
+            return {
+                ...r,
+                allotments: newGroups,
+                total: newGroups.reduce((sum, g) => sum + (Number(g.periods) || 0), 0)
+            };
+        }));
+    };
+    const addAllotmentGroup = (rowId) => {
+        setAllotmentRows(prev => prev.map(r => {
+            if (r.id !== rowId) return r;
+            return {
+                ...r,
+                allotments: [...r.allotments, { id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }]
+            };
+        }));
+    };
+    const deleteAllotmentGroup = (rowId, groupIndex) => {
+        setAllotmentRows(prev => prev.map(r => {
+            if (r.id !== rowId) return r;
+            if (r.allotments.length <= 1) return r;
+            const newGroups = r.allotments.filter((_, idx) => idx !== groupIndex);
+            return {
+                ...r,
+                allotments: newGroups,
+                total: newGroups.reduce((sum, g) => sum + (Number(g.periods) || 0), 0)
+            };
+        }));
+    };
+    const unmergeGroup = (rowId, groupIndex) => {
+        setAllotmentRows(prev => prev.map(r => {
+            if (r.id !== rowId) return r;
+            const group = r.allotments[groupIndex];
+            if (!group.isMerged) return r;
+
+            // Split merged group into individual class allotments
+            const newGroups = [...r.allotments];
+            const splitGroups = group.classes.map(c => ({
+                id: Date.now() + Math.random(),
+                classes: [c],
+                periods: group.periods, // Keep the same periods for each? Or 0? 0 is safer.
+                isMerged: false
+            }));
+
+            newGroups.splice(groupIndex, 1, ...splitGroups);
+            return {
+                ...r,
+                allotments: newGroups,
+                total: newGroups.reduce((sum, g) => sum + (Number(g.periods) || 0), 0)
+            };
+        }));
+    };
+
+    const handleMergeConfirm = (periods) => {
+        if (!mergePopup) return;
+        const numPeriods = Number(periods) || 0;
+
+        setAllotmentRows(prev => prev.map(r => {
+            if (r.id !== mergePopup.rowId) return r;
+
+            // Get classes from all selected indices
+            const mergedClasses = mergePopup.groupIndices.flatMap(idx => r.allotments[idx].classes);
+
+            // Create the new merged group
+            const newGroup = {
+                id: Date.now() + Math.random(),
+                classes: [...new Set(mergedClasses)], // Dedupe just in case
+                periods: numPeriods,
+                isMerged: true
+            };
+
+            // Filter out the items that were merged
+            const remainingGroups = r.allotments.filter((_, idx) => !mergePopup.groupIndices.includes(idx));
+
+            // Add the new merged group at the position of the first selected index
+            const insertIdx = Math.min(...mergePopup.groupIndices);
+            const newGroups = [...remainingGroups];
+            newGroups.splice(insertIdx, 0, newGroup);
+
+            return {
+                ...r,
+                allotments: newGroups,
+                total: newGroups.reduce((sum, g) => sum + (Number(g.periods) || 0), 0)
+            };
+        }));
+
+        setMergePopup(null);
+        setSelectedGroups([]);
+        addToast('Classes merged successfully', 'success');
     };
 
     // Sync allotmentRows when pairs are saved from Tab 0
@@ -353,7 +474,7 @@ export default function TimetablePage() {
                             id: `${p.teacher}||${p.subject}`,
                             teacher: p.teacher,
                             subject: p.subject,
-                            allotments: { class: '6A', periods: 0 },
+                            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
                             total: 0
                         }));
                         setAllotmentRows(newRows);
@@ -1159,11 +1280,11 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                                     .map(r => ({ teacher: r.teacher, subject: r.subject }));
                                 let teacherSubjectPairs = [...new Map(rawPairs.map(p => [`${p.teacher}||${p.subject}`, p])).values()];
                                 // sort alphabetically by teacher then subject
-                                teacherSubjectPairs.sort((a,b)=>{
-                                    const ta=a.teacher.toLowerCase(), tb=b.teacher.toLowerCase();
-                                    if(ta<tb) return -1; if(ta>tb) return 1;
-                                    const sa=a.subject.toLowerCase(), sb=b.subject.toLowerCase();
-                                    if(sa<sb) return -1; if(sa>sb) return 1;
+                                teacherSubjectPairs.sort((a, b) => {
+                                    const ta = a.teacher.toLowerCase(), tb = b.teacher.toLowerCase();
+                                    if (ta < tb) return -1; if (ta > tb) return 1;
+                                    const sa = a.subject.toLowerCase(), sb = b.subject.toLowerCase();
+                                    if (sa < sb) return -1; if (sa > sb) return 1;
                                     return 0;
                                 });
                                 localStorage.setItem('tt_teacher_subject_pairs', JSON.stringify(teacherSubjectPairs));
@@ -1172,7 +1293,7 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                                     id: `${p.teacher}||${p.subject}`,
                                     teacher: p.teacher,
                                     subject: p.subject,
-                                    allotments: { class: '6A', periods: 0 },
+                                    allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
                                     total: 0
                                 }));
                                 setAllotmentRows(newRows);
@@ -1520,28 +1641,23 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                             }}>
                                 <thead>
                                     <tr style={{ background: '#1e293b' }}>
-                                        <th style={{ padding: '0.75rem', textAlign: 'left' }}>Teacher Name</th>
-                                        <th style={{ padding: '0.75rem', textAlign: 'left' }}>Subject</th>
+                                        <th style={{ padding: '0.75rem', textAlign: 'left', width: '200px' }}>Teacher Name</th>
+                                        <th style={{ padding: '0.75rem', textAlign: 'left', width: '200px' }}>Subject</th>
                                         <th style={{ padding: '0.75rem', textAlign: 'left' }}>Class Allotments</th>
-                                        <th style={{ padding: '0.75rem', textAlign: 'center' }}>Total periods</th>
-                                        <th style={{ padding: '0.75rem' }}></th>
+                                        <th style={{ padding: '0.75rem', textAlign: 'center', width: '100px' }}>Total</th>
+                                        <th style={{ padding: '0.75rem', width: '50px' }}></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {allotmentRows.map(row => {
-                                        // Get pairs from localStorage for subject filtering
                                         const pairs = JSON.parse(localStorage.getItem('tt_teacher_subject_pairs') || '[]');
-                                        // Get only subjects this teacher teaches
                                         const teacherSubjects = [...new Set(pairs.filter(p => p.teacher === row.teacher).map(p => p.subject))].sort();
-                                        
+
                                         return (
                                             <tr key={row.id} style={{ borderBottom: '1px solid #334155' }}>
-                                                {/* Teacher Name */}
-                                                <td style={{ padding: '0.6rem', color: '#f1f5f9', fontWeight: '600', textAlign: 'left' }}>
+                                                <td style={{ padding: '0.6rem', color: '#f1f5f9', fontWeight: '600' }}>
                                                     {row.teacher}
                                                 </td>
-                                                
-                                                {/* Subject Dropdown - filtered to teacher's subjects */}
                                                 <td style={{ padding: '0.6rem' }}>
                                                     <select
                                                         value={row.subject}
@@ -1552,74 +1668,191 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                                                             background: '#0f172a',
                                                             color: '#f1f5f9',
                                                             border: '1px solid #334155',
-                                                            borderRadius: '0.4rem',
-                                                            cursor: 'pointer'
+                                                            borderRadius: '0.4rem'
                                                         }}
                                                     >
                                                         <option value="">-- Select Subject --</option>
-                                                        {teacherSubjects.length > 0 ? (
-                                                            teacherSubjects.map(s => (
-                                                                <option key={s} value={s}>{s}</option>
-                                                            ))
-                                                        ) : null}
+                                                        {teacherSubjects.map(s => <option key={s} value={s}>{s}</option>)}
                                                     </select>
                                                 </td>
-                                                
-                                                {/* Class & Periods */}
-                                                <td style={{ padding: '0.6rem', display: 'flex', gap: '0.5rem' }}>
-                                                    <select
-                                                        value={row.allotments.class}
-                                                        onChange={e => updateAllotmentField(row.id, 'class', e.target.value)}
-                                                        style={{
-                                                            padding: '0.5rem',
-                                                            background: '#0f172a',
-                                                            color: '#f1f5f9',
-                                                            border: '1px solid #334155',
-                                                            borderRadius: '0.4rem',
-                                                            cursor: 'pointer'
-                                                        }}
-                                                    >
-                                                        <option value="">-- select class --</option>
-                                                        {CLASS_OPTIONS.map(c => (
-                                                            <option key={c} value={c}>{c}</option>
-                                                        ))}
-                                                    </select>
-                                                    <select
-                                                        value={row.allotments.periods}
-                                                        onChange={e => updateAllotmentField(row.id, 'periods', e.target.value)}
-                                                        style={{
-                                                            padding: '0.5rem',
-                                                            background: '#0f172a',
-                                                            color: '#f1f5f9',
-                                                            border: '1px solid #334155',
-                                                            borderRadius: '0.4rem',
-                                                            width: '5rem',
-                                                            cursor: 'pointer'
-                                                        }}
-                                                    >
-                                                        {PERIOD_OPTIONS.map(p => (
-                                                            <option key={p} value={p}>{p}</option>
-                                                        ))}
-                                                    </select>
+                                                <td style={{ padding: '0.6rem' }}>
+                                                    <div style={{
+                                                        display: 'flex',
+                                                        gap: '0.6rem',
+                                                        flexWrap: 'nowrap',
+                                                        alignItems: 'center',
+                                                        overflowX: 'auto',
+                                                        paddingBottom: '0.4rem',
+                                                        maxWidth: '800px'
+                                                    }}>
+                                                        {row.allotments.map((group, gIdx) => {
+                                                            const isSelected = selectedGroups.some(s => s.rowId === row.id && s.groupIndex === gIdx);
+                                                            return (
+                                                                <div
+                                                                    key={group.id}
+                                                                    style={{
+                                                                        display: 'flex',
+                                                                        gap: '0.4rem',
+                                                                        background: group.isMerged ? 'linear-gradient(135deg, #312e81, #4338ca)' : '#0f172a',
+                                                                        border: isSelected ? '2px solid #fbbf24' : (group.isMerged ? '2px solid #6366f1' : '1px solid #334155'),
+                                                                        padding: '0.4rem 0.6rem',
+                                                                        borderRadius: '0.6rem',
+                                                                        alignItems: 'center',
+                                                                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                                        boxShadow: isSelected ? '0 0 10px rgba(251, 191, 36, 0.4)' : (group.isMerged ? '0 4px 6px -1px rgba(0, 0, 0, 0.2)' : 'none'),
+                                                                        cursor: 'default',
+                                                                        flexShrink: 0
+                                                                    }}
+                                                                >
+                                                                    {group.isMerged ? (
+                                                                        <div
+                                                                            title="Merged Group • Ctrl+Click to select • Right-click to unmerge"
+                                                                            onClick={(e) => {
+                                                                                const isSel = selectedGroups.some(s => s.rowId === row.id && s.groupIndex === gIdx);
+                                                                                if (e.ctrlKey) {
+                                                                                    if (isSel) setSelectedGroups(prev => prev.filter(s => !(s.rowId === row.id && s.groupIndex === gIdx)));
+                                                                                    else setSelectedGroups(prev => [...prev, { rowId: row.id, groupIndex: gIdx }]);
+                                                                                }
+                                                                            }}
+                                                                            onContextMenu={(e) => {
+                                                                                e.preventDefault();
+                                                                                if (confirm(`Unmerge classes ${group.classes.join(', ')}?`)) {
+                                                                                    unmergeGroup(row.id, gIdx);
+                                                                                }
+                                                                            }}
+                                                                            style={{
+                                                                                padding: '0.4rem 0.6rem',
+                                                                                background: 'rgba(255,255,255,0.1)',
+                                                                                borderRadius: '0.4rem',
+                                                                                fontSize: '0.85rem',
+                                                                                fontWeight: '900',
+                                                                                color: '#fff',
+                                                                                cursor: 'pointer',
+                                                                                letterSpacing: '0.05em'
+                                                                            }}
+                                                                        >
+                                                                            {formatClasses(group.classes)}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <select
+                                                                            value={group.classes[0]}
+                                                                            title="Ctrl+Click to select for merging"
+                                                                            onMouseDown={(e) => {
+                                                                                if (e.ctrlKey) {
+                                                                                    e.preventDefault();
+                                                                                    const grade = group.classes[0].match(/\d+/)?.[0];
+                                                                                    setSelectedGroups(prev => {
+                                                                                        const exists = prev.some(s => s.rowId === row.id && s.groupIndex === gIdx);
+                                                                                        if (exists) return prev.filter(s => !(s.rowId === row.id && s.groupIndex === gIdx));
+                                                                                        if (prev.length > 0) {
+                                                                                            const first = allotmentRows.find(r => r.id === prev[0].rowId);
+                                                                                            const firstGroup = first.allotments[prev[0].groupIndex];
+                                                                                            const firstGrade = firstGroup.classes[0].match(/\d+/)?.[0];
+                                                                                            if (prev[0].rowId !== row.id || firstGrade !== grade) return [{ rowId: row.id, groupIndex: gIdx }];
+                                                                                        }
+                                                                                        return [...prev, { rowId: row.id, groupIndex: gIdx }];
+                                                                                    });
+                                                                                }
+                                                                            }}
+                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'class', e.target.value)}
+                                                                            style={{
+                                                                                padding: '0.4rem',
+                                                                                background: 'transparent',
+                                                                                color: '#f1f5f9',
+                                                                                border: 'none',
+                                                                                fontSize: '0.85rem',
+                                                                                fontWeight: '700',
+                                                                                cursor: 'pointer',
+                                                                                borderRadius: '0.3rem'
+                                                                            }}
+                                                                        >
+                                                                            {CLASS_OPTIONS.map(c => <option key={c} value={c} style={{ background: '#0f172a' }}>{c}</option>)}
+                                                                        </select>
+                                                                    )}
+                                                                    <div style={{ width: '1.5px', background: 'rgba(255,255,255,0.1)', height: '1.4rem', margin: '0 0.1rem' }}></div>
+                                                                    <input
+                                                                        type="number"
+                                                                        title="Periods per week"
+                                                                        value={group.periods}
+                                                                        onChange={e => updateAllotmentGroup(row.id, gIdx, 'periods', e.target.value)}
+                                                                        style={{
+                                                                            width: '2.4rem',
+                                                                            padding: '0.3rem',
+                                                                            background: 'transparent',
+                                                                            color: '#fff',
+                                                                            border: 'none',
+                                                                            fontSize: '0.9rem',
+                                                                            fontWeight: '800',
+                                                                            textAlign: 'center',
+                                                                            outline: 'none'
+                                                                        }}
+                                                                    />
+                                                                    <button
+                                                                        title="Delete allotment"
+                                                                        onClick={() => deleteAllotmentGroup(row.id, gIdx)}
+                                                                        style={{
+                                                                            background: 'transparent',
+                                                                            border: 'none',
+                                                                            color: '#f87171',
+                                                                            cursor: 'pointer',
+                                                                            fontSize: '0.9rem',
+                                                                            padding: '0 0.3rem',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center',
+                                                                            transition: 'transform 0.1s'
+                                                                        }}
+                                                                        onMouseOver={e => e.currentTarget.style.transform = 'scale(1.2)'}
+                                                                        onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
+                                                                    >✕</button>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                        <button
+                                                            onClick={(e) => {
+                                                                if (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) {
+                                                                    const rect = e.target.getBoundingClientRect();
+                                                                    const firstGroup = row.allotments[selectedGroups[0].groupIndex];
+                                                                    const grade = firstGroup.classes[0].match(/\d+/)?.[0];
+                                                                    setMergePopup({
+                                                                        rowId: row.id,
+                                                                        groupIndices: selectedGroups.map(s => s.groupIndex),
+                                                                        grade,
+                                                                        rect
+                                                                    });
+                                                                } else {
+                                                                    addAllotmentGroup(row.id);
+                                                                }
+                                                            }}
+                                                            style={{
+                                                                padding: '0.6rem 1rem',
+                                                                background: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#fbbf24' : '#1e293b',
+                                                                color: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#000' : '#818cf8',
+                                                                border: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? 'none' : '1px dashed #4f46e5',
+                                                                borderRadius: '0.6rem',
+                                                                cursor: 'pointer',
+                                                                fontSize: '0.85rem',
+                                                                fontWeight: '800',
+                                                                transition: 'all 0.2s',
+                                                                flexShrink: 0,
+                                                                whiteSpace: 'nowrap'
+                                                            }}
+                                                            onMouseOver={e => {
+                                                                e.currentTarget.style.background = (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#f59e0b' : 'rgba(79,70,229,0.1)';
+                                                            }}
+                                                            onMouseOut={e => {
+                                                                e.currentTarget.style.background = (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#fbbf24' : '#1e293b';
+                                                            }}
+                                                        >
+                                                            {(selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '🔗 Merge Selected' : '＋ Add Group'}
+                                                        </button>
+                                                    </div>
                                                 </td>
-                                                
-                                                {/* Total Periods */}
-                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 'bold' }}>
                                                     {row.total}
                                                 </td>
-                                                
-                                                {/* Delete Button */}
                                                 <td style={{ padding: '0.6rem', textAlign: 'center' }}>
-                                                    <button
-                                                        onClick={() => deleteAllotmentRow(row.id)}
-                                                        style={{
-                                                            background: 'transparent',
-                                                            border: 'none',
-                                                            color: '#ef4444',
-                                                            cursor: 'pointer',
-                                                            fontSize: '1.2rem'
-                                                        }}
-                                                    >🗑️</button>
+                                                    <button onClick={() => deleteAllotmentRow(row.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>🗑️</button>
                                                 </td>
                                             </tr>
                                         );
@@ -1627,6 +1860,95 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                                 </tbody>
                             </table>
                         </div>
+
+                        {/* Merge Popup */}
+                        {mergePopup && (
+                            <div style={{
+                                position: 'fixed',
+                                top: 0, left: 0, right: 0, bottom: 0,
+                                background: 'rgba(0,0,0,0.7)',
+                                display: 'flex', justifyContent: 'center', alignItems: 'center',
+                                zIndex: 3000,
+                                backdropFilter: 'blur(4px)',
+                                animation: 'fadeIn 0.2s ease-out'
+                            }}>
+                                <div style={{
+                                    background: '#1e293b',
+                                    padding: '2rem',
+                                    borderRadius: '1.25rem',
+                                    border: '1px solid #4f46e5',
+                                    width: '350px',
+                                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                                    position: 'relative'
+                                }}>
+                                    <h3 style={{ margin: '0 0 0.5rem 0', color: '#fff', fontSize: '1.4rem' }}>🔗 Merge Classes</h3>
+                                    <p style={{ fontSize: '0.95rem', color: '#94a3b8', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+                                        Combining <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{mergePopup.groupIndices.length}</span> allocations for <span style={{ color: '#fff' }}>Grade {mergePopup.grade}</span>.
+                                    </p>
+
+                                    <div style={{ marginBottom: '2rem', background: '#0f172a', padding: '1rem', borderRadius: '0.8rem', border: '1px solid #334155' }}>
+                                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#818cf8', fontWeight: 'bold', marginBottom: '0.6rem', textTransform: 'uppercase' }}>Weekly Periods</label>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.8rem' }}>
+                                            <input
+                                                autoFocus
+                                                type="number"
+                                                defaultValue="5"
+                                                id="merge_periods_input"
+                                                style={{
+                                                    fontSize: '1.5rem',
+                                                    fontWeight: 'bold',
+                                                    width: '80px',
+                                                    padding: '0.5rem',
+                                                    background: 'transparent',
+                                                    color: '#fbbf24',
+                                                    border: 'none',
+                                                    borderBottom: '2px solid #4f46e5',
+                                                    outline: 'none',
+                                                    textAlign: 'center'
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        handleMergeConfirm(e.target.value);
+                                                    }
+                                                }}
+                                            />
+                                            <span style={{ color: '#475569', fontSize: '0.9rem' }}>periods shared per week</span>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '0.8rem', justifyContent: 'flex-end' }}>
+                                        <button
+                                            onClick={() => setMergePopup(null)}
+                                            style={{
+                                                padding: '0.7rem 1.2rem',
+                                                background: 'transparent',
+                                                border: '1px solid #475569',
+                                                borderRadius: '0.6rem',
+                                                color: '#94a3b8',
+                                                cursor: 'pointer',
+                                                fontWeight: '600'
+                                            }}
+                                        >Cancel</button>
+                                        <button
+                                            onClick={() => {
+                                                const val = document.getElementById('merge_periods_input').value;
+                                                handleMergeConfirm(val);
+                                            }}
+                                            style={{
+                                                padding: '0.7rem 1.5rem',
+                                                background: '#4f46e5',
+                                                border: 'none',
+                                                borderRadius: '0.6rem',
+                                                color: '#fff',
+                                                cursor: 'pointer',
+                                                fontWeight: '700',
+                                                boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.4)'
+                                            }}
+                                        >Confirm Merge</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
                             <button
                                 onClick={addAllotmentRow}
@@ -1736,8 +2058,8 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                                 textAlign: 'center',
                                 maxWidth: '100%',
                             }}>
-                            {/* render preview component for iterative development */}
-                            <FormatTTPreview />
+                                {/* render preview component for iterative development */}
+                                <FormatTTPreview />
                                 {/* HEADER SECTION */}
                                 <div style={{ marginBottom: '1.5rem', width: '100%' }}>
                                     <div style={{ fontSize: '2.1rem', fontWeight: 900, color: '#f1f5f9', letterSpacing: '0.01em', textAlign: 'center' }}>
