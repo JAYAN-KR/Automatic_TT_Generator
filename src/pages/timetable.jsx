@@ -9,7 +9,7 @@ import {
 import { generateTimetable } from '../utils/timetableGenerator';
 import { saveTimetableMappings, loadTimetableMappings, publishTimetableVersion, publishTimetableToAPK } from '../services/timetableFirestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../services/firebase';
+import { auth } from '../firebase';
 import {
     ALL_CLASSES,
     loadDistribution,
@@ -31,6 +31,10 @@ import {
 
 // component for feature experimentation
 import FormatTTPreview from '../components/FormatTTPreview';
+
+// Firebase imports
+import { db } from '../firebase';
+import { doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 
 // --- Constants ---
 const COMMON_SUBJECTS = [
@@ -330,10 +334,10 @@ export default function TimetablePage() {
     const CLASS_OPTIONS = [
         '6A', '6B', '6C', '6D', '6E', '6F', '6G',
         '7A', '7B', '7C', '7D', '7E', '7F', '7G',
-        '8A', '8B', '8C', '8D', '8E',
-        '9A', '9B', '9C', '9D', '9E',
-        '10A', '10B', '10C', '10D', '10E',
-        '11A', '11B', '11C', '11D', '11E',
+        '8A', '8B', '8C', '8D', '8E', '8F', '8G',
+        '9A', '9B', '9C', '9D', '9E', '9F', '9G',
+        '10A', '10B', '10C', '10D', '10E', '10F', '10G',
+        '11A', '11B', '11C', '11D', '11E', '11F',
         '12A', '12B', '12C', '12D', '12E', '12F'
     ];
     const PERIOD_OPTIONS = Array.from({ length: 11 }, (_, i) => i);
@@ -391,7 +395,16 @@ export default function TimetablePage() {
     const deleteAllotmentGroup = (rowId, groupIndex) => {
         setAllotmentRows(prev => prev.map(r => {
             if (r.id !== rowId) return r;
-            if (r.allotments.length <= 1) return r;
+
+            // If it's the last group, reset it instead of deleting
+            if (r.allotments.length <= 1) {
+                return {
+                    ...r,
+                    allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
+                    total: 0
+                };
+            }
+
             const newGroups = r.allotments.filter((_, idx) => idx !== groupIndex);
             return {
                 ...r,
@@ -400,18 +413,19 @@ export default function TimetablePage() {
             };
         }));
     };
+
     const unmergeGroup = (rowId, groupIndex) => {
         setAllotmentRows(prev => prev.map(r => {
             if (r.id !== rowId) return r;
             const group = r.allotments[groupIndex];
-            if (!group.isMerged) return r;
+            if (!group || !group.isMerged) return r;
 
             // Split merged group into individual class allotments
             const newGroups = [...r.allotments];
             const splitGroups = group.classes.map(c => ({
                 id: Date.now() + Math.random(),
                 classes: [c],
-                periods: group.periods, // Keep the same periods for each? Or 0? 0 is safer.
+                periods: group.periods,
                 isMerged: false
             }));
 
@@ -422,6 +436,7 @@ export default function TimetablePage() {
                 total: newGroups.reduce((sum, g) => sum + (Number(g.periods) || 0), 0)
             };
         }));
+        addToast('Group unmerged', 'success');
     };
 
     const handleMergeConfirm = (periods) => {
@@ -462,31 +477,140 @@ export default function TimetablePage() {
         addToast('Classes merged successfully', 'success');
     };
 
-    // Sync allotmentRows when pairs are saved from Tab 0
-    useEffect(() => {
-        const handleStorageChange = () => {
-            const pairs = localStorage.getItem('tt_teacher_subject_pairs');
-            if (pairs) {
-                try {
+    // Persistent Storage Management for Allotments
+    const saveAllotments = async (rows) => {
+        const dataToSave = rows || allotmentRows;
+        console.log('📦 Starting save process...', { rowCount: dataToSave.length });
+
+        // 1. Save to localStorage (Instant fallback)
+        try {
+            localStorage.setItem('tt_allotments', JSON.stringify({ rows: dataToSave }));
+            console.log('✅ LocalStorage backup updated');
+        } catch (e) { console.error('❌ Local save failed', e); }
+
+        // 2. Save to Firestore (Permanent Cloud Storage)
+        try {
+            setIsSaving(true);
+            console.log('📡 Attempting Cloud Save to Firestore...');
+
+            const docRef = doc(db, 'allotments', academicYear);
+
+            // Add a 10-second timeout so the button doesn't stay stuck
+            const savePromise = setDoc(docRef, {
+                rows: dataToSave,
+                lastUpdated: new Date().toISOString(),
+                academicYear
+            });
+
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Cloud request timed out. Check your internet or Firebase Rules.')), 10000)
+            );
+
+            await Promise.race([savePromise, timeoutPromise]);
+
+            console.log('🚀 Cloud Save Successful!');
+            addToast('✅ Data saved to Cloud & Browser', 'success');
+        } catch (e) {
+            console.error('❌ Cloud save failed error:', e);
+            addToast(`⚠️ Browser save only: ${e.message}`, 'warning');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const loadAllotments = async () => {
+        setIsLoading(true);
+        try {
+            // 1. Try Firestore first (Primary source)
+            const docRef = doc(db, 'allotments', academicYear);
+            const docSnap = await getDoc(docRef);
+
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.rows && data.rows.length > 0) {
+                    setAllotmentRows(data.rows);
+                    localStorage.setItem('tt_allotments', JSON.stringify({ rows: data.rows }));
+                    addToast('☁️ Loaded from Cloud', 'success');
+                    setIsLoading(false);
+                    return true;
+                }
+            }
+
+            // 2. Fallback to localStorage if Firestore is empty/fails
+            const localSaved = localStorage.getItem('tt_allotments');
+            if (localSaved) {
+                const data = JSON.parse(localSaved);
+                if (data.rows && data.rows.length > 0) {
+                    setAllotmentRows(data.rows);
+                    addToast('📋 Loaded from Browser backup', 'success');
+                    setIsLoading(false);
+                    return true;
+                }
+            }
+        } catch (e) {
+            console.error('Data load error:', e);
+            addToast('❌ Failed to load cloud data', 'error');
+        } finally {
+            setIsLoading(false);
+        }
+        return false;
+    };
+
+    const clearAllotments = async () => {
+        if (confirm('⚠️ Are you sure? This will delete all saved allotments from CLOUD and browser.')) {
+            try {
+                // Clear Cloud
+                const docRef = doc(db, 'allotments', academicYear);
+                await deleteDoc(docRef);
+
+                // Clear Local
+                localStorage.removeItem('tt_allotments');
+
+                // Reset to default from teacher-subject pairs if possible
+                const pairs = localStorage.getItem('tt_teacher_subject_pairs');
+                if (pairs) {
                     const pairsArray = JSON.parse(pairs);
-                    if (pairsArray.length > 0) {
-                        const newRows = pairsArray.map(p => ({
-                            id: `${p.teacher}||${p.subject}`,
-                            teacher: p.teacher,
-                            subject: p.subject,
-                            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
-                            total: 0
-                        }));
-                        setAllotmentRows(newRows);
-                    }
-                } catch { }
+                    const resetRows = pairsArray.map(p => ({
+                        id: `${p.teacher}||${p.subject}`,
+                        teacher: p.teacher,
+                        subject: p.subject,
+                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
+                        total: 0
+                    }));
+                    setAllotmentRows(resetRows);
+                } else {
+                    setAllotmentRows([{
+                        id: Date.now(),
+                        teacher: '',
+                        subject: '',
+                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
+                        total: 0
+                    }]);
+                }
+                addToast('🧹 All data cleared permanently', 'info');
+            } catch (e) {
+                addToast('❌ Clear failed', 'error');
+            }
+        }
+    };
+
+
+    // Initial load and external storage sync
+    useEffect(() => {
+        loadAllotments();
+
+        // Listen for storage changes from other tabs
+        const handleExternalStorageChange = (e) => {
+            if (e.key === 'tt_allotments') {
+                const localSaved = localStorage.getItem('tt_allotments');
+                if (localSaved) {
+                    const data = JSON.parse(localSaved);
+                    if (data.rows) setAllotmentRows(data.rows);
+                }
             }
         };
-        // Check on component mount
-        handleStorageChange();
-        // Listen for storage changes
-        window.addEventListener('storage', handleStorageChange);
-        return () => window.removeEventListener('storage', handleStorageChange);
+        window.addEventListener('storage', handleExternalStorageChange);
+        return () => window.removeEventListener('storage', handleExternalStorageChange);
     }, []);
 
     // Tab 3 (Mappings) State
@@ -583,7 +707,7 @@ export default function TimetablePage() {
         setToasts(prev => [...prev, { id, msg, type }]);
         setTimeout(() => {
             setToasts(prev => prev.filter(t => t.id !== id));
-        }, 4000);
+        }, type === 'success' ? 6000 : 4000);
     };
 
     // Tab 5 (Bell Timings) State
@@ -1057,94 +1181,78 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
 
     const handleGenerateTimetable = async () => {
-        console.log('🔵 ===== GENERATE BUTTON CLICKED =====');
-        console.log('1. Current state teacherSubjectMappings:', teacherSubjectMappings);
-        console.log('2. teacherSubjectMappings length:', teacherSubjectMappings?.length);
-        console.log('3. teacherSubjectMappings type:', typeof teacherSubjectMappings);
-        console.log('4. Is array?', Array.isArray(teacherSubjectMappings));
+        console.log('🔵 ===== GENERATING FROM ALLOTMENT ROWS =====');
 
-        if (teacherSubjectMappings && teacherSubjectMappings.length > 0) {
-            console.log('5. First mapping sample:', teacherSubjectMappings[0]);
-            console.log('6. All teachers:', teacherSubjectMappings.map(m => m.teacher));
-            console.log('7. Unique teachers:', [...new Set(teacherSubjectMappings.map(m => m.teacher))]);
-            console.log('8. First teacher classes:', teacherSubjectMappings[0].selectedClasses);
-        } else {
-            console.log('5. teacherSubjectMappings is empty or undefined');
-        }
-
-        if (!currentVersion) {
-            console.log('9. No current version found');
-            addToast('⚠️ Please save your mappings first (Tab 3)', 'warning');
+        if (!allotmentRows || allotmentRows.length === 0) {
+            addToast('⚠️ No allotments found. Please add data in Classes Alloted tab.', 'warning');
             return;
         }
 
-        console.log('10. Version check passed');
         setIsGenerating(true);
 
         try {
-            let timetable;
-            // Try using local state first
-            if (teacherSubjectMappings && teacherSubjectMappings.length > 0) {
-                console.log('11. Using local state with', teacherSubjectMappings.length, 'mappings');
+            // Convert new allotmentRows format to legacy format for the generator
+            const legacyMappings = [];
+            const legacyDistribution = { __merged: {} };
 
-                // Log what we're passing to generator
-                console.log('12. Passing to generateTimetable:');
-                console.log('   - mappings count:', teacherSubjectMappings.length);
-                console.log('   - distribution47 exists:', !!distribution47);
-                console.log('   - bellTimings exists:', !!bellTimings);
+            allotmentRows.forEach(row => {
+                if (!row.teacher || !row.subject) return;
 
-                // Test if generateTimetable function exists
-                console.log('13. generateTimetable function:', generateTimetable);
+                const selectedClasses = [];
+                row.allotments.forEach(group => {
+                    const groupPeriods = Number(group.periods) || 0;
+                    if (groupPeriods === 0) return;
 
-                timetable = generateTimetable(
-                    teacherSubjectMappings,
-                    distribution47,
-                    bellTimings
-                );
+                    group.classes.forEach(cls => {
+                        selectedClasses.push(cls);
+                        if (!legacyDistribution[cls]) legacyDistribution[cls] = {};
+                        legacyDistribution[cls][row.subject] = groupPeriods;
+                    });
 
-                console.log('14. Generation complete. Result:', timetable);
-                console.log('15. Teacher keys in result:', Object.keys(timetable.teacherTimetables));
-                console.log('16. Teacher count:', Object.keys(timetable.teacherTimetables).length);
+                    if (group.isMerged) {
+                        if (!legacyDistribution.__merged[row.subject]) {
+                            legacyDistribution.__merged[row.subject] = [];
+                        }
+                        legacyDistribution.__merged[row.subject].push({
+                            classes: group.classes,
+                            total: groupPeriods,
+                            subject: row.subject
+                        });
+                    }
+                });
 
-                setGeneratedTimetable(timetable);
-
-                addToast(`✅ Timetable generated!
-
-47 Classes scheduled
-${Object.keys(timetable.teacherTimetables).length} Teachers scheduled
-${timetable.errors?.length || 0} warnings`, 'success');
-                console.log('11. Local state empty, trying Firebase...');
-                const result = await loadTimetableMappings(academicYear);
-                console.log('12. Firebase load result:', result);
-
-                if (!result.mappings || result.mappings.length === 0) {
-                    addToast('No teacher mappings found. Please add teachers in Tab 3.', 'warning');
-                    setIsGenerating(false);
-                    return;
+                const uniqueSelected = [...new Set(selectedClasses)];
+                if (uniqueSelected.length > 0) {
+                    legacyMappings.push({
+                        teacher: row.teacher,
+                        subject: row.subject,
+                        selectedClasses: uniqueSelected
+                    });
                 }
+            });
 
-                console.log('13. Using Firebase mappings:', result.mappings.length);
-                timetable = generateTimetable(
-                    result.mappings,
-                    distribution47,
-                    bellTimings
-                );
+            console.log('Generated Legacy Data:', {
+                mappingsCount: legacyMappings.length,
+                mergedCount: Object.keys(legacyDistribution.__merged).length
+            });
 
-                console.log('14. Generation complete:', timetable);
-                setGeneratedTimetable(timetable);
+            const timetable = generateTimetable(
+                legacyMappings,
+                legacyDistribution,
+                bellTimings
+            );
 
-                addToast(`✅ Timetable generated!
+            console.log('Generation result:', timetable);
+            setGeneratedTimetable(timetable);
 
-47 Classes scheduled
-${Object.keys(timetable.teacherTimetables).length} Teachers scheduled
-${timetable.errors?.length || 0} warnings`, 'success');
-            }
+            addToast(`✅ Timetable generated!
+            
+            ${Object.keys(timetable.classTimetables).length} Classes scheduled
+            ${Object.keys(timetable.teacherTimetables).length} Teachers scheduled
+            ${timetable.errors?.length || 0} warnings`, 'success');
 
         } catch (error) {
-            console.error('❌ ERROR IN GENERATION:');
-            console.error('Error name:', error.name);
-            console.error('Error message:', error.message);
-            console.error('Error stack:', error.stack);
+            console.error('❌ ERROR IN GENERATION:', error);
             addToast(`❌ Failed: ${error.message}`, 'error');
         } finally {
             setIsGenerating(false);
@@ -1616,23 +1724,55 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                 {activeTab === 1 && (
                     <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
                         <h2 style={{ color: '#f1f5f9', marginBottom: '1rem' }}>Classes Alloted</h2>
-                        <button
-                            onClick={() => {
-                                localStorage.setItem('tt_allotments', JSON.stringify({ rows: allotmentRows }));
-                                addToast('Saved', 'success');
-                            }}
-                            style={{
-                                padding: '0.75rem 1.5rem',
-                                background: '#10b981',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '0.75rem',
-                                cursor: 'pointer',
-                                marginBottom: '1.5rem'
-                            }}
-                        >
-                            💾 Save
-                        </button>
+                        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+                            <button
+                                onClick={() => saveAllotments()}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: '#10b981',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '0.75rem',
+                                    cursor: isSaving ? 'not-allowed' : 'pointer',
+                                    fontWeight: 'bold',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    opacity: isSaving ? 0.7 : 1
+                                }}
+                                disabled={isSaving}
+                            >
+                                💾 {isSaving ? 'Saving...' : 'Save Data'}
+                            </button>
+                            <button
+                                onClick={loadAllotments}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: '#334155',
+                                    color: 'white',
+                                    border: '1px solid #475569',
+                                    borderRadius: '0.75rem',
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                ☁️ Load Cloud
+                            </button>
+                            <button
+                                onClick={clearAllotments}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: 'transparent',
+                                    color: '#f87171',
+                                    border: '1px solid #450a0a',
+                                    borderRadius: '0.75rem',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem'
+                                }}
+                            >
+                                🧹 Clear Saved
+                            </button>
+                        </div>
                         <div style={{ overflowX: 'auto' }}>
                             <table style={{
                                 width: '100%',
@@ -1714,12 +1854,6 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                                                                                     else setSelectedGroups(prev => [...prev, { rowId: row.id, groupIndex: gIdx }]);
                                                                                 }
                                                                             }}
-                                                                            onContextMenu={(e) => {
-                                                                                e.preventDefault();
-                                                                                if (confirm(`Unmerge classes ${group.classes.join(', ')}?`)) {
-                                                                                    unmergeGroup(row.id, gIdx);
-                                                                                }
-                                                                            }}
                                                                             style={{
                                                                                 padding: '0.4rem 0.6rem',
                                                                                 background: 'rgba(255,255,255,0.1)',
@@ -1728,10 +1862,32 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                                                                                 fontWeight: '900',
                                                                                 color: '#fff',
                                                                                 cursor: 'pointer',
-                                                                                letterSpacing: '0.05em'
+                                                                                letterSpacing: '0.05em',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '0.4rem'
                                                                             }}
                                                                         >
                                                                             {formatClasses(group.classes)}
+                                                                            <span
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    if (confirm(`Unmerge classes ${group.classes.join(', ')}?`)) {
+                                                                                        unmergeGroup(row.id, gIdx);
+                                                                                    }
+                                                                                }}
+                                                                                title="Unmerge"
+                                                                                style={{
+                                                                                    background: 'rgba(255,255,255,0.2)',
+                                                                                    borderRadius: '50%',
+                                                                                    width: '16px',
+                                                                                    height: '16px',
+                                                                                    display: 'flex',
+                                                                                    alignItems: 'center',
+                                                                                    justifyContent: 'center',
+                                                                                    fontSize: '10px'
+                                                                                }}
+                                                                            >🔗</span>
                                                                         </div>
                                                                     ) : (
                                                                         <select
@@ -1958,23 +2114,22 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '0.75rem',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold'
                                 }}
                             >+ Add Row</button>
                             <button
-                                onClick={() => {
-                                    localStorage.setItem('tt_allotments', JSON.stringify({ rows: allotmentRows }));
-                                    addToast('Saved', 'success');
-                                }}
+                                onClick={() => saveAllotments()}
                                 style={{
                                     padding: '0.75rem 1.5rem',
                                     background: '#10b981',
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '0.75rem',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold'
                                 }}
-                            >💾 Save All</button>
+                            >💾 Save All Changes</button>
                         </div>
                     </div>
                 )}
@@ -3359,9 +3514,11 @@ ${timetable.errors?.length || 0} warnings`, 'success');
 
             </div >
 
-            {dropdownConfig && (
-                <div onClick={() => setDropdownConfig(null)} style={{ position: 'fixed', inset: 0, zIndex: 999 }}></div>
-            )}
+            {
+                dropdownConfig && (
+                    <div onClick={() => setDropdownConfig(null)} style={{ position: 'fixed', inset: 0, zIndex: 999 }}></div>
+                )
+            }
 
             <style>{`
                 @keyframes fadeIn {
