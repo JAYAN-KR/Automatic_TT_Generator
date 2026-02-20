@@ -264,6 +264,110 @@ export default function TimetablePage() {
         return saved ? JSON.parse(saved) : [];
     });
 
+    // -- Classes Alloted (new Tab 1) State --
+    const [allotmentRows, setAllotmentRows] = useState(() => {
+        const saved = localStorage.getItem('tt_allotments');
+        if (saved) {
+            try { return JSON.parse(saved).rows; } catch { }
+        }
+        
+        // build rows directly from teacher-subject pairs (one row per pair)
+        const pairs = localStorage.getItem('tt_teacher_subject_pairs');
+        if (pairs) {
+            try {
+                const pairsArray = JSON.parse(pairs);
+                if (pairsArray.length > 0) {
+                    return pairsArray.map(p => ({
+                        id: `${p.teacher}||${p.subject}`,
+                        teacher: p.teacher,
+                        subject: p.subject,
+                        allotments: { class: '6A', periods: 0 },
+                        total: 0
+                    }));
+                }
+            } catch { }
+        }
+        
+        // fallback single empty row
+        return [{
+            id: Date.now(),
+            teacher: '',
+            subject: '',
+            allotments: { class: '6A', periods: 0 },
+            total: 0
+        }];
+    });
+
+    // helper constants for dropdowns
+    const CLASS_OPTIONS = [
+        '6A','6B','6C','6D','6E','6F','6G',
+        '7A','7B','7C','7D','7E','7F','7G',
+        '8A','8B','8C','8D','8E',
+        '9A','9B','9C','9D','9E',
+        '10A','10B','10C','10D','10E',
+        '11A','11B','11C','11D','11E',
+        '12A','12B','12C','12D','12E','12F'
+    ];
+    const PERIOD_OPTIONS = Array.from({length: 11}, (_,i)=>i);
+
+    const addAllotmentRow = () => {
+        setAllotmentRows(prev => [...prev, {
+            id: Date.now(),
+            teacher: '',
+            subject: '',
+            allotments: { class: '6A', periods: 0 },
+            total: 0
+        }]);
+    };
+    const deleteAllotmentRow = (id) => {
+        setAllotmentRows(prev => {
+            if (prev.length <= 1) return prev; // keep at least one
+            return prev.filter(r=>r.id!==id);
+        });
+    };
+    const updateAllotmentField = (id, field, value) => {
+        setAllotmentRows(prev => prev.map(r=>{
+            if(r.id!==id) return r;
+            const updated = {...r};
+            if(field==='teacher' || field==='subject'){
+                updated[field] = value;
+            } else if(field==='class'){
+                updated.allotments.class = value;
+            } else if(field==='periods'){
+                updated.allotments.periods = Number(value);
+                updated.total = Number(value);
+            }
+            return updated;
+        }));
+    };
+
+    // Sync allotmentRows when pairs are saved from Tab 0
+    useEffect(() => {
+        const handleStorageChange = () => {
+            const pairs = localStorage.getItem('tt_teacher_subject_pairs');
+            if (pairs) {
+                try {
+                    const pairsArray = JSON.parse(pairs);
+                    if (pairsArray.length > 0) {
+                        const newRows = pairsArray.map(p => ({
+                            id: `${p.teacher}||${p.subject}`,
+                            teacher: p.teacher,
+                            subject: p.subject,
+                            allotments: { class: '6A', periods: 0 },
+                            total: 0
+                        }));
+                        setAllotmentRows(newRows);
+                    }
+                } catch { }
+            }
+        };
+        // Check on component mount
+        handleStorageChange();
+        // Listen for storage changes
+        window.addEventListener('storage', handleStorageChange);
+        return () => window.removeEventListener('storage', handleStorageChange);
+    }, []);
+
     // Tab 3 (Mappings) State
     const [teacherSubjectMappings, setTeacherSubjectMappings] = useState(() => {
         const saved = localStorage.getItem('tt_mappings');
@@ -528,8 +632,9 @@ export default function TimetablePage() {
         // 1. We are on the Mapping Tab
         // 2. We don't have newly extracted data (hasNewExtraction is false)
         // 3. The current list is empty
-        if (activeTab === 1 && !hasNewExtraction && teacherSubjectMappings.length === 0) {
-            console.log(`[AutoLoad] Triggering load for ${academicYear} (Reason: Tab 2 active, List empty, No fresh extraction)`);
+        if (activeTab === 3 && !hasNewExtraction && teacherSubjectMappings.length === 0) {
+            // preserve previous behaviour: trigger when Format TT becomes active
+            console.log(`[AutoLoad] Triggering load for ${academicYear} (Reason: Format TT tab active, List empty, No fresh extraction)`);
             loadMappingsForYear(academicYear);
         } else if (activeTab === 2) {
             console.log(`[AutoLoad] Blocked. state: {hasNewExtraction: ${hasNewExtraction}, listLength: ${teacherSubjectMappings.length}}`);
@@ -927,9 +1032,10 @@ ${timetable.errors?.length || 0} warnings`, 'success');
 
     const tabs = [
         { id: 0, label: '�‍🏫 Teachers & Subjects' },
-        { id: 1, label: '🎓 Format TT' },
+        { id: 1, label: '� Classes Alloted' },      // new placeholder tab
         { id: 2, label: '📊 Distribution' },
-        { id: 3, label: '⚙️ Generate' }
+        { id: 3, label: '🎓 Format TT' },
+        { id: 4, label: '⚙️ Generate' }
     ];
 
     return (
@@ -1044,6 +1150,46 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                 {/* Tab 0: Teachers & Subjects with mapping table (selection-only) */}
                 {activeTab === 0 && (
                     <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                        <button
+                            onClick={() => {
+                                // Build teacher-subject pairs from mappingRows
+                                // build list and dedupe identical teacher-subject combos
+                                const rawPairs = mappingRows
+                                    .filter(r => r.teacher && r.subject)
+                                    .map(r => ({ teacher: r.teacher, subject: r.subject }));
+                                let teacherSubjectPairs = [...new Map(rawPairs.map(p => [`${p.teacher}||${p.subject}`, p])).values()];
+                                // sort alphabetically by teacher then subject
+                                teacherSubjectPairs.sort((a,b)=>{
+                                    const ta=a.teacher.toLowerCase(), tb=b.teacher.toLowerCase();
+                                    if(ta<tb) return -1; if(ta>tb) return 1;
+                                    const sa=a.subject.toLowerCase(), sb=b.subject.toLowerCase();
+                                    if(sa<sb) return -1; if(sa>sb) return 1;
+                                    return 0;
+                                });
+                                localStorage.setItem('tt_teacher_subject_pairs', JSON.stringify(teacherSubjectPairs));
+                                // also update allotmentRows immediately so Tab 1 reflects changes
+                                const newRows = teacherSubjectPairs.map(p => ({
+                                    id: `${p.teacher}||${p.subject}`,
+                                    teacher: p.teacher,
+                                    subject: p.subject,
+                                    allotments: { class: '6A', periods: 0 },
+                                    total: 0
+                                }));
+                                setAllotmentRows(newRows);
+                                addToast('Saved to Classes Alloted tab', 'success');
+                            }}
+                            style={{
+                                padding: '0.75rem 1.5rem',
+                                background: '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '0.75rem',
+                                cursor: 'pointer',
+                                marginBottom: '1.5rem'
+                            }}
+                        >
+                            💾 Save to Next
+                        </button>
                         {/* upload button */}
                         <div style={{ marginBottom: '2rem' }}>
                             <label style={{
@@ -1328,6 +1474,7 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                                 border: 'none',
                                 borderRadius: '0.8rem',
                                 cursor: 'pointer',
+                                marginRight: '1rem',
                                 marginBottom: '1.5rem'
                             }}
                         >
@@ -1344,9 +1491,191 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                     </div>
                 )}
 
-                {/* Tab 1: Format TT */}
+                {/* Tab 1: Classes Alloted placeholder --> full table */}
                 {activeTab === 1 && (
                     <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                        <h2 style={{ color: '#f1f5f9', marginBottom: '1rem' }}>Classes Alloted</h2>
+                        <button
+                            onClick={() => {
+                                localStorage.setItem('tt_allotments', JSON.stringify({ rows: allotmentRows }));
+                                addToast('Saved', 'success');
+                            }}
+                            style={{
+                                padding: '0.75rem 1.5rem',
+                                background: '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '0.75rem',
+                                cursor: 'pointer',
+                                marginBottom: '1.5rem'
+                            }}
+                        >
+                            💾 Save
+                        </button>
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{
+                                width: '100%',
+                                borderCollapse: 'collapse',
+                                color: '#f1f5f9'
+                            }}>
+                                <thead>
+                                    <tr style={{ background: '#1e293b' }}>
+                                        <th style={{ padding: '0.75rem', textAlign: 'left' }}>Teacher Name</th>
+                                        <th style={{ padding: '0.75rem', textAlign: 'left' }}>Subject</th>
+                                        <th style={{ padding: '0.75rem', textAlign: 'left' }}>Class Allotments</th>
+                                        <th style={{ padding: '0.75rem', textAlign: 'center' }}>Total periods</th>
+                                        <th style={{ padding: '0.75rem' }}></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {allotmentRows.map(row => {
+                                        // Get pairs from localStorage for subject filtering
+                                        const pairs = JSON.parse(localStorage.getItem('tt_teacher_subject_pairs') || '[]');
+                                        // Get only subjects this teacher teaches
+                                        const teacherSubjects = [...new Set(pairs.filter(p => p.teacher === row.teacher).map(p => p.subject))].sort();
+                                        
+                                        return (
+                                            <tr key={row.id} style={{ borderBottom: '1px solid #334155' }}>
+                                                {/* Teacher Name */}
+                                                <td style={{ padding: '0.6rem', color: '#f1f5f9', fontWeight: '600', textAlign: 'left' }}>
+                                                    {row.teacher}
+                                                </td>
+                                                
+                                                {/* Subject Dropdown - filtered to teacher's subjects */}
+                                                <td style={{ padding: '0.6rem' }}>
+                                                    <select
+                                                        value={row.subject}
+                                                        onChange={e => updateAllotmentField(row.id, 'subject', e.target.value)}
+                                                        style={{
+                                                            width: '100%',
+                                                            padding: '0.5rem',
+                                                            background: '#0f172a',
+                                                            color: '#f1f5f9',
+                                                            border: '1px solid #334155',
+                                                            borderRadius: '0.4rem',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        <option value="">-- Select Subject --</option>
+                                                        {teacherSubjects.length > 0 ? (
+                                                            teacherSubjects.map(s => (
+                                                                <option key={s} value={s}>{s}</option>
+                                                            ))
+                                                        ) : null}
+                                                    </select>
+                                                </td>
+                                                
+                                                {/* Class & Periods */}
+                                                <td style={{ padding: '0.6rem', display: 'flex', gap: '0.5rem' }}>
+                                                    <select
+                                                        value={row.allotments.class}
+                                                        onChange={e => updateAllotmentField(row.id, 'class', e.target.value)}
+                                                        style={{
+                                                            padding: '0.5rem',
+                                                            background: '#0f172a',
+                                                            color: '#f1f5f9',
+                                                            border: '1px solid #334155',
+                                                            borderRadius: '0.4rem',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        <option value="">-- select class --</option>
+                                                        {CLASS_OPTIONS.map(c => (
+                                                            <option key={c} value={c}>{c}</option>
+                                                        ))}
+                                                    </select>
+                                                    <select
+                                                        value={row.allotments.periods}
+                                                        onChange={e => updateAllotmentField(row.id, 'periods', e.target.value)}
+                                                        style={{
+                                                            padding: '0.5rem',
+                                                            background: '#0f172a',
+                                                            color: '#f1f5f9',
+                                                            border: '1px solid #334155',
+                                                            borderRadius: '0.4rem',
+                                                            width: '5rem',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        {PERIOD_OPTIONS.map(p => (
+                                                            <option key={p} value={p}>{p}</option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                                
+                                                {/* Total Periods */}
+                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                    {row.total}
+                                                </td>
+                                                
+                                                {/* Delete Button */}
+                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                    <button
+                                                        onClick={() => deleteAllotmentRow(row.id)}
+                                                        style={{
+                                                            background: 'transparent',
+                                                            border: 'none',
+                                                            color: '#ef4444',
+                                                            cursor: 'pointer',
+                                                            fontSize: '1.2rem'
+                                                        }}
+                                                    >🗑️</button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
+                            <button
+                                onClick={addAllotmentRow}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: '#4f46e5',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '0.75rem',
+                                    cursor: 'pointer'
+                                }}
+                            >+ Add Row</button>
+                            <button
+                                onClick={() => {
+                                    localStorage.setItem('tt_allotments', JSON.stringify({ rows: allotmentRows }));
+                                    addToast('Saved', 'success');
+                                }}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: '#10b981',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '0.75rem',
+                                    cursor: 'pointer'
+                                }}
+                            >💾 Save All</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Tab 3: Format TT (moved down) */}
+                {activeTab === 3 && (
+                    <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                        <button
+                            onClick={() => {
+                                addToast('Saved', 'success');
+                            }}
+                            style={{
+                                padding: '0.75rem 1.5rem',
+                                background: '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '0.75rem',
+                                cursor: 'pointer',
+                                marginBottom: '1.5rem'
+                            }}
+                        >
+                            💾 Save
+                        </button>
                         {/* Grade Sub-tabs */}
                         <div style={{
                             display: 'flex',
@@ -1557,6 +1886,24 @@ ${timetable.errors?.length || 0} warnings`, 'success');
                 {/* Tab 4: Subject Period Distribution */}
                 {activeTab === 2 && (
                     <div>
+                        <button
+                            onClick={() => {
+                                localStorage.setItem('tt_distribution_47', JSON.stringify(distribution47));
+                                addToast('Saved', 'success');
+                            }}
+                            style={{
+                                padding: '0.75rem 1.5rem',
+                                background: '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '0.75rem',
+                                cursor: 'pointer',
+                                marginBottom: '1.5rem',
+                                display: 'block'
+                            }}
+                        >
+                            💾 Save
+                        </button>
                         {/* Header with Title and Actions */}
                         <div style={{
                             display: 'flex',
@@ -2398,9 +2745,27 @@ ${timetable.errors?.length || 0} warnings`, 'success');
 
                 {/* Tab 5: Generate */}
                 {
-                    activeTab === 3 && (
+                    activeTab === 4 && (
                         <div style={{ animation: 'fadeIn 0.3s ease-out', padding: '2rem 0' }}>
                             <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+                                <button
+                                    onClick={() => {
+                                        localStorage.setItem('tt_bell_timings', JSON.stringify(bellTimings));
+                                        localStorage.setItem('tt_generated_timetable', JSON.stringify(generatedTimetable));
+                                        addToast('Saved', 'success');
+                                    }}
+                                    style={{
+                                        padding: '0.75rem 1.5rem',
+                                        background: '#10b981',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '0.75rem',
+                                        cursor: 'pointer',
+                                        marginBottom: '1.5rem'
+                                    }}
+                                >
+                                    💾 Save
+                                </button>
                                 {/* Bell Timings Configuration */}
                                 <div style={{ marginBottom: '3rem' }}>
                                     <h3 style={{ fontSize: '1.8rem', fontWeight: '900', color: '#f1f5f9', marginBottom: '1.5rem', textAlign: 'left' }}>
