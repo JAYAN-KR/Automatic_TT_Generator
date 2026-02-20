@@ -1,6 +1,8 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
+  /* make the root container span the full viewport width */
+  width: 100%;
+  max-width: 100%;
+  margin: 0; /* no auto margin needed when full width */
   padding: 2rem;
   text-align: center;
 }

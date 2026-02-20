@@ -92,13 +92,41 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
 
         console.log(`📋 Processing ${teacher} - ${subject} (${classes.length} classes)`);
 
-        classes.forEach((className, classIdx) => {
-            // Simple allocation: rotate through days and periods
-            const dayIndex = (totalAllocations + classIdx) % days.length;
-            const periodIndex = (totalAllocations + classIdx) % 8; // 0-7 for P1-P8
+        // Build a flat list of allocation units taking merged groups into account
+        const allocations = [];
+        const mergedForSubject = (distribution && distribution.__merged && distribution.__merged[subject]) || [];
+        const handledClasses = new Set();
+
+        // handle groups first
+        mergedForSubject.forEach(g => {
+            // find intersection with this mapping's classes
+            const overlap = g.classes.filter(c => classes.includes(c));
+            if (overlap.length > 0) {
+                for (let t = 0; t < g.total; t++) {
+                    // use first class name as representative
+                    allocations.push({ className: overlap[0], group: g, classes: overlap });
+                }
+                overlap.forEach(c => handledClasses.add(c));
+            }
+        });
+
+        // handle remaining individual classes using their distribution value
+        classes.forEach(c => {
+            if (handledClasses.has(c)) return;
+            const v = (distribution && distribution[c] && distribution[c][subject]) || 0;
+            for (let t = 0; t < v; t++) {
+                allocations.push({ className: c, group: null, classes: [c] });
+            }
+        });
+
+        // Perform allocations based on the expanded list
+        allocations.forEach((alloc, allocIdx) => {
+            const dayIndex = (totalAllocations + allocIdx) % days.length;
+            const periodIndex = (totalAllocations + allocIdx) % 8; // 0-7 for P1-P8
 
             const day = days[dayIndex];
             const period = `P${periodIndex + 1}`;
+            const className = alloc.className;
 
             // SAFETY CHECK: Ensure class exists
             if (!classTimetables[className]) {
@@ -135,12 +163,16 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
                 };
             }
 
-            // Place in class timetable
-            classTimetables[className][day][period] = {
-                subject: getAbbreviation(subject),
-                teacher: teacher,
-                fullSubject: subject
-            };
+            // Place in class timetable; if this is a merged group allocation, fill every class
+            alloc.classes.forEach(cn => {
+                if (!classTimetables[cn]) return;
+                // ensure day record exists (should)
+                classTimetables[cn][day][period] = {
+                    subject: getAbbreviation(subject),
+                    teacher: teacher,
+                    fullSubject: subject
+                };
+            });
 
             // SAFETY CHECK: Ensure teacher exists
             if (!teacherTimetables[teacher]) {
@@ -164,20 +196,15 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
                 };
             }
 
-            // Place in teacher timetable
-            teacherTimetables[teacher][day][period] = className;
+            // Place in teacher timetable; show all target classes separated by '/'
+            teacherTimetables[teacher][day][period] = alloc.classes.join('/');
             teacherTimetables[teacher][day].periodCount =
                 (teacherTimetables[teacher][day].periodCount || 0) + 1;
             teacherTimetables[teacher].weeklyPeriods =
                 (teacherTimetables[teacher].weeklyPeriods || 0) + 1;
-
-            totalAllocations++;
-
-            // Log first 20 allocations for verification
-            if (totalAllocations <= 20) {
-                console.log(`  ✅ ${teacher} → ${subject} → ${className} on ${day} ${period}`);
-            }
         });
+
+        totalAllocations += allocations.length;
     });
 
     console.log(`📊 Total allocations: ${totalAllocations}`);

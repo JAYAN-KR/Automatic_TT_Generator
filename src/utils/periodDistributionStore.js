@@ -135,10 +135,13 @@ export const setBulkValues = (distribution, subject, classList, value) => {
 
 // ============ SUBJECT MANAGEMENT ============
 export const getAllSubjects = (distribution) => {
+    // ignore any internal keys (prefixed with __) that are not actual subjects
     const subjects = new Set();
 
     Object.keys(distribution).forEach(className => {
+        if (className.startsWith('__')) return;
         Object.keys(distribution[className]).forEach(subject => {
+            if (subject.startsWith('__')) return;
             subjects.add(subject);
         });
     });
@@ -168,6 +171,51 @@ export const deleteSubject = (distribution, subjectName) => {
     Object.keys(distribution).forEach(className => {
         delete distribution[className][subjectName];
     });
+    // also remove any merged groups for this subject
+    if (distribution.__merged && distribution.__merged[subjectName]) {
+        delete distribution.__merged[subjectName];
+    }
+    return distribution;
+};
+
+// ============ MERGED GROUPS HELPERS ============
+
+// Each merged group is stored under distribution.__merged[subject] as an array of
+// { id: string, classes: ["6A","6B"...], total: number }
+// Groups are mainly used by the UI and by timetable generation; the individual
+// cells remain editable but the generator will treat a group as a single
+// allocation unit.
+
+const makeGroupId = () => `g_${Math.random().toString(36).slice(2,8)}`;
+
+export const getMergedGroups = (distribution) => {
+    return distribution.__merged || {};
+};
+
+export const isClassMerged = (distribution, subject, className) => {
+    const groups = getMergedGroups(distribution)[subject] || [];
+    return groups.some(g => g.classes.includes(className));
+};
+
+export const getGroupForClass = (distribution, subject, className) => {
+    const groups = getMergedGroups(distribution)[subject] || [];
+    return groups.find(g => g.classes.includes(className));
+};
+
+export const addMergedGroup = (distribution, subject, classes, total) => {
+    if (!distribution.__merged) distribution.__merged = {};
+    if (!distribution.__merged[subject]) distribution.__merged[subject] = [];
+    distribution.__merged[subject].push({ id: makeGroupId(), classes: [...classes], total });
+    return distribution;
+};
+
+export const removeMergedGroup = (distribution, subject, groupId) => {
+    if (distribution.__merged && distribution.__merged[subject]) {
+        distribution.__merged[subject] = distribution.__merged[subject].filter(g => g.id !== groupId);
+        if (distribution.__merged[subject].length === 0) {
+            delete distribution.__merged[subject];
+        }
+    }
     return distribution;
 };
 

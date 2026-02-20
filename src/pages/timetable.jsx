@@ -20,7 +20,13 @@ import {
     getAllSubjects,
     renameSubject,
     deleteSubject,
-    syncSubjectsFromMappings
+    syncSubjectsFromMappings,
+    // merged group helpers
+    addMergedGroup,
+    removeMergedGroup,
+    isClassMerged,
+    getGroupForClass,
+    getMergedGroups
 } from '../utils/periodDistributionStore';
 
 // component for feature experimentation
@@ -291,13 +297,69 @@ export default function TimetablePage() {
     const [distribution47, setDistribution47] = useState(loadDistribution());
     const [editingCell, setEditingCell] = useState(null);
     const [editValue, setEditValue] = useState('');
+    // we maintain both per-cell selection for merging and a simple class list for bulk edits
     const [selectedClasses, setSelectedClasses] = useState([]);
+    const [selectedCells, setSelectedCells] = useState([]); // {subject,className}
+    const selectedCellsRef = useRef([]); // mirror to avoid stale state when toggling fast
     const [selectedSubjects, setSelectedSubjects] = useState(new Set());
     const [currentBulkSubject, setCurrentBulkSubject] = useState(null);
     const [bulkPeriodValue, setBulkPeriodValue] = useState('5');
     const [lastSelectedClass, setLastSelectedClass] = useState(null);
+    // merge UI state (no longer needed separate prompt state)
+    // const [showMergePrompt, setShowMergePrompt] = useState(false);
+    // drag-selection state
+    const [mouseDown, setMouseDown] = useState(false);
+    // flag to remember if last mouse down was a ctrl-selection
+    const ctrlSelecting = useRef(false);
+
+    // helper to toggle ctrl-selection (used by mouse events)
+    const toggleCtrlSelect = (subject, className) => {
+        if (isClassMerged(distribution47, subject, className)) return;
+        // also maintain selectedClasses list for bulk editing
+        setSelectedClasses(prev => {
+            if (prev.includes(className)) {
+                return prev.filter(c => c !== className);
+            } else {
+                return [...prev, className];
+            }
+        });
+        // update ref for immediate consistency
+        let newList;
+        if (currentBulkSubject && currentBulkSubject !== subject) {
+            newList = [{ subject, className }];
+            setCurrentBulkSubject(subject);
+        } else {
+            const exists = selectedCellsRef.current.find(c => c.subject === subject && c.className === className);
+            if (exists) {
+                newList = selectedCellsRef.current.filter(c => !(c.subject === subject && c.className === className));
+            } else {
+                newList = [...selectedCellsRef.current, { subject, className }];
+            }
+            setCurrentBulkSubject(subject);
+        }
+        selectedCellsRef.current = newList;
+        setSelectedCells(newList);
+    };
+
+    useEffect(() => {
+        const onGlobalMouseUp = () => {
+            setMouseDown(false);
+            ctrlSelecting.current = false;
+        };
+        window.addEventListener('mouseup', onGlobalMouseUp);
+        return () => window.removeEventListener('mouseup', onGlobalMouseUp);
+    }, []);
     const [editingSubjectName, setEditingSubjectName] = useState(null);
     const [subjectRenameValue, setSubjectRenameValue] = useState('');
+    // toast messages
+    const [toasts, setToasts] = useState([]);
+    const addToast = (msg, type = 'success') => {
+        const id = Date.now();
+        setToasts(prev => [...prev, { id, msg, type }]);
+        setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, 4000);
+    };
 
     // Tab 5 (Bell Timings) State
     const [bellTimings, setBellTimings] = useState({
@@ -552,7 +614,7 @@ export default function TimetablePage() {
                 });
                 setHasNewExtraction(true); // LOCK STATE: Prevent auto-reloads from overwriting this list
                 // Sync subjects to distribution will happen automatically via useEffect
-                alert(`✅ Extracted ${result.mappings.length} mappings!\n\n✅ Subjects auto-synced to Period Distribution tab!`);
+                addToast(`✅ Extracted ${result.mappings.length} mappings!\n\n✅ Subjects auto-synced to Period Distribution tab!`, 'success');
             } else {
                 setMappingError("No teacher-subject-class mappings found.");
             }
@@ -621,6 +683,7 @@ export default function TimetablePage() {
         } else {
             setSelectedClasses([...ALL_CLASSES]);
         }
+        setSelectedCells([]);
     };
 
     const handleSubjectSelect = (subject) => {
@@ -638,16 +701,17 @@ export default function TimetablePage() {
     const handleGradeBulk = (grade) => {
         const gradeClasses = ALL_CLASSES.filter(cls => cls.startsWith(grade));
         setSelectedClasses(gradeClasses);
+        setSelectedCells([]);
     };
 
     const handleBulkApply = () => {
         if (!currentBulkSubject) {
-            alert('Please select a subject first by clicking on it');
+            addToast('Please select a subject first by clicking on it', 'warning');
             return;
         }
 
         if (selectedClasses.length === 0) {
-            alert('Please select at least one class');
+            addToast('Please select at least one class', 'warning');
             return;
         }
 
@@ -657,12 +721,12 @@ export default function TimetablePage() {
         setDistribution47(updated);
         saveDistribution(updated);
 
-        alert(`✅ Set ${currentBulkSubject} to ${value} periods for ${selectedClasses.length} classes`);
+        addToast(`✅ Set ${currentBulkSubject} to ${value} periods for ${selectedClasses.length} classes`, 'success');
     };
 
     const handleSaveMappings = async () => {
         if (teacherSubjectMappings.length === 0) {
-            alert('No mappings to save');
+            addToast('No mappings to save', 'warning');
             return;
         }
 
@@ -676,7 +740,7 @@ export default function TimetablePage() {
             const result = await saveTimetableMappings(teacherSubjectMappings, academicYear, createdBy);
             console.log('[Save] Firestore confirmed save:', result);
 
-            alert(`✅ Successfully saved ${teacherSubjectMappings.length} mappings!\nVersion ID: ${result.versionId}\nAcademic Year: ${academicYear}`);
+            addToast(`✅ Successfully saved ${teacherSubjectMappings.length} mappings!\nVersion ID: ${result.versionId}\nAcademic Year: ${academicYear}`, 'success');
 
             // UNLOCK & RELOAD
             setHasNewExtraction(false);
@@ -685,7 +749,7 @@ export default function TimetablePage() {
             await loadMappingsForYear(academicYear, true);
         } catch (error) {
             console.error('[Save] Error:', error);
-            alert(`❌ Failed to save mappings: ${error.message}`);
+            addToast(`❌ Failed to save mappings: ${error.message}`, 'error');
         } finally {
             setIsSaving(false);
         }
@@ -693,12 +757,12 @@ export default function TimetablePage() {
 
     const handlePublishVersion = async () => {
         if (!currentVersion?.id) {
-            alert('No version selected to publish');
+            addToast('No version selected to publish', 'warning');
             return;
         }
 
         if (!generatedTimetable) {
-            alert('⚠️ Please generate timetable first before publishing');
+            addToast('⚠️ Please generate timetable first before publishing', 'warning');
             return;
         }
 
@@ -740,14 +804,14 @@ Proceed?`)) {
             });
 
             // 4. Show success with APK confirmation
-            alert(`✅ TIMETABLE PUBLISHED SUCCESSFULLY!
+            addToast(`✅ TIMETABLE PUBLISHED SUCCESSFULLY!
 📅 Academic Year: ${academicYear}
 🏷️ Version: ${currentVersion.version}
 👩‍🏫 Teachers: ${result.teacherCount}
 🏫 Classes: 47
 📱 Push notifications: SENT to all teachers
 
-Teachers can now see their timetable in the AutoSubs app.`);
+Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
             // 5. Optional: Show preview of what teachers see
             const firstTeacher = Object.keys(generatedTimetable.teacherTimetables)[0];
@@ -759,7 +823,7 @@ Teachers can now see their timetable in the AutoSubs app.`);
             }
         } catch (error) {
             console.error('Publish error:', error);
-            alert(`❌ Failed to publish: ${error.message}`);
+            addToast(`❌ Failed to publish: ${error.message}`, 'error');
         } finally {
             setIsPublishing(false);
         }
@@ -784,7 +848,7 @@ Teachers can now see their timetable in the AutoSubs app.`);
 
         if (!currentVersion) {
             console.log('9. No current version found');
-            alert('⚠️ Please save your mappings first (Tab 3)');
+            addToast('⚠️ Please save your mappings first (Tab 3)', 'warning');
             return;
         }
 
@@ -792,6 +856,7 @@ Teachers can now see their timetable in the AutoSubs app.`);
         setIsGenerating(true);
 
         try {
+            let timetable;
             // Try using local state first
             if (teacherSubjectMappings && teacherSubjectMappings.length > 0) {
                 console.log('11. Using local state with', teacherSubjectMappings.length, 'mappings');
@@ -805,7 +870,7 @@ Teachers can now see their timetable in the AutoSubs app.`);
                 // Test if generateTimetable function exists
                 console.log('13. generateTimetable function:', generateTimetable);
 
-                const timetable = generateTimetable(
+                timetable = generateTimetable(
                     teacherSubjectMappings,
                     distribution47,
                     bellTimings
@@ -817,25 +882,23 @@ Teachers can now see their timetable in the AutoSubs app.`);
 
                 setGeneratedTimetable(timetable);
 
-                alert(`✅ Timetable generated!
-  
+                addToast(`✅ Timetable generated!
+
 47 Classes scheduled
 ${Object.keys(timetable.teacherTimetables).length} Teachers scheduled
-${timetable.errors?.length || 0} warnings`);
-
-            } else {
+${timetable.errors?.length || 0} warnings`, 'success');
                 console.log('11. Local state empty, trying Firebase...');
                 const result = await loadTimetableMappings(academicYear);
                 console.log('12. Firebase load result:', result);
 
                 if (!result.mappings || result.mappings.length === 0) {
-                    alert('No teacher mappings found. Please add teachers in Tab 3.');
+                    addToast('No teacher mappings found. Please add teachers in Tab 3.', 'warning');
                     setIsGenerating(false);
                     return;
                 }
 
                 console.log('13. Using Firebase mappings:', result.mappings.length);
-                const timetable = generateTimetable(
+                timetable = generateTimetable(
                     result.mappings,
                     distribution47,
                     bellTimings
@@ -844,11 +907,11 @@ ${timetable.errors?.length || 0} warnings`);
                 console.log('14. Generation complete:', timetable);
                 setGeneratedTimetable(timetable);
 
-                alert(`✅ Timetable generated!
-  
+                addToast(`✅ Timetable generated!
+
 47 Classes scheduled
 ${Object.keys(timetable.teacherTimetables).length} Teachers scheduled
-${timetable.errors?.length || 0} warnings`);
+${timetable.errors?.length || 0} warnings`, 'success');
             }
 
         } catch (error) {
@@ -856,7 +919,7 @@ ${timetable.errors?.length || 0} warnings`);
             console.error('Error name:', error.name);
             console.error('Error message:', error.message);
             console.error('Error stack:', error.stack);
-            alert(`❌ Failed: ${error.message}`);
+            addToast(`❌ Failed: ${error.message}`, 'error');
         } finally {
             setIsGenerating(false);
         }
@@ -879,6 +942,26 @@ ${timetable.errors?.length || 0} warnings`);
             margin: '0 auto',
             fontFamily: 'Inter, sans-serif'
         }}>
+            {/* Toast notifications */}
+            {toasts.map(t => (
+                <div key={t.id} style={{
+                    position: 'fixed',
+                    top: '1rem',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: t.type === 'error' ? '#dc2626' : t.type === 'warning' ? '#fbbf24' : '#10b981',
+                    color: 'white',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '0.5rem',
+                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                    zIndex: 1000,
+                    marginBottom: '0.5rem',
+                    whiteSpace: 'pre-wrap'
+                }}>
+                    {t.msg}
+                </div>
+            ))}
+
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', maxWidth: '1440px', margin: '0 auto 2rem auto' }}>
                 <div>
@@ -1520,7 +1603,7 @@ ${timetable.errors?.length || 0} warnings`);
                                         );
                                         setDistribution47(updated);
                                         saveDistribution(updated);
-                                        alert('✅ Subjects synced from Tab 3!');
+                                        addToast('✅ Subjects synced from Tab 3!', 'success');
                                     }}
                                     style={{
                                         padding: '0.75rem 1.5rem',
@@ -1541,7 +1624,7 @@ ${timetable.errors?.length || 0} warnings`);
                                 <button
                                     onClick={() => {
                                         saveDistribution(distribution47);
-                                        alert('✅ Period distribution saved for 47 classrooms!');
+                                        addToast('✅ Period distribution saved for 47 classrooms!', 'success');
                                     }}
                                     style={{
                                         padding: '0.75rem 1.5rem',
@@ -1692,7 +1775,7 @@ ${timetable.errors?.length || 0} warnings`);
                                 </button>
                             </div>
 
-                            <div style={{ display: 'flex', gap: '0.5rem', marginLeft: 'auto' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
                                 {['6', '7', '8', '9', '10', '11', '12'].map(grade => (
                                     <button
                                         key={grade}
@@ -1711,6 +1794,64 @@ ${timetable.errors?.length || 0} warnings`);
                                 ))}
                             </div>
                         </div>
+
+                        {/* Merge Selected Toolbar (appears when eligible) */}
+                        {selectedCells.length > 1 && currentBulkSubject &&
+                            selectedCells.every(c => c.subject === currentBulkSubject) &&
+                            selectedCells.every(c => !isClassMerged(distribution47, currentBulkSubject, c.className)) &&
+                            <div style={{
+                                marginBottom: '1rem',
+                                padding: '0.75rem 1rem',
+                                background: '#7c3aed',
+                                color: 'white',
+                                borderRadius: '0.5rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                            }}>
+                                <span>{selectedCells.length} classes selected for <strong>{currentBulkSubject}</strong></span>
+                                <button
+                                    onClick={() => {
+                                        const answer = prompt('Enter total weekly periods for this combined group:', '5');
+                                        if (answer !== null) {
+                                            const total = parseInt(answer) || 0;
+                                            // create merged group
+                                            const classListForMerge = selectedCells.map(c => c.className);
+                                            const updated = addMergedGroup(
+                                                { ...distribution47 },
+                                                currentBulkSubject,
+                                                classListForMerge,
+                                                total
+                                            );
+                                            // set first class raw value and clear others
+                                            if (selectedCells.length > 0) {
+                                                const first = selectedCells[0].className;
+                                                updated[first][currentBulkSubject] = total;
+                                                selectedCells.slice(1).forEach(c => {
+                                                    updated[c.className][currentBulkSubject] = 0;
+                                                });
+                                            }
+                                            setDistribution47(updated);
+                                            saveDistribution(updated);
+                                            setSelectedClasses([]);
+                                            selectedCellsRef.current = [];
+                                            setSelectedCells([]);
+                                            addToast('✅ Classes merged', 'success');
+                                        }
+                                    }}
+                                    style={{
+                                        padding: '0.5rem 1rem',
+                                        background: '#4f46e5',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '0.375rem',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    🔗 Merge Selected
+                                </button>
+                            </div>
+                        }
 
                         {/* 47-COLUMN GRID with FROZEN SUBJECT COLUMN */}
                         <div style={{
@@ -1972,7 +2113,15 @@ ${timetable.errors?.length || 0} warnings`);
                                             {ALL_CLASSES.map(className => {
                                                 const cellKey = `${subject}-${className}`;
                                                 const isEditing = editingCell === cellKey;
-                                                const value = getValue(distribution47, subject, className);
+                                                const rawValue = getValue(distribution47, subject, className);
+                                                const group = getGroupForClass(distribution47, subject, className);
+                                                const isMerged = !!group;
+                                                const isFirst = group && group.classes[0] === className;
+                                                const displayValue = isMerged
+                                                    ? (isFirst ? `${group.total} periods` : `↳ ${group.total}`)
+                                                    : rawValue;
+                                                const bgColor = isMerged ? '#9333ea' : (rawValue > 0 ? '#4f46e5' : 'transparent');
+                                                const textColor = isMerged ? 'white' : (rawValue > 0 ? 'white' : '#94a3b8');
 
                                                 return (
                                                     <td
@@ -1980,9 +2129,23 @@ ${timetable.errors?.length || 0} warnings`);
                                                         style={{
                                                             padding: '0.5rem 0.25rem',
                                                             textAlign: 'center',
-                                                            background: selectedClasses.includes(className) ? 'rgba(79, 70, 229, 0.15)' : 'transparent',
+                                                            background: selectedCells.some(c => c.subject === subject && c.className === className) ? 'rgba(79, 70, 229, 0.15)' : 'transparent',
                                                             borderLeft: '1px solid #334155',
                                                             cursor: 'pointer'
+                                                        }}
+                                                        onMouseDown={(e) => {
+                                                            if (e.ctrlKey || e.metaKey) {
+                                                                toggleCtrlSelect(subject, className);
+                                                                setMouseDown(true);
+                                                                ctrlSelecting.current = true; // remember to suppress click
+                                                            } else {
+                                                                ctrlSelecting.current = false;
+                                                            }
+                                                        }}
+                                                        onMouseEnter={(e) => {
+                                                            if (mouseDown && (e.ctrlKey || e.metaKey)) {
+                                                                toggleCtrlSelect(subject, className);
+                                                            }
                                                         }}
                                                         onClick={(e) => {
                                                             // Handle shift+click range selection
@@ -1995,6 +2158,22 @@ ${timetable.errors?.length || 0} warnings`);
                                                                     const newSelection = [...new Set([...prev, ...range])];
                                                                     return newSelection;
                                                                 });
+                                                                // if we're merging within a subject, also add to selectedCells
+                                                                if (currentBulkSubject && currentBulkSubject === subject) {
+                                                                    setSelectedCells(prev => {
+                                                                        const added = range.map(cn => ({ subject, className: cn }));
+                                                                        // merge unique
+                                                                        const all = [...prev, ...added];
+                                                                        const uniq = [];
+                                                                        all.forEach(x => {
+                                                                            if (!uniq.find(y => y.subject === x.subject && y.className === x.className)) {
+                                                                                uniq.push(x);
+                                                                            }
+                                                                        });
+                                                                        selectedCellsRef.current = uniq;
+                                                                        return uniq;
+                                                                    });
+                                                                }
                                                             }
                                                             setLastSelectedClass(className);
                                                         }}
@@ -2007,7 +2186,17 @@ ${timetable.errors?.length || 0} warnings`);
                                                                     onChange={(e) => setEditValue(e.target.value)}
                                                                     onBlur={() => {
                                                                         let updated = { ...distribution47 };
-                                                                        updated = setValue(updated, subject, className, editValue);
+                                                                        if (isMerged && isFirst) {
+                                                                            // change group total
+                                                                            const grp = getGroupForClass(updated, subject, className);
+                                                                            if (grp) {
+                                                                                grp.total = parseInt(editValue) || 0;
+                                                                                // also mirror value in the first cell
+                                                                                updated[className][subject] = grp.total;
+                                                                            }
+                                                                        } else {
+                                                                            updated = setValue(updated, subject, className, editValue);
+                                                                        }
                                                                         setDistribution47(updated);
                                                                         saveDistribution(updated);
                                                                         setEditingCell(null);
@@ -2015,7 +2204,15 @@ ${timetable.errors?.length || 0} warnings`);
                                                                     onKeyDown={(e) => {
                                                                         if (e.key === 'Enter') {
                                                                             let updated = { ...distribution47 };
-                                                                            updated = setValue(updated, subject, className, editValue);
+                                                                            if (isMerged && isFirst) {
+                                                                                const grp = getGroupForClass(updated, subject, className);
+                                                                                if (grp) {
+                                                                                    grp.total = parseInt(editValue) || 0;
+                                                                                    updated[className][subject] = grp.total;
+                                                                                }
+                                                                            } else {
+                                                                                updated = setValue(updated, subject, className, editValue);
+                                                                            }
                                                                             setDistribution47(updated);
                                                                             saveDistribution(updated);
                                                                             setEditingCell(null);
@@ -2040,41 +2237,82 @@ ${timetable.errors?.length || 0} warnings`);
                                                             <div
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    setEditingCell(cellKey);
-                                                                    setEditValue(value);
-                                                                    setCurrentBulkSubject(subject);
-
-                                                                    // Ctrl+click multi-select
-                                                                    if (e.ctrlKey || e.metaKey) {
-                                                                        setSelectedClasses(prev =>
-                                                                            prev.includes(className)
-                                                                                ? prev.filter(c => c !== className)
-                                                                                : [...prev, className]
-                                                                        );
+                                                                    // if previous mousedown triggered ctrl-selection, do not start edit
+                                                                    if (ctrlSelecting.current) {
+                                                                        ctrlSelecting.current = false;
+                                                                        return;
                                                                     }
+                                                                    if (e.ctrlKey || e.metaKey) {
+                                                                        // ignore ctrl-clicks to avoid toggling edit mode
+                                                                        return;
+                                                                    }
+                                                                    if (isMerged && !isFirst) return; // don't edit non-first merged cells
+                                                                    // normal click goes into edit mode; selection handled separately on mouseDown
+                                                                    setSelectedClasses([]);
+                                                                    selectedCellsRef.current = [];
+                                                                    setSelectedCells([]);
+                                                                    setEditingCell(cellKey);
+                                                                    setEditValue(rawValue);
+                                                                    setCurrentBulkSubject(subject);
                                                                 }}
                                                                 style={{
                                                                     padding: '0.5rem 0.25rem',
-                                                                    background: value > 0 ? '#4f46e5' : 'transparent',
-                                                                    color: value > 0 ? 'white' : '#94a3b8',
+                                                                    background: bgColor,
+                                                                    color: textColor,
                                                                     borderRadius: '0.25rem',
-                                                                    fontWeight: value > 0 ? '600' : '400',
+                                                                    fontWeight: isMerged || rawValue > 0 ? '600' : '400',
                                                                     transition: 'all 0.1s',
                                                                     width: '100%',
-                                                                    textAlign: 'center'
+                                                                    textAlign: 'center',
+                                                                    position: 'relative'
                                                                 }}
                                                                 onMouseEnter={(e) => {
-                                                                    if (value === 0) {
+                                                                    if (!isMerged && rawValue === 0) {
                                                                         e.target.style.background = '#334155';
                                                                     }
                                                                 }}
                                                                 onMouseLeave={(e) => {
-                                                                    if (value === 0) {
+                                                                    if (!isMerged && rawValue === 0) {
                                                                         e.target.style.background = 'transparent';
                                                                     }
                                                                 }}
                                                             >
-                                                                {value}
+                                                                {displayValue}
+                                                                {/* demerge button on first cell */}
+                                                                {isMerged && isFirst && (
+                                                                    <button
+                                                                        onClick={(ev) => {
+                                                                            ev.stopPropagation();
+                                                                            if (confirm('Remove merged group?')) {
+                                                                                const grp = getGroupForClass(distribution47, subject, className);
+                                                                                let updated = { ...distribution47 };
+                                                                                updated = removeMergedGroup(updated, subject, grp.id);
+                                                                                // reset individual values to zero
+                                                                                grp.classes.forEach(cl => {
+                                                                                    updated[cl][subject] = 0;
+                                                                                });
+                                                                                setDistribution47(updated);
+                                                                                saveDistribution(updated);
+                                                                                setSelectedClasses([]);
+                                                                            }
+                                                                        }}
+                                                                        style={{
+                                                                            position: 'absolute',
+                                                                            top: '2px',
+                                                                            right: '2px',
+                                                                            background: 'transparent',
+                                                                            color: 'white',
+                                                                            border: 'none',
+                                                                            fontSize: '0.7rem',
+                                                                            cursor: 'pointer',
+                                                                            padding: '0',
+                                                                            lineHeight: '1'
+                                                                        }}
+                                                                        title="Demerge group"
+                                                                    >
+                                                                        ×
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </td>
@@ -2090,7 +2328,7 @@ ${timetable.errors?.length || 0} warnings`);
                                                 <button
                                                     onClick={() => {
                                                         setCurrentBulkSubject(subject);
-                                                        alert(`Selected subject: ${subject}. Use bulk edit toolbar to set periods.`);
+                                                        addToast(`Selected subject: ${subject}. Use bulk edit toolbar to set periods.`, 'success');
                                                     }}
                                                     style={{
                                                         padding: '0.4rem 0.8rem',
@@ -2134,11 +2372,27 @@ ${timetable.errors?.length || 0} warnings`);
                                 <span>📗 <span style={{ color: '#06b6d4' }}>Teal headers</span> = Grades 6-10</span>
                                 <span>📙 <span style={{ color: '#d97706' }}>Orange headers</span> = Grades 11-12</span>
                                 <span>✅ <span style={{ color: '#10b981' }}>Bulk edit</span> = Select classes → Set value → Apply</span>
+                                <span>🔗 <span style={{ color: '#9333ea' }}>Purple cells</span> = Merged group</span>
                             </div>
                             <div>
                                 Total subjects: {getAllSubjects(distribution47).length} | Total classes: 47
                             </div>
                         </div>
+                        {/* Merge summary list */}
+                        {Object.keys(getMergedGroups(distribution47)).length > 0 && (
+                            <div style={{ marginTop: '1rem', color: '#d1d5db', fontSize: '0.9rem' }}>
+                                <strong>Combined groups:</strong>
+                                <ul style={{ marginLeft: '1rem', marginTop: '0.25rem' }}>
+                                    {Object.entries(getMergedGroups(distribution47)).map(([subject, groups]) =>
+                                        groups.map(g => (
+                                            <li key={g.id}>
+                                                {subject}: {g.classes.join(' + ')} = {g.total} periods/week
+                                            </li>
+                                        ))
+                                    )}
+                                </ul>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -2289,7 +2543,7 @@ ${timetable.errors?.length || 0} warnings`);
                                     <button
                                         onClick={() => {
                                             if (!generatedTimetable) {
-                                                alert('Please generate timetable first');
+                                                addToast('Please generate timetable first', 'warning');
                                                 return;
                                             }
                                             const teacherCards = Object.keys(generatedTimetable.teacherTimetables)
@@ -2330,7 +2584,7 @@ ${timetable.errors?.length || 0} warnings`);
                                     <button
                                         onClick={() => {
                                             if (!generatedTimetable) {
-                                                alert('Please generate timetable first');
+                                                addToast('Please generate timetable first', 'warning');
                                                 return;
                                             }
                                             const classList = [
