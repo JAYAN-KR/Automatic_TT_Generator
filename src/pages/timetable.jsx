@@ -377,7 +377,13 @@ export default function TimetablePage() {
             if (field === 'class') {
                 updatedGroup.classes = [value];
             } else if (field === 'periods') {
-                updatedGroup.periods = Number(value);
+                const numVal = Number(value);
+                updatedGroup.periods = numVal;
+                // When PPS goes to 0, automatically reset blocks and day
+                if (numVal === 0) {
+                    updatedGroup.blockPeriods = 0;
+                    updatedGroup.preferredDay = 'Any';
+                }
             } else if (field === 'blockPeriods') {
                 updatedGroup.blockPeriods = Number(value);
             } else if (field === 'preferredDay') {
@@ -857,7 +863,7 @@ export default function TimetablePage() {
         return () => unsubscribe();
     }, []);
 
-    // --- Local Persistence ---
+    // --- Local Persistence (instant localStorage on every change) ---
     useEffect(() => {
         localStorage.setItem('tt_mappings', JSON.stringify(teacherSubjectMappings));
         localStorage.setItem('tt_subjects', JSON.stringify(subjects));
@@ -865,6 +871,40 @@ export default function TimetablePage() {
         localStorage.setItem('tt_lock', hasNewExtraction.toString());
         localStorage.setItem('tt_active_tab', activeTab.toString());
     }, [teacherSubjectMappings, subjects, teachers, hasNewExtraction, activeTab]);
+
+    // --- Auto-save allotmentRows to cloud (debounced 3s) ---
+    useEffect(() => {
+        if (!allotmentRows || allotmentRows.length === 0) return;
+        const timer = setTimeout(() => {
+            // silent save: write to localStorage + Firestore without toast
+            try { localStorage.setItem('tt_allotments', JSON.stringify({ rows: allotmentRows })); } catch { }
+            const docRef = doc(db, 'allotments', academicYear);
+            setDoc(docRef, { rows: allotmentRows, lastUpdated: new Date().toISOString(), academicYear })
+                .then(() => console.log('☁️ [AutoSave] allotments synced'))
+                .catch(e => console.warn('⚠️ [AutoSave] allotments cloud failed:', e.message));
+        }, 3000);
+        return () => clearTimeout(timer);
+    }, [allotmentRows]);
+
+    // --- Auto-save Teachers & Subjects to cloud (debounced 3s) ---
+    useEffect(() => {
+        if (!mappingRows || mappingRows.length === 0) return;
+        const timer = setTimeout(() => {
+            try {
+                localStorage.setItem('tt_mapping_rows', JSON.stringify(mappingRows));
+                localStorage.setItem('tt_teachers', JSON.stringify(teachers));
+                localStorage.setItem('tt_subjects', JSON.stringify(subjects));
+            } catch { }
+            const docRef = doc(db, 'dpt_data', academicYear);
+            setDoc(docRef, {
+                mappingRows, teachers, subjects,
+                lastUpdated: new Date().toISOString(), academicYear
+            })
+                .then(() => console.log('☁️ [AutoSave] dpt_data synced'))
+                .catch(e => console.warn('⚠️ [AutoSave] dpt_data cloud failed:', e.message));
+        }, 3000);
+        return () => clearTimeout(timer);
+    }, [mappingRows, teachers, subjects]);
 
     // Sort mappings whenever list length changes (e.g. initial load from localStorage)
     useEffect(() => {
@@ -1399,6 +1439,16 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const slotFree = (d, p, classes) => tFree(d, p) && cFree(d, p, classes);
             const teacherDayLoad = (d) => PRDS.filter(p => !tFree(d, p)).length;
 
+            // Returns true if the given day already has ANY block period for these classes
+            // (prevents two consecutive block pairs landing on the same day)
+            const dayAlreadyHasBlock = (d, classes) =>
+                PRDS.some(p =>
+                    classes.some(cn => {
+                        const slot = tt.classTimetables[cn]?.[d]?.[p];
+                        return slot && slot.isBlock;
+                    })
+                );
+
             // ── Scoring: flat across all periods; diversity-weighted ────────────
             // Treats all 8 periods equally in the band, relying on day diversity
             // and consecutive-avoidance to spread them out.
@@ -1435,46 +1485,152 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const placements = [];
 
             // ════════════════════════════════════════════════════════════════════
-            // PHASE 1 — BLOCK PERIODS (break-aware consecutive pairs)
+            // PHASE 1 — BLOCK PERIODS
+            //   First 30%  → rotating preferred pair  (P1-2 → P3-4 → P7-8 → P4-5)
+            //                across Mon → Wed → Fri → Tue → Thu
+            //   Remaining  → first available pair on any day
             // ════════════════════════════════════════════════════════════════════
             if (blockTasks.length > 0) {
-                addMessage(`\n🔍 Phase 1: Placing ${blockTasks.length} block period-pair(s)...`);
-                addMessage(`   Valid pairs (no break crossing): P1-2, P3-4, P4-5, P7-8`);
-                await sleep(200);
+                const blockPriorityCount = Math.ceil(blockTasks.length * 0.30);
 
-                for (const task of blockTasks) {
-                    let cDays = [...DAYS];
-                    if (task.preferredDay && task.preferredDay !== 'Any') {
-                        const target = DMAP[task.preferredDay] || task.preferredDay;
-                        cDays = [target];
-                        addMessage(`→ Fixed-day constraint: ${task.preferredDay}`);
-                    }
+                // Rotating preferred pairs for priority placement
+                // Order: P1-P2  →  P3-P4  →  P7-P8  →  P4-P5  (cycles)
+                const BLOCK_PREFERRED_ROTATION = [
+                    ['P1', 'P2'],  // 1st block: periods 1–2
+                    ['P3', 'P4'],  // 2nd block: periods 3–4
+                    ['P7', 'P8'],  // 3rd block: periods 7–8
+                    ['P4', 'P5'],  // 4th block: periods 4–5
+                ];
 
-                    const candidates = [];
-                    for (const d of cDays) {
-                        for (const [p1, p2] of VALID_BLOCK_PAIRS) {
-                            const p1Free = slotFree(d, p1, task.classes);
-                            const p2Free = slotFree(d, p2, task.classes);
-                            const status = p1Free && p2Free ? 'Both FREE ✓' : (!p1Free ? `${p1} BUSY ✗` : `${p2} BUSY ✗`);
-                            console.log(`[BLOCK] ${SHORT[d]} ${p1}-${p2}: ${status}`);
-                            addMessage(`  → Checking ${SHORT[d]} ${p1}-${p2}: ${status}`);
-                            if (p1Free && p2Free) {
-                                const score = Math.round((scoreSlot(d, p1, task.classes) + scoreSlot(d, p2, task.classes)) / 2);
-                                candidates.push({ d, p1, p2, score });
-                            }
-                            await sleep(80);
+                // All allowed pairs (break-aware), used as fallback
+                // P1-P2, P3-P4, P4-P5, P7-P8
+                const ALL_BLOCK_PAIRS = [
+                    ['P1', 'P2'],
+                    ['P3', 'P4'],
+                    ['P7', 'P8'],
+                    ['P4', 'P5'],
+                ];
+
+                const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+
+                // Count how many block PAIRS are already placed in the whole TT
+                // so the preferred-pair rotation continues across multiple CREATE calls.
+                let existingBlockPeriods = 0;
+                for (const tName of Object.keys(tt.teacherTimetables)) {
+                    for (const d of DAYS) {
+                        if (!tt.teacherTimetables[tName]?.[d]) continue;
+                        for (const p of PRDS) {
+                            const sl = tt.teacherTimetables[tName][d][p];
+                            if (sl && typeof sl === 'object' && sl.isBlock) existingBlockPeriods++;
                         }
                     }
+                }
+                // Each block pair occupies 2 period slots
+                const startingBlockIndex = Math.floor(existingBlockPeriods / 2);
+                console.log(`[BLOCK] Already-placed block pairs in TT: ${startingBlockIndex} → pair rotation starts at index ${startingBlockIndex % 4}`);
+                addMessage(`   Global block index starts at ${startingBlockIndex} (pair rotation: ${['P1-2', 'P3-4', 'P7-8', 'P4-5'][startingBlockIndex % 4]})`);
 
-                    if (candidates.length === 0) {
+                // Find the NEXT preferred day for 'Any' blocks:
+                // Scan which priority days already have block periods (any teacher).
+                // Take the HIGHEST position index among those days, then +1 = next preferred.
+                let highestUsedDayIdx = -1;
+                for (let di = 0; di < PRIORITY_DAYS_B.length; di++) {
+                    const dayName = PRIORITY_DAYS_B[di];
+                    let hasBlock = false;
+                    for (const tName of Object.keys(tt.teacherTimetables)) {
+                        if (!tt.teacherTimetables[tName]?.[dayName]) continue;
+                        for (const p of PRDS) {
+                            const sl = tt.teacherTimetables[tName][dayName][p];
+                            if (sl && typeof sl === 'object' && sl.isBlock) { hasBlock = true; break; }
+                        }
+                        if (hasBlock) break;
+                    }
+                    if (hasBlock) highestUsedDayIdx = di;
+                }
+                // nextBlockDayStart = position right after the last used block day
+                const nextBlockDayStart = (highestUsedDayIdx + 1) % 5;
+                console.log(`[BLOCK] Highest block day idx in TT: ${highestUsedDayIdx} (${highestUsedDayIdx >= 0 ? PRIORITY_DAYS_B[highestUsedDayIdx] : 'none'}) → next preferred: ${PRIORITY_DAYS_B[nextBlockDayStart]}`);
+                addMessage(`   Next preferred block day: ${PRIORITY_DAYS_B[nextBlockDayStart]}`);
+
+                addMessage(`\n🔍 Phase 1: Placing ${blockTasks.length} block period-pair(s)...`);
+                addMessage(`   Priority: ${blockPriorityCount} block(s) → preferred pair order | rest → first available`);
+                await sleep(200);
+
+                for (let bi = 0; bi < blockTasks.length; bi++) {
+                    const task = blockTasks[bi];
+                    const usePriority = bi < blockPriorityCount;
+
+                    // Preferred pair rotates GLOBALLY across all CREATE calls
+                    const globalBlockIdx = startingBlockIndex + bi;
+                    const preferredPair = BLOCK_PREFERRED_ROTATION[globalBlockIdx % 4];
+
+                    // Day list: for 'Any', use next-after-highest-used-day in sequence
+                    // bi=0 → nextBlockDayStart, bi=1 → nextBlockDayStart+1, etc.
+                    const baseDays = (task.preferredDay && task.preferredDay !== 'Any')
+                        ? [DMAP[task.preferredDay] || task.preferredDay]
+                        : (() => {
+                            const prefDay = PRIORITY_DAYS_B[(nextBlockDayStart + bi) % 5];
+                            return [prefDay, ...PRIORITY_DAYS_B.filter(d => d !== prefDay)];
+                        })();
+
+                    addMessage(`→ Block ${globalBlockIdx + 1} (global): ${usePriority ? `preferred pair P${preferredPair[0].replace('P', '')}-P${preferredPair[1].replace('P', '')}` : 'first available pair'}`);
+
+                    let best = null;
+
+                    if (usePriority) {
+                        // Step 1: Try the PREFERRED pair on priority days
+                        // (skip days that already have a block for these classes)
+                        const [pp1, pp2] = preferredPair;
+                        for (const d of baseDays) {
+                            if (dayAlreadyHasBlock(d, task.classes)) {
+                                addMessage(`  → ${SHORT[d]} P${pp1.replace('P', '')}-P${pp2.replace('P', '')}: SKIP (day already has a block) ✗`);
+                                continue;
+                            }
+                            const ok = slotFree(d, pp1, task.classes) && slotFree(d, pp2, task.classes);
+                            const status = ok ? 'FREE ✓' : 'BUSY ✗';
+                            addMessage(`  → ${SHORT[d]} P${pp1.replace('P', '')}-P${pp2.replace('P', '')}: ${status}`);
+                            await sleep(60);
+                            if (ok) { best = { d, p1: pp1, p2: pp2 }; break; }
+                        }
+
+                        // Step 2: If preferred pair not available, try other pairs on same day order
+                        // (still respecting the no-two-blocks-per-day rule)
+                        if (!best) {
+                            addMessage(`  → Preferred pair busy — trying fallback pairs...`);
+                            for (const d of baseDays) {
+                                if (dayAlreadyHasBlock(d, task.classes)) continue; // skip, already has block
+                                for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
+                                    if (fp1 === pp1 && fp2 === pp2) continue; // already tried
+                                    if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
+                                        addMessage(`  → Fallback: ${SHORT[d]} P${fp1.replace('P', '')}-P${fp2.replace('P', '')} FREE ✓`);
+                                        best = { d, p1: fp1, p2: fp2 };
+                                        break;
+                                    }
+                                }
+                                if (best) break;
+                            }
+                        }
+                    } else {
+                        // After 30%: first available pair — still no two blocks per day
+                        const allDays = baseDays.length > 0 ? baseDays : PRIORITY_DAYS_B;
+                        outer_b:
+                        for (const d of allDays) {
+                            if (dayAlreadyHasBlock(d, task.classes)) continue; // skip
+                            for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
+                                if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
+                                    best = { d, p1: fp1, p2: fp2 };
+                                    break outer_b;
+                                }
+                            }
+                        }
+                        if (best) addMessage(`  → First available: ${SHORT[best.d]} P${best.p1.replace('P', '')}-P${best.p2.replace('P', '')}`);
+                    }
+
+                    if (!best) {
                         addMessage('✗ No free consecutive block slot found!');
                         setCreationStatus(prev => ({ ...prev, isError: true }));
                         return;
                     }
-
-                    candidates.sort((a, b) => b.score - a.score);
-                    const best = candidates[0];
-                    addMessage(`→ Selected: ${SHORT[best.d]} ${best.p1}-${best.p2} (score: ${best.score})`);
 
                     // Commit block
                     task.classes.forEach(cn => {
@@ -1487,71 +1643,155 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     tt.teacherTimetables[teacher].weeklyPeriods += 2;
 
                     placements.push({ day: best.d, period: `${best.p1}-${best.p2}`, type: 'BLOCK' });
-                    addMessage(`✅ Block period placed: ${SHORT[best.d]} Periods ${best.p1.replace('P', '')}–${best.p2.replace('P', '')}`);
+                    addMessage(`✅ Block placed: ${SHORT[best.d]} Periods ${best.p1.replace('P', '')}–${best.p2.replace('P', '')}`);
                     placedCount++;
                     await sleep(200);
                 }
             }
 
             // ════════════════════════════════════════════════════════════════════
-            // PHASE 2 — SINGLE PERIODS (30% random, 70% scored, re-score each pick)
+            // PHASE 2 — SINGLE PERIODS
+            //   First 30%  → structured priority: odd periods then even,
+            //                days Mon→Wed→Fri→Tue→Thu
+            //   Remaining  → first available slot
             // ════════════════════════════════════════════════════════════════════
             if (singleTasks.length > 0) {
-                const randomCount = Math.ceil(singleTasks.length * 0.30);
-                const scoredCount = singleTasks.length - randomCount;
+                const priorityCount = Math.ceil(singleTasks.length * 0.30);
+                const freeCount = singleTasks.length - priorityCount;
                 addMessage(`\n🔍 Phase 2: Placing ${singleTasks.length} single period(s)...`);
-                addMessage(`   Strategy: ${randomCount} random pick(s), ${scoredCount} scored pick(s)`);
+                addMessage(`   Strategy: first ${priorityCount} → priority order (odd periods, Mon/Wed/Fri first) | next ${freeCount} → first available`);
                 await sleep(200);
 
-                // Scan available slots
-                const ref = singleTasks[0];
-                const scanDays = (ref.preferredDay && ref.preferredDay !== 'Any')
-                    ? DAYS.filter(d => d === (DMAP[ref.preferredDay] || ref.preferredDay))
-                    : [...DAYS];
+                // Priority order for the structured 30% — DIAGONAL WALK:
+                //   Each slot i uses PRIORITY_DAYS[i%5] and PRIORITY_PRDS[i%8]
+                //   So slot 0=Mon-P1, 1=Wed-P3, 2=Fri-P5, 3=Tue-P7, 4=Thu-P2,
+                //      slot 5=Mon-P4, 6=Wed-P6, 7=Fri-P8, 8=Tue-P1, 9=Thu-P3 ...
+                const PRIORITY_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+                const PRIORITY_PRDS = ['P1', 'P3', 'P5', 'P7', 'P2', 'P4', 'P6', 'P8'];
 
+                // Build 40-slot diagonal-walk ordered list
+                const orderedSlots = [];
+                for (let oi = 0; oi < 40; oi++)
+                    orderedSlots.push({
+                        d: PRIORITY_DAYS[oi % 5],
+                        p: PRIORITY_PRDS[oi % 8]
+                    });
+
+                // Count already-placed SINGLE (non-block) periods in TT globally
+                // so the diagonal walk continues from where previous CREATE left off
+                let existingSingles = 0;
+                for (const tName of Object.keys(tt.teacherTimetables)) {
+                    for (const d of DAYS) {
+                        if (!tt.teacherTimetables[tName]?.[d]) continue;
+                        for (const p of PRDS) {
+                            const sl = tt.teacherTimetables[tName][d][p];
+                            if (sl && typeof sl === 'object' && sl.className && !sl.isBlock)
+                                existingSingles++;
+                        }
+                    }
+                }
+                // currentSlotIdx advances as we place each priority single
+                let currentSlotIdx = existingSingles % 40;
+                console.log(`[SINGLE] Global singles already placed: ${existingSingles} → walk starts at orderedSlots[${currentSlotIdx}] = ${PRIORITY_DAYS[currentSlotIdx % 5]}-${PRIORITY_PRDS[currentSlotIdx % 8]}`);
+
+                // Show available slots overview
                 addMessage('→ Available slots across the week:');
-                for (const day of scanDays) {
-                    const free = PRDS.filter(p => slotFree(day, p, ref.classes));
-                    addMessage(free.length > 0
-                        ? `   ${SHORT[day]}: P${free.map(p => p.replace('P', '')).join(', P')} free`
-                        : `   ${SHORT[day]}: No free slots`);
+                const ref0 = singleTasks[0];
+                for (const day of PRIORITY_DAYS) {
+                    const free = PRDS.filter(p => slotFree(day, p, ref0.classes));
+                    if (free.length > 0)
+                        addMessage(`   ${SHORT[day]}: P${free.map(p => p.replace('P', '')).join(', P')} free`);
                 }
                 await sleep(300);
 
                 for (let i = 0; i < singleTasks.length; i++) {
                     const task = singleTasks[i];
-                    const isRandom = i < randomCount;
+                    const usePriority = i < priorityCount;
                     const taskDays = (task.preferredDay && task.preferredDay !== 'Any')
-                        ? DAYS.filter(d => d === (DMAP[task.preferredDay] || task.preferredDay))
-                        : [...DAYS];
+                        ? PRIORITY_DAYS.filter(d => d === (DMAP[task.preferredDay] || task.preferredDay))
+                        : PRIORITY_DAYS;
 
-                    // Collect all free slots
-                    const fresh = [];
-                    taskDays.forEach(d => {
-                        PRDS.forEach(p => {
-                            if (slotFree(d, p, task.classes))
-                                fresh.push({ d, p, score: scoreSlot(d, p, task.classes) });
-                        });
-                    });
+                    let pick = null;
 
-                    if (fresh.length === 0) {
+                    // Skip a day if this subject is already present there (block or single)
+                    // — prevents 3+ periods of the same subject on one day
+                    const subjectOnDay = (d) =>
+                        PRDS.some(p =>
+                            task.classes.some(cn => {
+                                const slot = tt.classTimetables[cn]?.[d]?.[p];
+                                return slot && slot.subject === subject;
+                            })
+                        );
+
+                    if (usePriority) {
+                        // Walk the diagonal ordered list starting from currentSlotIdx
+                        // Try up to 40 slots (full week) to find a free one
+                        for (let attempt = 0; attempt < 40; attempt++) {
+                            const slotIdx = (currentSlotIdx + attempt) % 40;
+                            const { d, p } = orderedSlots[slotIdx];
+                            // If preferredDay set, only consider that day
+                            if (taskDays.length > 0 && !taskDays.includes(d)) continue;
+                            // Skip if subject already appears on this day
+                            if (subjectOnDay(d)) continue;
+                            if (slotFree(d, p, task.classes)) {
+                                pick = { d, p };
+                                // Advance global walk pointer past this slot
+                                currentSlotIdx = (slotIdx + 1) % 40;
+                                break;
+                            }
+                        }
+                        if (pick)
+                            addMessage(`→ ${SHORT[pick.d]} P${pick.p.replace('P', '')} selected (priority ${i + 1}/${priorityCount}: diagonal walk)`);
+                    } else {
+                        // After priority phase: CONTINUE the diagonal walk (same orderedSlots)
+                        // This prevents multiple singles piling up consecutively on the same day
+                        for (let attempt = 0; attempt < 40; attempt++) {
+                            const slotIdx = (currentSlotIdx + attempt) % 40;
+                            const { d, p } = orderedSlots[slotIdx];
+                            if (taskDays.length > 0 && !taskDays.includes(d)) continue;
+                            // Skip if subject already appears on this day
+                            if (subjectOnDay(d)) continue;
+                            if (slotFree(d, p, task.classes)) {
+                                pick = { d, p };
+                                currentSlotIdx = (slotIdx + 1) % 40;
+                                break;
+                            }
+                        }
+                        // Hard fallback: try diagonal IGNORING the subject-clash rule
+                        // (last resort when all non-clashing days are full)
+                        if (!pick) {
+                            for (let attempt = 0; attempt < 40; attempt++) {
+                                const slotIdx = (currentSlotIdx + attempt) % 40;
+                                const { d, p } = orderedSlots[slotIdx];
+                                if (taskDays.length > 0 && !taskDays.includes(d)) continue;
+                                if (slotFree(d, p, task.classes)) {
+                                    pick = { d, p };
+                                    currentSlotIdx = (slotIdx + 1) % 40;
+                                    break;
+                                }
+                            }
+                        }
+                        // Absolute last resort: first free slot anywhere
+                        if (!pick) {
+                            const fallbackDays = taskDays.length > 0 ? taskDays : PRIORITY_DAYS;
+                            outer_s:
+                            for (const d of fallbackDays) {
+                                for (const p of PRDS) {
+                                    if (slotFree(d, p, task.classes)) {
+                                        pick = { d, p };
+                                        break outer_s;
+                                    }
+                                }
+                            }
+                        }
+                        if (pick)
+                            addMessage(`→ ${SHORT[pick.d]} P${pick.p.replace('P', '')} selected (distributed, slot ${i + 1})`);
+                    }
+
+                    if (!pick) {
                         addMessage(`✗ No free slot for single period ${i + 1}!`);
                         setCreationStatus(prev => ({ ...prev, isError: true }));
                         return;
-                    }
-
-                    let pick;
-                    if (isRandom) {
-                        // Random pick from all available slots
-                        pick = fresh[Math.floor(Math.random() * fresh.length)];
-                        addMessage(`→ ${SHORT[pick.d]} P${pick.p.replace('P', '')} selected (random pick ${i + 1}/${randomCount})`);
-                        console.log(`[SINGLE random] ${SHORT[pick.d]} ${pick.p}`);
-                    } else {
-                        // Scored pick — highest score wins
-                        fresh.sort((a, b) => b.score - a.score);
-                        pick = fresh[0];
-                        addMessage(`→ ${SHORT[pick.d]} P${pick.p.replace('P', '')} selected (score: ${pick.score})`);
-                        console.log(`[SINGLE scored] ${SHORT[pick.d]} ${pick.p} score=${pick.score}`);
                     }
 
                     // Commit pick
