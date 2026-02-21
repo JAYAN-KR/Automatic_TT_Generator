@@ -2071,16 +2071,40 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 // Save to cloud + local
                                 await saveDptData(mappingRows, allTeachers, allSubjects);
 
-                                // Sync allotment rows
+                                // Sync allotment rows — MERGE new pairs into existing rows
+                                // (preserve existing class/period data; only add truly new pairs)
+                                // Sort alphabetically: teacher A→Z, then subject A→Z
                                 localStorage.setItem('tt_teacher_subject_pairs', JSON.stringify(teacherSubjectPairs));
-                                const newRows = teacherSubjectPairs.map(p => ({
-                                    id: `${p.teacher}||${p.subject}`,
-                                    teacher: p.teacher,
-                                    subject: p.subject,
-                                    allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
-                                    total: 0
-                                }));
-                                setAllotmentRows(newRows);
+
+                                // Compute merged array from CURRENT allotmentRows state directly
+                                // (not inside functional updater) so we can immediately save to Firestore
+                                const existingMap = new Map(
+                                    allotmentRows.map(r => [`${r.teacher}||${r.subject}`, r])
+                                );
+                                const mergedRows = teacherSubjectPairs.map(p => {
+                                    const key = `${p.teacher}||${p.subject}`;
+                                    if (existingMap.has(key)) return existingMap.get(key);
+                                    return {
+                                        id: key,
+                                        teacher: p.teacher,
+                                        subject: p.subject,
+                                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, preferredDay: 'Any', isMerged: false }],
+                                        total: 0
+                                    };
+                                }).sort((a, b) => {
+                                    const ta = a.teacher.toLowerCase(), tb = b.teacher.toLowerCase();
+                                    if (ta < tb) return -1; if (ta > tb) return 1;
+                                    return a.subject.toLowerCase().localeCompare(b.subject.toLowerCase());
+                                });
+
+                                // Update React state
+                                setAllotmentRows(mergedRows);
+
+                                // Immediately persist to Firestore + localStorage (don't rely on debounce)
+                                await saveAllotments(mergedRows);
+
+                                // Switch to Tab 2 so user can see the updated list right away
+                                setActiveTab(1);
                             }}
                             style={{
                                 padding: '0.75rem 1.5rem',
@@ -2551,12 +2575,17 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 </thead>
                                 <tbody>
                                     {allotmentRows.map(row => {
-                                        const pairs = JSON.parse(localStorage.getItem('tt_teacher_subject_pairs') || '[]');
-                                        const teacherSubjects = [...new Set(pairs.filter(p => p.teacher === row.teacher).map(p => p.subject))].sort();
+                                        // Use mappingRows state (not localStorage) so newly added
+                                        // teachers appear immediately after saving in Tab 1
+                                        const teacherSubjects = [...new Set(
+                                            mappingRows
+                                                .filter(r => r.teacher === row.teacher && r.subject)
+                                                .map(r => r.subject)
+                                        )].sort();
 
                                         return (
                                             <tr key={row.id} style={{ borderBottom: '1px solid #334155' }}>
-                                                <td style={{ padding: '0.6rem', color: '#f1f5f9', fontWeight: '600' }}>
+                                                <td style={{ padding: '0.6rem', color: '#f1f5f9', fontWeight: '600', textAlign: 'left' }}>
                                                     {row.teacher}
                                                 </td>
                                                 <td style={{ padding: '0.6rem' }}>
