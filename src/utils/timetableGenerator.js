@@ -93,12 +93,13 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
                 const total = Number(g.total) || 0;
                 const blocks = Number(g.blockPeriods) || 0;
                 const singles = Math.max(0, total - (blocks * 2));
+                const preferredDay = g.preferredDay || 'Any';
 
                 for (let t = 0; t < blocks; t++) {
-                    allTasks.push({ type: 'BLOCK', teacher, subject, className: overlap[0], classes: overlap });
+                    allTasks.push({ type: 'BLOCK', teacher, subject, className: overlap[0], classes: overlap, preferredDay });
                 }
                 for (let t = 0; t < singles; t++) {
-                    allTasks.push({ type: 'SINGLE', teacher, subject, className: overlap[0], classes: overlap });
+                    allTasks.push({ type: 'SINGLE', teacher, subject, className: overlap[0], classes: overlap, preferredDay });
                 }
                 overlap.forEach(c => handledClasses.add(c));
             }
@@ -110,12 +111,13 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
             const total = (distribution && distribution[c] && distribution[c][subject]) || 0;
             const blocks = (distribution && distribution.__blocks && distribution.__blocks[c] && distribution.__blocks[c][subject]) || 0;
             const singles = Math.max(0, total - (blocks * 2));
+            const preferredDay = (distribution && distribution.__days && distribution.__days[c] && distribution.__days[c][subject]) || 'Any';
 
             for (let t = 0; t < blocks; t++) {
-                allTasks.push({ type: 'BLOCK', teacher, subject, className: c, classes: [c] });
+                allTasks.push({ type: 'BLOCK', teacher, subject, className: c, classes: [c], preferredDay });
             }
             for (let t = 0; t < singles; t++) {
-                allTasks.push({ type: 'SINGLE', teacher, subject, className: c, classes: [c] });
+                allTasks.push({ type: 'SINGLE', teacher, subject, className: c, classes: [c], preferredDay });
             }
         });
     });
@@ -128,11 +130,20 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
     allTasks.forEach((task, taskIdx) => {
         let placed = false;
 
-        // Randomize day search start to distribute better
-        const dayStart = Math.floor(Math.random() * days.length);
+        // Determine days to search
+        let candidateDays = [...days];
+        const dayMap = { 'Mon': 'Monday', 'Tue': 'Tuesday', 'Wed': 'Wednesday', 'Thu': 'Thursday', 'Fri': 'Friday', 'Sat': 'Saturday' };
 
-        for (let d = 0; d < days.length && !placed; d++) {
-            const day = days[(dayStart + d) % days.length];
+        if (task.preferredDay && task.preferredDay !== 'Any') {
+            const targetDay = dayMap[task.preferredDay] || task.preferredDay;
+            candidateDays = candidateDays.filter(d => d === targetDay);
+        }
+
+        // Randomize day search start to distribute better (only if multiple candidates)
+        const dayStart = candidateDays.length > 1 ? Math.floor(Math.random() * candidateDays.length) : 0;
+
+        for (let d = 0; d < candidateDays.length && !placed; d++) {
+            const day = candidateDays[(dayStart + d) % candidateDays.length];
 
             if (task.type === 'BLOCK') {
                 const pairs = [['P1', 'P2'], ['P3', 'P4'], ['P5', 'P6'], ['P7', 'P8']];
@@ -173,7 +184,10 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
 
         if (!placed) {
             console.warn(`  🔴 Conflict: No free slot for ${task.teacher} - ${task.subject} (${task.type}) - Forcing placement`);
-            const day = days[taskIdx % days.length];
+            const dayMap = { 'Mon': 'Monday', 'Tue': 'Tuesday', 'Wed': 'Wednesday', 'Thu': 'Thursday', 'Fri': 'Friday', 'Sat': 'Saturday' };
+            const day = (task.preferredDay && task.preferredDay !== 'Any')
+                ? (dayMap[task.preferredDay] || task.preferredDay)
+                : days[taskIdx % days.length];
             const period = `P${(taskIdx % 8) + 1}`;
             placeTask(task, day, period, task.type === 'BLOCK');
             if (task.type === 'BLOCK') {
