@@ -506,8 +506,9 @@ export default function TimetablePage() {
 
     // ─── DELETE TIMETABLE POPUP HANDLERS ──────────────────────────────────────────
     const PERIOD_TIMES = {
-        P1: '8:35', P2: '9:15', P3: '10:10', P4: '10:50',
-        P5: '11:30', P6: '12:20', P7: '13:30', P8: '14:05'
+        S1: '8:35', S2: '9:15', S3: '9:55', S4: '10:10',
+        S5: '10:50', S6: '11:30', S7: '12:10', S8: '12:20',
+        S9: '13:00', S10: '13:30', S11: '14:05'
     };
     const DAY_LABELS = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat' };
 
@@ -519,7 +520,7 @@ export default function TimetablePage() {
         const teacher = row.teacher;
         const tTT = generatedTimetable.teacherTimetables?.[teacher] || {};
         const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        const PERIODS = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'];
+        const PERIODS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
         const byClass = {};
         DAYS_ORDER.forEach(day => {
             PERIODS.forEach(p => {
@@ -914,32 +915,30 @@ export default function TimetablePage() {
     // Tab 5 (Bell Timings) State
     const [bellTimings, setBellTimings] = useState({
         middleSchool: {
-            CT: '8:00 - 8:35',
-            P1: '8:35 - 9:15',
-            P2: '9:15 - 9:55',
-            Break1: '9:55 - 10:10',
-            P3: '10:10 - 10:50',
-            P4: '10:50 - 11:30',
-            P5: '11:30 - 12:10',
-            Break2: '12:10 - 12:20',
-            P6: '12:20 - 13:00',
-            Lunch: '13:00 - 13:30',
-            P7: '13:30 - 14:05',
-            P8: '14:05 - 14:55'
+            S1: '8:35-9:15',
+            S2: '9:15-9:55',
+            S3: '9:55-10:10', // Break 1
+            S4: '10:10-10:50',
+            S5: '10:50-11:30',
+            S6: '11:30-12:10',
+            S7: '12:10-12:20', // Break 2
+            S8: '12:20-13:00',
+            S9: '13:00-13:30', // Lunch
+            S10: '13:30-14:05',
+            S11: '14:05-14:55'
         },
         seniorSchool: {
-            CT: '8:00 - 8:35',
-            P1: '8:35 - 9:15',
-            P2: '9:15 - 9:55',
-            Break1: '9:55 - 10:10',
-            P3: '10:10 - 10:50',
-            P4: '10:50 - 11:30',
-            P5: '11:30 - 12:10',
-            Break2: '12:10 - 12:20',
-            P6: '12:20 - 13:00',
-            P7: '13:00 - 13:30',
-            Lunch: '13:30 - 14:05',
-            P8: '14:05 - 14:55'
+            S1: '8:35-9:15',
+            S2: '9:15-9:55',
+            S3: '9:55-10:10', // Break 1
+            S4: '10:10-10:50',
+            S5: '10:50-11:30',
+            S6: '11:30-12:10',
+            S7: '12:10-12:20', // Break 2
+            S8: '12:20-13:00',
+            S9: '13:00-13:30', // Period 7
+            S10: '13:30-14:05', // Lunch
+            S11: '14:05-14:55'
         }
     });
 
@@ -1428,7 +1427,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         console.log('🟡 [CREATE] Existing generatedTimetable:', currentTT ? 'exists' : 'null - building fresh');
         if (!currentTT) {
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            const initPeriods = ['CT', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'];
+            const initPeriods = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
             const cTimetables = {};
             const tTimetables = {};
             const allTeachers = [...new Set(allotmentRows.map(r => r.teacher).filter(Boolean))];
@@ -1444,7 +1443,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             allTeachers.forEach(t => {
                 tTimetables[t] = {};
                 days.forEach(d => {
-                    tTimetables[t][d] = { CT: '', P1: '', P2: '', P3: '', P4: '', P5: '', P6: '', P7: '', P8: '', periodCount: 0 };
+                    tTimetables[t][d] = { S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
                 });
                 tTimetables[t].weeklyPeriods = 0;
             });
@@ -1497,19 +1496,22 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             const DMAP = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday' };
             const SHORT = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat' };
-            const PRDS = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'];
+            const PRDS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
 
-            // Block pairs that do NOT cross any break:
-            // Break-I  : between P2 and P3 (9:55–10:10)
-            // Break-II : between P5 and P6 (12:10–12:20)
-            // Lunch    : between P6 and P7 (13:00–13:30)
-            // Valid consecutive pairs: P1-P2, P3-P4, P4-P5, P7-P8
-            const VALID_BLOCK_PAIRS = [
-                ['P1', 'P2'],
-                ['P3', 'P4'],
-                ['P4', 'P5'],
-                ['P7', 'P8']
-            ];
+            // ── Teacher Availability Logic ────────────────────────────────────
+            const mapping = mappingRows.find(m => m.teacher === teacher && m.subject === subject);
+            const levelStr = mapping?.level || 'Main';
+            const isMiddle = levelStr.includes('Middle');
+
+            // Exclude Breaks (S3, S7) and Lunch (S9 for Middle, S10 for Main)
+            const AVAILABLE_SLOTS = isMiddle
+                ? ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S10', 'S11']
+                : ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S11'];
+
+            // Block pairs that do NOT cross any break or lunch
+            const VALID_BLOCK_PAIRS = isMiddle
+                ? [['S1', 'S2'], ['S4', 'S5'], ['S5', 'S6'], ['S10', 'S11']]
+                : [['S1', 'S2'], ['S4', 'S5'], ['S5', 'S6'], ['S8', 'S9']];
 
             // Deep-copy — commit only on full success
             const tt = JSON.parse(JSON.stringify(currentTT));
@@ -1518,7 +1520,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (!tt.teacherTimetables[teacher]) {
                 tt.teacherTimetables[teacher] = { weeklyPeriods: 0 };
                 DAYS.forEach(d => {
-                    tt.teacherTimetables[teacher][d] = { CT: '', P1: '', P2: '', P3: '', P4: '', P5: '', P6: '', P7: '', P8: '', periodCount: 0 };
+                    tt.teacherTimetables[teacher][d] = { S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
                 });
             }
 
@@ -1531,8 +1533,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             };
             const cFree = (d, p, classes) =>
                 classes.every(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject ?? '') === '');
-            const slotFree = (d, p, classes) => tFree(d, p) && cFree(d, p, classes);
-            const teacherDayLoad = (d) => PRDS.filter(p => !tFree(d, p)).length;
+            const slotFree = (d, p, classes) => AVAILABLE_SLOTS.includes(p) && tFree(d, p) && cFree(d, p, classes);
+            const teacherDayLoad = (d) => AVAILABLE_SLOTS.filter(p => !tFree(d, p)).length;
 
             // Returns true if the given day already has ANY block period for these classes
             // (prevents two consecutive block pairs landing on the same day)
@@ -1558,14 +1560,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                 // 2. Period Spread (25) — flat: all periods treated equally
                 //    slight edge to middle periods for natural feel
-                const midBonus = [0, 0.1, 0.25, 0.25, 0.2, 0.1, 0, 0];
+                const midBonus = [0, 0, 0.1, 0.2, 0.25, 0.25, 0.2, 0.1, 0.1, 0, 0];
                 const s2 = (0.75 + (midBonus[pIdx] || 0)) * 25;
 
                 // 3. Class Balance (20) — prefer less-loaded class days
                 const avgCLoad = classes.reduce((sum, cn) =>
-                    sum + PRDS.filter(q => (tt.classTimetables[cn]?.[d]?.[q]?.subject ?? '') !== '').length
+                    sum + AVAILABLE_SLOTS.filter(q => (tt.classTimetables[cn]?.[d]?.[q]?.subject ?? '') !== '').length
                     , 0) / (classes.length || 1);
-                const s3 = Math.max(0, 1 - avgCLoad / 8) * 20;
+                const s3 = Math.max(0, 1 - avgCLoad / AVAILABLE_SLOTS.length) * 20;
 
                 // 4. Avoid Consecutive (15) — penalise back-to-back teacher slots
                 let penalty = 0;
@@ -1589,22 +1591,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 const blockPriorityCount = Math.ceil(blockTasks.length * 0.30);
 
                 // Rotating preferred pairs for priority placement
-                // Order: P1-P2  →  P3-P4  →  P7-P8  →  P4-P5  (cycles)
-                const BLOCK_PREFERRED_ROTATION = [
-                    ['P1', 'P2'],  // 1st block: periods 1–2
-                    ['P3', 'P4'],  // 2nd block: periods 3–4
-                    ['P7', 'P8'],  // 3rd block: periods 7–8
-                    ['P4', 'P5'],  // 4th block: periods 4–5
-                ];
+                const BLOCK_PREFERRED_ROTATION = VALID_BLOCK_PAIRS;
 
                 // All allowed pairs (break-aware), used as fallback
-                // P1-P2, P3-P4, P4-P5, P7-P8
-                const ALL_BLOCK_PAIRS = [
-                    ['P1', 'P2'],
-                    ['P3', 'P4'],
-                    ['P7', 'P8'],
-                    ['P4', 'P5'],
-                ];
+                const ALL_BLOCK_PAIRS = VALID_BLOCK_PAIRS;
 
                 const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
 
@@ -1622,8 +1612,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 }
                 // Each block pair occupies 2 period slots
                 const startingBlockIndex = Math.floor(existingBlockPeriods / 2);
-                console.log(`[BLOCK] Already-placed block pairs in TT: ${startingBlockIndex} → pair rotation starts at index ${startingBlockIndex % 4}`);
-                addMessage(`   Global block index starts at ${startingBlockIndex} (pair rotation: ${['P1-2', 'P3-4', 'P7-8', 'P4-5'][startingBlockIndex % 4]})`);
+                const rotLabels = VALID_BLOCK_PAIRS.map(pair => `${pair[0].replace('S', '')}-${pair[1].replace('S', '')}`);
+                console.log(`[BLOCK] Already-placed block pairs in TT: ${startingBlockIndex} → pair rotation starts at index ${startingBlockIndex % VALID_BLOCK_PAIRS.length}`);
+                addMessage(`   Global block index starts at ${startingBlockIndex} (pair rotation: ${rotLabels[startingBlockIndex % VALID_BLOCK_PAIRS.length]})`);
 
                 // Find the NEXT preferred day for 'Any' blocks:
                 // Scan which priority days already have block periods (any teacher).
@@ -1762,14 +1753,15 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 //   So slot 0=Mon-P1, 1=Wed-P3, 2=Fri-P5, 3=Tue-P7, 4=Thu-P2,
                 //      slot 5=Mon-P4, 6=Wed-P6, 7=Fri-P8, 8=Tue-P1, 9=Thu-P3 ...
                 const PRIORITY_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
-                const PRIORITY_PRDS = ['P1', 'P3', 'P5', 'P7', 'P2', 'P4', 'P6', 'P8'];
+                const PRIORITY_PRDS = AVAILABLE_SLOTS;
+                const TOTAL_PRIORITY_SLOTS = PRIORITY_DAYS.length * PRIORITY_PRDS.length;
 
-                // Build 40-slot diagonal-walk ordered list
+                // Build diagonal-walk ordered list
                 const orderedSlots = [];
-                for (let oi = 0; oi < 40; oi++)
+                for (let oi = 0; oi < TOTAL_PRIORITY_SLOTS; oi++)
                     orderedSlots.push({
-                        d: PRIORITY_DAYS[oi % 5],
-                        p: PRIORITY_PRDS[oi % 8]
+                        d: PRIORITY_DAYS[oi % PRIORITY_DAYS.length],
+                        p: PRIORITY_PRDS[oi % PRIORITY_PRDS.length]
                     });
 
                 // Count already-placed SINGLE (non-block) periods in TT globally
@@ -1786,16 +1778,16 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     }
                 }
                 // currentSlotIdx advances as we place each priority single
-                let currentSlotIdx = existingSingles % 40;
-                console.log(`[SINGLE] Global singles already placed: ${existingSingles} → walk starts at orderedSlots[${currentSlotIdx}] = ${PRIORITY_DAYS[currentSlotIdx % 5]}-${PRIORITY_PRDS[currentSlotIdx % 8]}`);
+                let currentSlotIdx = existingSingles % TOTAL_PRIORITY_SLOTS;
+                console.log(`[SINGLE] Global singles already placed: ${existingSingles} → walk starts at orderedSlots[${currentSlotIdx}] = ${PRIORITY_DAYS[currentSlotIdx % PRIORITY_DAYS.length]}-${PRIORITY_PRDS[currentSlotIdx % PRIORITY_PRDS.length]}`);
 
                 // Show available slots overview
                 addMessage('→ Available slots across the week:');
                 const ref0 = singleTasks[0];
                 for (const day of PRIORITY_DAYS) {
-                    const free = PRDS.filter(p => slotFree(day, p, ref0.classes));
+                    const free = PRDS.filter(p => AVAILABLE_SLOTS.includes(p) && slotFree(day, p, ref0.classes));
                     if (free.length > 0)
-                        addMessage(`   ${SHORT[day]}: P${free.map(p => p.replace('P', '')).join(', P')} free`);
+                        addMessage(`   ${SHORT[day]}: S${free.map(p => p.replace('S', '')).join(', S')} free`);
                 }
                 await sleep(300);
 
@@ -3268,38 +3260,72 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                             {/* Timetable grid */}
                                             <div style={{ overflowX: 'auto', width: '100%', maxWidth: 1200, margin: '0 auto' }}>
-                                                <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1100, background: 'transparent', color: '#f1f5f9', fontFamily: 'inherit' }}>
+                                                <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '1100px', background: 'transparent', color: '#f1f5f9', fontFamily: 'inherit' }}>
                                                     <thead>
                                                         <tr>
                                                             <th style={ttCellHeader({})}></th>
-                                                            <th style={ttCellHeader({})}>1<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>8:35-9:15</span></th>
-                                                            <th style={ttCellHeader({})}>2<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>9:15-9:55</span></th>
-                                                            <th style={ttCellHeader({})}>BREAK-I<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>9:55-10:10</span></th>
-                                                            <th style={ttCellHeader({})}>3<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>10:10-10:50</span></th>
-                                                            <th style={ttCellHeader({})}>4<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>10:50-11:30</span></th>
-                                                            <th style={ttCellHeader({})}>5<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>11:30-12:10</span></th>
-                                                            <th style={ttCellHeader({})}>BREAK-II<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>12:10-12:20</span></th>
-                                                            <th style={ttCellHeader({})}>6<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>12:20-13:00</span></th>
-                                                            <th style={ttCellHeader({})}>LUNCH<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>13:00-13:30</span></th>
-                                                            <th style={ttCellHeader({})}>7<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>13:30-14:05</span></th>
-                                                            <th style={ttCellHeader({})}>8<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>14:05-14:55</span></th>
+                                                            {(() => {
+                                                                const isMiddle = ['6', '7', '8'].includes(activeGradeSubTab);
+                                                                const headers = [
+                                                                    { l: '1', t: '8:35-9:15' }, { l: '2', t: '9:15-9:55' },
+                                                                    { l: 'BREAK-I', t: '9:55-10:10', b: true },
+                                                                    { l: '3', t: '10:10-10:50' }, { l: '4', t: '10:50-11:30' }, { l: '5', t: '11:30-12:10' },
+                                                                    { l: 'BREAK-II', t: '12:10-12:20', b: true },
+                                                                    { l: '6', t: '12:20-13:00' },
+                                                                    { l: isMiddle ? 'LUNCH' : '7', t: '13:00-13:30', lu: isMiddle },
+                                                                    { l: isMiddle ? '8' : 'LUNCH', t: '13:30-14:05', lu: !isMiddle },
+                                                                    { l: '9', t: '14:05-14:55' }
+                                                                ];
+                                                                return headers.map((h, hi) => (
+                                                                    <th key={hi} style={ttCellHeader({
+                                                                        background: h.b ? 'rgba(251,191,36,0.1)' : (h.lu ? 'rgba(56,189,248,0.1)' : 'transparent'),
+                                                                        color: h.b ? '#fbbf24' : (h.lu ? '#38bdf8' : '#f1f5f9')
+                                                                    })}>
+                                                                        {h.l}<br /><span style={{ fontWeight: 400, fontSize: '0.8em', color: '#94a3b8' }}>{h.t}</span>
+                                                                    </th>
+                                                                ));
+                                                            })()}
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         {DAYS.map(([label, dayKey], i) => (
                                                             <tr key={label}>
                                                                 <th style={ttCellDay()}>{label}</th>
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'P1')}</td>
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'P2')}</td>
-                                                                {i === 0 ? <td style={ttCellBreak('BREAK - I', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK - I</span></td> : null}
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'P3')}</td>
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'P4')}</td>
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'P5')}</td>
-                                                                {i === 0 ? <td style={ttCellBreak('BREAK - II', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK - II</span></td> : null}
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'P6')}</td>
-                                                                {i === 0 ? <td style={ttCellBreak('LUNCH BREAK', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH BREAK</span></td> : null}
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'P7')}</td>
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'P8')}</td>
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'S1')}</td>
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'S2')}</td>
+
+                                                                {/* S3: BREAK I */}
+                                                                <td style={{ ...ttCell(), background: 'rgba(251,191,36,0.05)', color: '#fbbf24', fontSize: '0.7rem', fontWeight: 800 }}>BREAK</td>
+
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'S4')}</td>
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'S5')}</td>
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'S6')}</td>
+
+                                                                {/* S7: BREAK II */}
+                                                                <td style={{ ...ttCell(), background: 'rgba(251,191,36,0.05)', color: '#fbbf24', fontSize: '0.7rem', fontWeight: 800 }}>BREAK</td>
+
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'S8')}</td>
+
+                                                                {/* S9 & S10: Dynamic Periodic/Lunch */}
+                                                                {(() => {
+                                                                    const isMiddle = ['6', '7', '8'].includes(activeGradeSubTab);
+                                                                    return (
+                                                                        <>
+                                                                            {isMiddle ? (
+                                                                                <td style={{ ...ttCell(), background: 'rgba(56,189,248,0.05)', color: '#38bdf8', fontSize: '0.7rem', fontWeight: 800 }}>LUNCH</td>
+                                                                            ) : (
+                                                                                <td style={ttCell()}>{renderCell(dayKey, 'S9')}</td>
+                                                                            )}
+                                                                            {isMiddle ? (
+                                                                                <td style={ttCell()}>{renderCell(dayKey, 'S10')}</td>
+                                                                            ) : (
+                                                                                <td style={{ ...ttCell(), background: 'rgba(56,189,248,0.05)', color: '#38bdf8', fontSize: '0.7rem', fontWeight: 800 }}>LUNCH</td>
+                                                                            )}
+                                                                        </>
+                                                                    );
+                                                                })()}
+
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'S11')}</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
@@ -4176,7 +4202,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 {/* Tab 3: DPT (Day, Period, Time) */}
                 {activeTab === 3 && (() => {
                     const DPT_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                    const DPT_PERIODS = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'];
+                    const DPT_PERIODS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
                     const DPT_DAY_SHORT = { Monday: 'MON', Tuesday: 'TUE', Wednesday: 'WED', Thursday: 'THU', Friday: 'FRI', Saturday: 'SAT' };
 
                     if (!generatedTimetable) {
@@ -4197,7 +4223,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         return slot.className; // may be "6A" or "6A/6B" for merged
                     };
 
-                    // Count busy periods per teacher
+                    // Count busy periods per teacher (all 11 slots)
                     const busyCount = (teacher) => DPT_DAYS.reduce((acc, day) =>
                         acc + DPT_PERIODS.filter(p => getClassName(teacher, day, p)).length, 0);
 
@@ -4259,7 +4285,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 whiteSpace: 'nowrap'
                                             }}>Total</th>
                                             {DPT_DAYS.map(day => (
-                                                <th key={day} colSpan={8} style={{
+                                                <th key={day} colSpan={11} style={{
                                                     background: '#1e293b', color: '#a5b4fc',
                                                     fontSize: '0.7rem', fontWeight: 800,
                                                     padding: '0.4rem 0', textAlign: 'center',
@@ -4317,18 +4343,26 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     {/* Period cells */}
                                                     {DPT_DAYS.map((day, di) => (
                                                         DPT_PERIODS.map((p, pi) => {
+                                                            const mapping = mappingRows.find(m => m.teacher === teacher);
+                                                            const isMiddle = mapping?.level?.includes('Middle');
+                                                            const isBreak = p === 'S3' || p === 'S7';
+                                                            const isLunch = isMiddle ? p === 'S9' : p === 'S10';
+
                                                             const cn = getClassName(teacher, day, p);
+                                                            const content = isBreak ? 'BREAK' : (isLunch ? 'LUNCH' : (cn || ''));
+                                                            const isReserved = isBreak || isLunch;
+
                                                             return (
-                                                                <td key={`${day}-${p}`} title={cn ? `${teacher} → ${cn} (${day} ${p})` : `${teacher} FREE (${day} ${p})`}
+                                                                <td key={`${day}-${p}`} title={cn ? `${teacher} → ${cn} (${day} ${p})` : (isReserved ? `${content}` : `${teacher} FREE (${day} ${p})`)}
                                                                     style={{
                                                                         ...cellBase,
                                                                         borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
-                                                                        background: cn ? 'rgba(79,70,229,0.22)' : '#0f172a',
-                                                                        color: cn ? '#a5b4fc' : '#1e293b',
-                                                                        cursor: cn ? 'default' : 'default'
+                                                                        background: cn ? 'rgba(79,70,229,0.22)' : (isBreak ? 'rgba(251,191,36,0.1)' : (isLunch ? 'rgba(56,189,248,0.1)' : '#0f172a')),
+                                                                        color: cn ? '#a5b4fc' : (isBreak ? '#fbbf24' : (isLunch ? '#38bdf8' : '#1e293b')),
+                                                                        fontSize: isReserved ? '0.55rem' : '0.65rem'
                                                                     }}
                                                                 >
-                                                                    {cn || ''}
+                                                                    {content}
                                                                 </td>
                                                             );
                                                         })
