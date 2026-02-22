@@ -4438,79 +4438,179 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 )}
 
                 {/* Tab 3: DPT (Day, Period, Time) */}
-                {activeTab === 3 && (
-                    <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                        <div style={{
-                            background: '#1e293b',
-                            borderRadius: '1.5rem',
-                            padding: '3rem',
-                            border: '1px solid #334155',
-                            textAlign: 'center'
-                        }}>
-                            <div style={{ fontSize: '4rem', marginBottom: '1.5rem' }}>🕒</div>
-                            <h2 style={{ fontSize: '2.5rem', fontWeight: '900', color: '#f1f5f9', marginBottom: '1rem' }}>DPT Configuration</h2>
-                            <p style={{ color: '#94a3b8', fontSize: '1.2rem', maxWidth: '600px', margin: '0 auto 2.5rem auto', lineHeight: '1.6' }}>
-                                Manage Day, Period, and Time constraints here. Configure specific time slots,
-                                period durations, and day-wise settings for your timetable.
-                            </p>
+                {activeTab === 3 && (() => {
+                    const DPT_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                    const DPT_PERIODS = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'];
+                    const DPT_DAY_SHORT = { Monday: 'MON', Tuesday: 'TUE', Wednesday: 'WED', Thursday: 'THU', Friday: 'FRI', Saturday: 'SAT' };
 
-                            <div style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                                gap: '2rem',
-                                marginTop: '2rem'
-                            }}>
-                                <div style={{
-                                    background: 'rgba(59, 130, 246, 0.1)',
-                                    padding: '2rem',
-                                    borderRadius: '1.25rem',
-                                    border: '1px solid rgba(59, 130, 246, 0.2)',
-                                    transition: 'transform 0.3s ease',
-                                    cursor: 'pointer'
-                                }}
-                                    onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
-                                    onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                                >
-                                    <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>📅</div>
-                                    <h4 style={{ color: '#3b82f6', fontSize: '1.25rem', fontWeight: '800', marginBottom: '0.75rem' }}>Active Days</h4>
-                                    <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.5' }}>Select which days of the week the school is active (e.g., Mon-Fri or Mon-Sat).</p>
+                    if (!generatedTimetable) {
+                        return (
+                            <div style={{ animation: 'fadeIn 0.3s ease-out', textAlign: 'center', padding: '5rem 2rem' }}>
+                                <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🕒</div>
+                                <h2 style={{ color: '#f1f5f9', fontSize: '1.8rem', fontWeight: 800, marginBottom: '0.75rem' }}>DPT — Teacher Availability</h2>
+                                <p style={{ color: '#64748b', fontSize: '1rem' }}>Generate a timetable first to see the DPT view.</p>
+                            </div>
+                        );
+                    }
+
+                    const teacherNames = Object.keys(generatedTimetable.teacherTimetables || {}).sort();
+                    // For each teacher/day/period → get className or null
+                    const getClassName = (teacher, day, period) => {
+                        const slot = generatedTimetable.teacherTimetables?.[teacher]?.[day]?.[period];
+                        if (!slot || !slot.className) return null;
+                        return slot.className; // may be "6A" or "6A/6B" for merged
+                    };
+
+                    // Count busy periods per teacher
+                    const busyCount = (teacher) => DPT_DAYS.reduce((acc, day) =>
+                        acc + DPT_PERIODS.filter(p => getClassName(teacher, day, p)).length, 0);
+
+                    const cellBase = {
+                        width: '40px', minWidth: '40px', height: '38px',
+                        textAlign: 'center', verticalAlign: 'middle',
+                        fontSize: '0.65rem', fontWeight: 700,
+                        border: '1px solid #1e293b',
+                        borderRadius: '4px',
+                        padding: '2px',
+                        transition: 'background 0.15s'
+                    };
+
+                    return (
+                        <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                            {/* Header */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                                <div>
+                                    <h2 style={{ color: '#f1f5f9', fontSize: '1.4rem', fontWeight: 900, margin: 0 }}>🕒 DPT — Teacher Availability</h2>
+                                    <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
+                                        Each cell shows the class being taught. Empty = FREE period.
+                                    </p>
                                 </div>
-
-                                <div style={{
-                                    background: 'rgba(139, 92, 246, 0.1)',
-                                    padding: '2rem',
-                                    borderRadius: '1.25rem',
-                                    border: '1px solid rgba(139, 92, 246, 0.2)',
-                                    transition: 'transform 0.3s ease',
-                                    cursor: 'pointer'
-                                }}
-                                    onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
-                                    onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                                >
-                                    <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🔢</div>
-                                    <h4 style={{ color: '#8b5cf6', fontSize: '1.25rem', fontWeight: '800', marginBottom: '0.75rem' }}>Periods per Day</h4>
-                                    <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.5' }}>Define how many periods run each day and handle special short-day schedules.</p>
-                                </div>
-
-                                <div style={{
-                                    background: 'rgba(16, 185, 129, 0.1)',
-                                    padding: '2rem',
-                                    borderRadius: '1.25rem',
-                                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                                    transition: 'transform 0.3s ease',
-                                    cursor: 'pointer'
-                                }}
-                                    onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
-                                    onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                                >
-                                    <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>⏰</div>
-                                    <h4 style={{ color: '#10b981', fontSize: '1.25rem', fontWeight: '800', marginBottom: '0.75rem' }}>Bell Timings</h4>
-                                    <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.5' }}>Precision control over start/end times for every period and break.</p>
+                                {/* Legend */}
+                                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: '#94a3b8' }}>
+                                        <span style={{ display: 'inline-block', width: 18, height: 18, background: 'rgba(79,70,229,0.25)', border: '1px solid #4f46e5', borderRadius: 3 }}></span>
+                                        Busy
+                                    </span>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: '#94a3b8' }}>
+                                        <span style={{ display: 'inline-block', width: 18, height: 18, background: '#0f172a', border: '1px solid #1e293b', borderRadius: 3 }}></span>
+                                        Free
+                                    </span>
                                 </div>
                             </div>
+
+                            {/* Table */}
+                            <div style={{ overflowX: 'auto', borderRadius: '0.75rem', border: '1px solid #334155' }}>
+                                <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', tableLayout: 'auto' }}>
+                                    <thead>
+                                        {/* Row 1: Teacher Name + Day group headers */}
+                                        <tr>
+                                            <th rowSpan={2} style={{
+                                                position: 'sticky', left: 0, zIndex: 3,
+                                                background: '#0f172a', color: '#818cf8',
+                                                fontSize: '0.72rem', fontWeight: 800,
+                                                textTransform: 'uppercase', letterSpacing: '0.05em',
+                                                padding: '0.6rem 1rem', textAlign: 'left',
+                                                borderRight: '2px solid #334155', borderBottom: '2px solid #334155',
+                                                minWidth: '160px', whiteSpace: 'nowrap'
+                                            }}>
+                                                Teacher
+                                            </th>
+                                            <th rowSpan={2} style={{
+                                                background: '#0f172a', color: '#64748b',
+                                                fontSize: '0.65rem', fontWeight: 700,
+                                                padding: '0.4rem 0.5rem', textAlign: 'center',
+                                                borderRight: '1px solid #334155', borderBottom: '2px solid #334155',
+                                                whiteSpace: 'nowrap'
+                                            }}>Total</th>
+                                            {DPT_DAYS.map(day => (
+                                                <th key={day} colSpan={8} style={{
+                                                    background: '#1e293b', color: '#a5b4fc',
+                                                    fontSize: '0.7rem', fontWeight: 800,
+                                                    padding: '0.4rem 0', textAlign: 'center',
+                                                    borderLeft: '2px solid #334155',
+                                                    borderBottom: '1px solid #334155',
+                                                    letterSpacing: '0.07em'
+                                                }}>
+                                                    {DPT_DAY_SHORT[day]}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                        {/* Row 2: P1–P8 sub-headers per day */}
+                                        <tr>
+                                            {DPT_DAYS.map(day => (
+                                                DPT_PERIODS.map((p, pi) => (
+                                                    <th key={`${day}-${p}`} style={{
+                                                        background: '#0f172a', color: '#475569',
+                                                        fontSize: '0.6rem', fontWeight: 700,
+                                                        padding: '0.3rem 0', textAlign: 'center',
+                                                        borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
+                                                        borderBottom: '2px solid #334155',
+                                                        width: '40px', minWidth: '40px'
+                                                    }}>
+                                                        {p}
+                                                    </th>
+                                                ))
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {teacherNames.map((teacher, ti) => {
+                                            const busy = busyCount(teacher);
+                                            return (
+                                                <tr key={teacher} style={{ background: ti % 2 === 0 ? '#0f172a' : '#111827' }}>
+                                                    {/* Teacher name — sticky */}
+                                                    <td style={{
+                                                        position: 'sticky', left: 0, zIndex: 2,
+                                                        background: ti % 2 === 0 ? '#0f172a' : '#111827',
+                                                        color: '#e2e8f0', fontSize: '0.78rem', fontWeight: 600,
+                                                        padding: '0.35rem 0.75rem',
+                                                        borderRight: '2px solid #334155',
+                                                        whiteSpace: 'nowrap'
+                                                    }}>
+                                                        {teacher}
+                                                    </td>
+                                                    {/* Busy count */}
+                                                    <td style={{
+                                                        textAlign: 'center', padding: '0.35rem 0.5rem',
+                                                        borderRight: '1px solid #334155',
+                                                        fontSize: '0.72rem', fontWeight: 800,
+                                                        color: busy > 0 ? '#818cf8' : '#475569'
+                                                    }}>
+                                                        {busy > 0 ? busy : '—'}
+                                                    </td>
+                                                    {/* Period cells */}
+                                                    {DPT_DAYS.map((day, di) => (
+                                                        DPT_PERIODS.map((p, pi) => {
+                                                            const cn = getClassName(teacher, day, p);
+                                                            return (
+                                                                <td key={`${day}-${p}`} title={cn ? `${teacher} → ${cn} (${day} ${p})` : `${teacher} FREE (${day} ${p})`}
+                                                                    style={{
+                                                                        ...cellBase,
+                                                                        borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
+                                                                        background: cn ? 'rgba(79,70,229,0.22)' : '#0f172a',
+                                                                        color: cn ? '#a5b4fc' : '#1e293b',
+                                                                        cursor: cn ? 'default' : 'default'
+                                                                    }}
+                                                                >
+                                                                    {cn || ''}
+                                                                </td>
+                                                            );
+                                                        })
+                                                    ))}
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Summary footer */}
+                            <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#475569', textAlign: 'right' }}>
+                                {teacherNames.length} teachers · {DPT_DAYS.length} days · {DPT_PERIODS.length} periods/day
+                            </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
 
                 {/* Tab 5: Generate */}
                 {
