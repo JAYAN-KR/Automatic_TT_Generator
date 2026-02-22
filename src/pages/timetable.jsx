@@ -1621,16 +1621,16 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
     };
 
 
-    const handleCreateSpecific = async (row) => {
+    const handleCreateSpecific = async (row, baseTT = null) => {
         if (!row.teacher || !row.subject) {
             addToast('Teacher and Subject must be selected', 'warning');
-            return;
+            return null;
         }
 
         console.log('🟢 [CREATE] Clicked for:', row.teacher, row.subject, row.allotments);
 
         // ── Build or reuse working timetable ───────────────────────────────────
-        let currentTT = generatedTimetable;
+        let currentTT = baseTT || generatedTimetable;
         console.log('🟡 [CREATE] Existing generatedTimetable:', currentTT ? 'exists' : 'null - building fresh');
         if (!currentTT) {
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -2116,16 +2116,56 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 setGeneratedTimetable(tt);
                 setCompletedCreations(prev => new Set([...prev, row.id]));
                 setTimeout(() => setCreationStatus(null), 5000);
+                return tt;
             } else {
                 setCreationStatus(prev => ({ ...prev, isError: true }));
                 addMessage(`❌ Only placed ${placedCount}/${tasks.length}. Check DPT for conflicts.`);
+                return null;
             }
 
         } catch (err) {
             console.error(err);
             addMessage(`❌ BUILD ERROR: ${err.message}`);
             setCreationStatus(prev => ({ ...prev, isError: true }));
+            return null;
         }
+    };
+
+    const handleBatchGenerate = async (label, criteria) => {
+        const rowsToProcess = allotmentRows.filter(row => {
+            if (!row.teacher || !row.subject) return false;
+            if (completedCreations.has(row.id)) return false;
+
+            const allClasses = row.allotments.flatMap(a => a.classes);
+            if (criteria === 'FULL') return true;
+            if (criteria === 'MID') return allClasses.some(c => /^[678]/.test(c));
+            if (criteria === 'MAIN') return allClasses.some(c => /^(9|10|11|12)/.test(c));
+            return allClasses.some(c => c.startsWith(criteria));
+        });
+
+        if (rowsToProcess.length === 0) {
+            addToast(`No pending teachers found for ${label}`, 'info');
+            return;
+        }
+
+        const confirmText = criteria === 'FULL'
+            ? '🚀 GENERATE ENTIRE TIMETABLE?\nThis will process ALL non-created teacher allotments sequentially.'
+            : `🚀 Generate all ${rowsToProcess.length} pending teachers for ${label}?`;
+
+        if (!confirm(confirmText)) return;
+
+        addToast(`Starting batch generation for ${label}...`, 'info');
+
+        let currentTT = generatedTimetable;
+        for (let i = 0; i < rowsToProcess.length; i++) {
+            const row = rowsToProcess[i];
+            currentTT = await handleCreateSpecific(row, currentTT);
+            if (!currentTT) {
+                addToast(`Batch stopped at ${row.teacher} due to an error.`, 'error');
+                break;
+            }
+        }
+        addToast(`✅ Batch generation for ${label} completed!`, 'success');
     };
 
 
@@ -2796,6 +2836,37 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 🧹 Clear Saved
                             </button>
                         </div>
+
+                        {/* Batch Generation Control Row */}
+                        <div style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '0.4rem',
+                            marginBottom: '1.5rem',
+                            background: '#1e293b',
+                            padding: '0.8rem',
+                            borderRadius: '1rem',
+                            border: '1px solid #334155',
+                            alignItems: 'center'
+                        }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 900, color: '#64748b', marginRight: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>⚡ Batch Gen:</span>
+                            {['6', '7', '8', '9', '10', '11', '12'].map(g => (
+                                <button key={g} onClick={() => handleBatchGenerate(`Grade ${g}`, g)} style={{ padding: '0.4rem 0.8rem', background: '#334155', color: '#e2e8f0', border: '1px solid #475569', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }} onMouseOver={e => e.currentTarget.style.background = '#475569'} onMouseOut={e => e.currentTarget.style.background = '#334155'}>
+                                    Gen{g}
+                                </button>
+                            ))}
+                            <div style={{ width: '1px', height: '1.2rem', background: '#334155', margin: '0 0.4rem' }} />
+                            <button onClick={() => handleBatchGenerate('Middle School', 'MID')} style={{ padding: '0.4rem 0.8rem', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
+                                GenMid
+                            </button>
+                            <button onClick={() => handleBatchGenerate('Main School', 'MAIN')} style={{ padding: '0.4rem 0.8rem', background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
+                                GenMain
+                            </button>
+                            <button onClick={() => handleBatchGenerate('Full School', 'FULL')} style={{ padding: '0.4rem 1.2rem', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 900, cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(245, 158, 11, 0.3)' }}>
+                                🚀 GenFull
+                            </button>
+                        </div>
+
                         <div style={{ overflowX: 'auto' }}>
                             <table style={{
                                 width: '100%',
@@ -4980,9 +5051,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     style={{
                                                                         ...cellBase,
                                                                         borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
-                                                                        background: cn ? 'rgba(79,70,229,0.22)' : (isBreak ? 'rgba(251,191,36,0.1)' : (isLunch ? 'rgba(56,189,248,0.1)' : '#0f172a')),
-                                                                        color: cn ? '#a5b4fc' : (isBreak ? '#fbbf24' : (isLunch ? '#38bdf8' : '#1e293b')),
-                                                                        fontSize: isReserved ? '0.55rem' : '0.65rem'
+                                                                        background: cn ? 'rgba(79,70,229,0.22)' : (isBreak ? 'rgba(251,191,36,0.03)' : (isLunch ? 'rgba(56,189,248,0.03)' : '#0f172a')),
+                                                                        color: cn ? '#a5b4fc' : (isBreak ? 'rgba(251,191,36,0.2)' : (isLunch ? 'rgba(56,189,248,0.2)' : '#1e293b')),
+                                                                        fontSize: isReserved ? '0.5rem' : '0.65rem',
+                                                                        opacity: isReserved ? 0.6 : 1
                                                                     }}
                                                                 >
                                                                     {content}
