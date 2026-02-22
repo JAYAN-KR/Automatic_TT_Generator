@@ -85,8 +85,10 @@ function ttCell(extra = {}) {
         fontWeight: 500,
         fontSize: '1.1em',
         textAlign: 'center',
-        minWidth: 60,
-        height: 44,
+        verticalAlign: 'middle',
+        minWidth: 75,
+        height: 68,
+        padding: '4px 3px',
         ...extra
     };
 }
@@ -3134,20 +3136,36 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 const classKey = gradeClasses[0] || `${activeGradeSubTab}A`;
                                                 const dayData = generatedTimetable?.classTimetables?.[classKey]?.[dayKey] || {};
 
-                                                const getCell = (periodKey) => {
+                                                const getCellData = (periodKey) => {
                                                     const cell = dayData[periodKey];
-                                                    if (!cell || !cell.subject) return '';
+                                                    if (!cell || !cell.subject) return null;
                                                     const sub = cell.subject.toUpperCase();
-                                                    return SUBJECT_ABBR[sub] || sub.slice(0, 5);
+                                                    const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
+                                                    const teacherFirst = cell.teacher
+                                                        ? cell.teacher.trim().split(/\s+/)[0].toLowerCase()
+                                                        : '';
+                                                    return { abbr, teacherFirst };
+                                                };
+                                                const renderCell = (periodKey) => {
+                                                    const data = getCellData(periodKey);
+                                                    if (!data) return null;
+                                                    return (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+                                                            <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>{data.abbr}</span>
+                                                            {data.teacherFirst && (
+                                                                <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1, letterSpacing: '0.01em' }}>{data.teacherFirst}</span>
+                                                            )}
+                                                        </div>
+                                                    );
                                                 };
 
                                                 return (
                                                     <tr key={label}>
                                                         <th style={ttCellDay()}>{label}</th>
                                                         {/* P1 */}
-                                                        <td style={ttCell()}>{getCell('P1')}</td>
+                                                        <td style={ttCell()}>{renderCell('P1')}</td>
                                                         {/* P2 */}
-                                                        <td style={ttCell()}>{getCell('P2')}</td>
+                                                        <td style={ttCell()}>{renderCell('P2')}</td>
                                                         {/* BREAK-I (rowspan) */}
                                                         {i === 0 ? (
                                                             <td style={ttCellBreak('BREAK - I', 6)} rowSpan={6}>
@@ -3157,11 +3175,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             </td>
                                                         ) : null}
                                                         {/* P3 */}
-                                                        <td style={ttCell()}>{getCell('P3')}</td>
+                                                        <td style={ttCell()}>{renderCell('P3')}</td>
                                                         {/* P4 */}
-                                                        <td style={ttCell()}>{getCell('P4')}</td>
+                                                        <td style={ttCell()}>{renderCell('P4')}</td>
                                                         {/* P5 */}
-                                                        <td style={ttCell()}>{getCell('P5')}</td>
+                                                        <td style={ttCell()}>{renderCell('P5')}</td>
                                                         {/* BREAK-II (rowspan) */}
                                                         {i === 0 ? (
                                                             <td style={ttCellBreak('BREAK - II', 6)} rowSpan={6}>
@@ -3171,7 +3189,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             </td>
                                                         ) : null}
                                                         {/* P6 */}
-                                                        <td style={ttCell()}>{getCell('P6')}</td>
+                                                        <td style={ttCell()}>{renderCell('P6')}</td>
                                                         {/* LUNCH (rowspan) */}
                                                         {i === 0 ? (
                                                             <td style={ttCellBreak('LUNCH BREAK', 6)} rowSpan={6}>
@@ -3181,9 +3199,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             </td>
                                                         ) : null}
                                                         {/* P7 */}
-                                                        <td style={ttCell()}>{getCell('P7')}</td>
+                                                        <td style={ttCell()}>{renderCell('P7')}</td>
                                                         {/* P8 */}
-                                                        <td style={ttCell()}>{getCell('P8')}</td>
+                                                        <td style={ttCell()}>{renderCell('P8')}</td>
                                                     </tr>
                                                 );
                                             })}
@@ -3249,26 +3267,42 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 const gradeClasses = CLASS_OPTIONS.filter(c => c.startsWith(activeGradeSubTab));
                                                 const classKey = gradeClasses[0] || `${activeGradeSubTab}A`;
                                                 const dayData = generatedTimetable?.classTimetables?.[classKey]?.[dayKey] || {};
-                                                const getCell = (periodKey) => {
+                                                const getCellData = (periodKey) => {
                                                     const cell = dayData[periodKey];
-                                                    if (!cell || !cell.subject) return '';
+                                                    if (!cell || !cell.subject) return null;
                                                     const sub = cell.subject.toUpperCase();
-                                                    return SUBJECT_ABBR[sub] || sub.slice(0, 5);
+                                                    const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
+                                                    const teacherFirst = cell.teacher
+                                                        ? cell.teacher.trim().split(/\s+/)[0].toLowerCase()
+                                                        : '';
+                                                    return { abbr, teacherFirst };
+                                                };
+                                                const renderCell = (periodKey) => {
+                                                    const data = getCellData(periodKey);
+                                                    if (!data) return null;
+                                                    return (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+                                                            <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>{data.abbr}</span>
+                                                            {data.teacherFirst && (
+                                                                <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1, letterSpacing: '0.01em' }}>{data.teacherFirst}</span>
+                                                            )}
+                                                        </div>
+                                                    );
                                                 };
                                                 return (
                                                     <tr key={label}>
                                                         <th style={ttCellDay()}>{label}</th>
-                                                        <td style={ttCell()}>{getCell('P1')}</td>
-                                                        <td style={ttCell()}>{getCell('P2')}</td>
+                                                        <td style={ttCell()}>{renderCell('P1')}</td>
+                                                        <td style={ttCell()}>{renderCell('P2')}</td>
                                                         {i === 0 ? <td style={ttCellBreak('BREAK - I', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#fbbf24', writingMode: 'vertical-rl' }}>BREAK - I</span></td> : null}
-                                                        <td style={ttCell()}>{getCell('P3')}</td>
-                                                        <td style={ttCell()}>{getCell('P4')}</td>
-                                                        <td style={ttCell()}>{getCell('P5')}</td>
+                                                        <td style={ttCell()}>{renderCell('P3')}</td>
+                                                        <td style={ttCell()}>{renderCell('P4')}</td>
+                                                        <td style={ttCell()}>{renderCell('P5')}</td>
                                                         {i === 0 ? <td style={ttCellBreak('BREAK - II', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#fbbf24', writingMode: 'vertical-rl' }}>BREAK - II</span></td> : null}
-                                                        <td style={ttCell()}>{getCell('P6')}</td>
+                                                        <td style={ttCell()}>{renderCell('P6')}</td>
                                                         {i === 0 ? <td style={ttCellBreak('LUNCH BREAK', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#38bdf8', writingMode: 'vertical-rl' }}>LUNCH BREAK</span></td> : null}
-                                                        <td style={ttCell()}>{getCell('P7')}</td>
-                                                        <td style={ttCell()}>{getCell('P8')}</td>
+                                                        <td style={ttCell()}>{renderCell('P7')}</td>
+                                                        <td style={ttCell()}>{renderCell('P8')}</td>
                                                     </tr>
                                                 );
                                             })}
