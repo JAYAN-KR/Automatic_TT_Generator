@@ -2540,68 +2540,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 {activeTab === 1 && (
                     <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
 
-                        {/* Interactive Builder Status Panel */}
-                        {creationStatus && (
-                            <div style={{
-                                background: '#0f172a',
-                                border: `2px solid ${creationStatus.isError ? '#ef4444' : '#3b82f6'}`,
-                                borderRadius: '1rem',
-                                padding: '1.5rem',
-                                marginBottom: '2rem',
-                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
-                                animation: 'slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
-                            }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                        <div style={{
-                                            width: '40px', height: '40px', borderRadius: '50%',
-                                            background: creationStatus.isError ? '#ef4444' : '#3b82f6',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontSize: '1.2rem'
-                                        }}>
-                                            {creationStatus.isError ? '❌' : '⚙️'}
-                                        </div>
-                                        <div>
-                                            <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800' }}>
-                                                BUILDING TIMETABLE: {creationStatus.teacher}
-                                            </h4>
-                                            <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{creationStatus.subject} • Step {creationStatus.completedCount}/7</span>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => setCreationStatus(null)}
-                                        style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem' }}
-                                    >✕</button>
-                                </div>
-
-                                <div
-                                    ref={el => {
-                                        statusScrollRef.current = el;
-                                        if (el) el.scrollTop = el.scrollHeight;
-                                    }}
-                                    style={{
-                                        background: '#020617',
-                                        borderRadius: '0.5rem',
-                                        padding: '1rem',
-                                        height: '240px',
-                                        overflowY: 'auto',
-                                        fontFamily: 'monospace',
-                                        fontSize: '0.88rem',
-                                        lineHeight: '1.6',
-                                        color: creationStatus.isError ? '#fca5a5' : '#38bdf8'
-                                    }}
-                                >
-                                    {creationStatus.messages.map((m, idx) => (
-                                        <div key={idx} style={{
-                                            borderLeft: `2px solid ${m.startsWith('✓') || m.startsWith('✅') ? '#10b981' : (m.startsWith('✗') || m.startsWith('❌') ? '#ef4444' : '#3b82f6')}`,
-                                            paddingLeft: '0.8rem',
-                                            marginBottom: '0.4rem',
-                                            opacity: idx === creationStatus.messages.length - 1 ? 1 : 0.7
-                                        }}>{m}</div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                        {/* Status ribbon is now a fixed bottom ribbon — see below */}
                         <h2 style={{ color: '#f1f5f9', marginBottom: '1rem' }}>Classes Alloted</h2>
                         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
                             <button
@@ -4730,6 +4669,89 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             <footer style={{ marginTop: '3rem', textAlign: 'center', opacity: 0.5, fontSize: '0.9rem', color: '#94a3b8', fontWeight: '600' }}>
                 created by @jayankrtripunithura 2026
             </footer>
+
+            {/* ─────────── Fixed bottom status ribbon ─────────── */}
+            {creationStatus && (
+                <div style={{
+                    position: 'fixed', bottom: 0, left: 0, right: 0,
+                    zIndex: 1000,
+                    background: creationStatus.isError ? '#1a0a0a' : '#0d1117',
+                    borderTop: `3px solid ${creationStatus.isError ? '#ef4444' : '#3b82f6'}`,
+                    boxShadow: '0 -4px 24px rgba(0,0,0,0.5)',
+                    animation: 'slideUp 0.3s cubic-bezier(0.4,0,0.2,1)',
+                    fontFamily: 'monospace',
+                }}>
+                    {/* Top bar: teacher name + subject + dismiss */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        padding: '0.45rem 1rem 0.3rem',
+                        borderBottom: '1px solid #1e293b',
+                    }}>
+                        <span style={{ fontSize: '1rem' }}>{creationStatus.isError ? '❌' : '⚙️'}</span>
+                        <span style={{ fontWeight: 800, fontSize: '0.85rem', color: creationStatus.isError ? '#fca5a5' : '#93c5fd', letterSpacing: '0.04em', fontFamily: 'inherit' }}>
+                            {creationStatus.isError ? 'ERROR' : 'BUILDING'}: {creationStatus.teacher}
+                        </span>
+                        <span style={{ color: '#475569', fontSize: '0.75rem', fontFamily: 'inherit' }}>· {creationStatus.subject}</span>
+                        <div style={{ flex: 1 }} />
+                        {/* Progress bar */}
+                        {!creationStatus.isError && (
+                            <div style={{ width: 120, height: 5, background: '#1e293b', borderRadius: 99, overflow: 'hidden', marginRight: '0.5rem' }}>
+                                <div style={{
+                                    height: '100%',
+                                    width: `${Math.min(100, (creationStatus.completedCount / 8) * 100)}%`,
+                                    background: 'linear-gradient(90deg,#3b82f6,#06b6d4)',
+                                    borderRadius: 99,
+                                    transition: 'width 0.4s ease'
+                                }} />
+                            </div>
+                        )}
+                        <button
+                            onClick={() => setCreationStatus(null)}
+                            title="Dismiss"
+                            style={{ background: 'transparent', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0 0.25rem' }}
+                        >✕</button>
+                    </div>
+
+                    {/* Log lines — last 5, newest at bottom */}
+                    <div
+                        ref={el => { statusScrollRef.current = el; if (el) el.scrollTop = el.scrollHeight; }}
+                        style={{
+                            padding: '0.35rem 1rem 0.45rem',
+                            maxHeight: 110,
+                            overflowY: 'auto',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.15rem',
+                        }}
+                    >
+                        {creationStatus.messages.slice(-6).map((m, idx, arr) => {
+                            const isSuccess = m.startsWith('✓') || m.startsWith('✅');
+                            const isError = m.startsWith('✗') || m.startsWith('❌');
+                            const isSep = m.startsWith('═');
+                            return (
+                                <div key={idx} style={{
+                                    fontSize: '0.78rem',
+                                    lineHeight: 1.55,
+                                    color: isSep ? '#334155' : isError ? '#fca5a5' : isSuccess ? '#86efac' : '#94a3b8',
+                                    opacity: idx === arr.length - 1 ? 1 : 0.6,
+                                    letterSpacing: '0.01em',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                }}>{m}</div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            <style>{`
+                @keyframes slideUp {
+                    from { transform: translateY(100%); opacity: 0; }
+                    to   { transform: translateY(0);    opacity: 1; }
+                }
+            `}</style>
+
         </div >
     );
 }
