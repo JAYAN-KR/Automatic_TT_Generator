@@ -113,10 +113,10 @@ function ttCellBreak(label, rowSpan) {
         fontWeight: 900,
         fontSize: '1.1em',
         textAlign: 'center',
-        minWidth: 60,
+        minWidth: 40,
         height: 44 * rowSpan,
         verticalAlign: 'middle',
-        ...((label === 'LUNCH BREAK') ? { color: '#38bdf8' } : {})
+        ...(label.includes('LUNCH') ? { color: '#38bdf8' } : {})
     };
 }
 
@@ -2074,17 +2074,23 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 </button>
             </div>
 
-            {/* Tabs Container */}
+            {/* Tabs Container (Sticky) */}
             <div style={{
+                position: 'sticky',
+                top: '0',
+                zIndex: 1000,
                 maxWidth: '1440px',
                 margin: '0 auto',
                 display: 'flex',
                 gap: '0.6rem',
-                background: '#1e293b',
-                padding: '0.6rem',
-                borderRadius: '1rem',
+                background: 'rgba(15, 23, 42, 0.9)', // Semitransparent dark
+                backdropFilter: 'blur(10px)',
+                padding: '0.8rem',
+                borderRadius: '0 0 1rem 1rem',
                 marginBottom: '2rem',
-                border: '1px solid #334155'
+                border: '1px solid #334155',
+                borderTop: 'none',
+                boxShadow: '0 15px 30px -5px rgba(0, 0, 0, 0.6)'
             }}>
                 {tabs.map((tab, idx) => (
                     <button
@@ -3294,35 +3300,52 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 <td style={ttCell()}>{renderCell(dayKey, 'S1')}</td>
                                                                 <td style={ttCell()}>{renderCell(dayKey, 'S2')}</td>
 
-                                                                {/* S3: BREAK I */}
-                                                                <td style={{ ...ttCell(), background: 'rgba(251,191,36,0.05)', color: '#fbbf24', fontSize: '0.7rem', fontWeight: 800 }}>BREAK</td>
+                                                                {/* S3: BREAK I merged vertically */}
+                                                                {i === 0 ? (
+                                                                    <td rowSpan={DAYS.length} style={ttCellBreak('BREAK', DAYS.length)}>
+                                                                        <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK</span>
+                                                                    </td>
+                                                                ) : null}
 
                                                                 <td style={ttCell()}>{renderCell(dayKey, 'S4')}</td>
                                                                 <td style={ttCell()}>{renderCell(dayKey, 'S5')}</td>
                                                                 <td style={ttCell()}>{renderCell(dayKey, 'S6')}</td>
 
-                                                                {/* S7: BREAK II */}
-                                                                <td style={{ ...ttCell(), background: 'rgba(251,191,36,0.05)', color: '#fbbf24', fontSize: '0.7rem', fontWeight: 800 }}>BREAK</td>
+                                                                {/* S7: BREAK II merged vertically */}
+                                                                {i === 0 ? (
+                                                                    <td rowSpan={DAYS.length} style={ttCellBreak('BREAK', DAYS.length)}>
+                                                                        <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK</span>
+                                                                    </td>
+                                                                ) : null}
 
                                                                 <td style={ttCell()}>{renderCell(dayKey, 'S8')}</td>
 
-                                                                {/* S9 & S10: Dynamic Periodic/Lunch */}
+                                                                {/* S9 & S10: Dynamic Periodic/Lunch merged vertically */}
                                                                 {(() => {
                                                                     const isMiddle = ['6', '7', '8'].includes(activeGradeSubTab);
-                                                                    return (
-                                                                        <>
-                                                                            {isMiddle ? (
-                                                                                <td style={{ ...ttCell(), background: 'rgba(56,189,248,0.05)', color: '#38bdf8', fontSize: '0.7rem', fontWeight: 800 }}>LUNCH</td>
-                                                                            ) : (
-                                                                                <td style={ttCell()}>{renderCell(dayKey, 'S9')}</td>
-                                                                            )}
-                                                                            {isMiddle ? (
+                                                                    if (isMiddle) {
+                                                                        return (
+                                                                            <>
+                                                                                {i === 0 ? (
+                                                                                    <td rowSpan={DAYS.length} style={ttCellBreak('LUNCH', DAYS.length)}>
+                                                                                        <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
+                                                                                    </td>
+                                                                                ) : null}
                                                                                 <td style={ttCell()}>{renderCell(dayKey, 'S10')}</td>
-                                                                            ) : (
-                                                                                <td style={{ ...ttCell(), background: 'rgba(56,189,248,0.05)', color: '#38bdf8', fontSize: '0.7rem', fontWeight: 800 }}>LUNCH</td>
-                                                                            )}
-                                                                        </>
-                                                                    );
+                                                                            </>
+                                                                        );
+                                                                    } else {
+                                                                        return (
+                                                                            <>
+                                                                                <td style={ttCell()}>{renderCell(dayKey, 'S9')}</td>
+                                                                                {i === 0 ? (
+                                                                                    <td rowSpan={DAYS.length} style={ttCellBreak('LUNCH', DAYS.length)}>
+                                                                                        <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
+                                                                                    </td>
+                                                                                ) : null}
+                                                                            </>
+                                                                        );
+                                                                    }
                                                                 })()}
 
                                                                 <td style={ttCell()}>{renderCell(dayKey, 'S11')}</td>
