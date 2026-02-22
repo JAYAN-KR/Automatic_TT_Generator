@@ -276,6 +276,7 @@ export default function TimetablePage() {
 
     // Format TT Tab - Grade Sub-tab State
     const [activeGradeSubTab, setActiveGradeSubTab] = useState('6');
+    const [activeClassSubTab, setActiveClassSubTab] = useState('6A');
 
     // Tab 2 (Teachers) State
     const [teachers, setTeachers] = useState(() => {
@@ -3256,326 +3257,122 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 )}
 
                 {/* Tab 4: Format TT (moved down) */}
-                {activeTab === 4 && (
-                    <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                        <button
-                            onClick={() => {
-                                addToast('Saved', 'success');
-                            }}
-                            style={{
-                                padding: '0.75rem 1.5rem',
-                                background: '#10b981',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '0.75rem',
-                                cursor: 'pointer',
-                                marginBottom: '1.5rem'
-                            }}
-                        >
-                            💾 Save
-                        </button>
-                        {/* Grade Sub-tabs */}
-                        <div style={{
-                            display: 'flex',
-                            gap: '0.6rem',
-                            marginBottom: '2rem',
-                            background: '#1e293b',
-                            padding: '0.8rem',
-                            borderRadius: '0.8rem',
-                            border: '1px solid #334155',
-                            flexWrap: 'wrap'
-                        }}>
-                            {[6, 7, 8, 9, 10, 11, 12].map(grade => (
-                                <button
-                                    key={grade}
-                                    onClick={() => setActiveGradeSubTab(grade.toString())}
-                                    style={{
-                                        padding: '0.7rem 1.2rem',
-                                        border: 'none',
-                                        borderRadius: '0.6rem',
-                                        background: activeGradeSubTab === grade.toString() ? '#4f46e5' : '#334155',
-                                        color: 'white',
-                                        fontWeight: '700',
-                                        fontSize: '0.9rem',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                        boxShadow: activeGradeSubTab === grade.toString() ? '0 4px 12px rgba(79, 70, 229, 0.3)' : 'none',
-                                        transform: activeGradeSubTab === grade.toString() ? 'translateY(-2px)' : 'none'
-                                    }}
-                                    onMouseOver={(e) => {
-                                        if (activeGradeSubTab !== grade.toString()) {
-                                            e.target.style.background = '#475569';
-                                            e.target.style.transform = 'translateY(-1px)';
-                                        }
-                                    }}
-                                    onMouseOut={(e) => {
-                                        if (activeGradeSubTab !== grade.toString()) {
-                                            e.target.style.background = '#334155';
-                                            e.target.style.transform = 'none';
-                                        }
-                                    }}
-                                >
-                                    Grade {grade}
-                                </button>
-                            ))}
+                {activeTab === 4 && (() => {
+                    const GRADE_CLASSES = {
+                        '6': ['6A', '6B', '6C', '6D', '6E', '6F', '6G'],
+                        '7': ['7A', '7B', '7C', '7D', '7E', '7F', '7G'],
+                        '8': ['8A', '8B', '8C', '8D', '8E', '8F', '8G'],
+                        '9': ['9A', '9B', '9C', '9D', '9E', '9F', '9G'],
+                        '10': ['10A', '10B', '10C', '10D', '10E', '10F', '10G'],
+                        '11': ['11A', '11B', '11C', '11D', '11E', '11F'],
+                        '12': ['12A', '12B', '12C', '12D', '12E', '12F'],
+                    };
+                    const gradeClassList = GRADE_CLASSES[activeGradeSubTab] || [];
+                    const DAYS = [['MON', 'Monday'], ['TUE', 'Tuesday'], ['WED', 'Wednesday'], ['THU', 'Thursday'], ['FRI', 'Friday'], ['SAT', 'Saturday']];
+
+                    return (
+                        <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                            {/* Grade Tabs */}
+                            <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.2rem', background: '#1e293b', padding: '0.8rem', borderRadius: '0.8rem', border: '1px solid #334155', flexWrap: 'wrap' }}>
+                                {[6, 7, 8, 9, 10, 11, 12].map(grade => (
+                                    <button key={grade}
+                                        onClick={() => setActiveGradeSubTab(grade.toString())}
+                                        style={{
+                                            padding: '0.6rem 1.1rem', border: 'none', borderRadius: '0.6rem', cursor: 'pointer',
+                                            background: activeGradeSubTab === grade.toString() ? '#4f46e5' : '#334155',
+                                            color: 'white', fontWeight: 700, fontSize: '0.9rem', transition: 'all 0.2s',
+                                            boxShadow: activeGradeSubTab === grade.toString() ? '0 4px 12px rgba(79,70,229,0.3)' : 'none',
+                                            transform: activeGradeSubTab === grade.toString() ? 'translateY(-2px)' : 'none'
+                                        }}
+                                    >Grade {grade}</button>
+                                ))}
+                            </div>
+
+                            {/* Page heading */}
+                            <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <h2 style={{ color: '#f1f5f9', fontSize: '1.2rem', fontWeight: 900, margin: 0 }}>
+                                    🎓 Grade {activeGradeSubTab} Timetables
+                                </h2>
+                                <span style={{ color: '#475569', fontSize: '0.8rem' }}>({gradeClassList.join(', ')})</span>
+                            </div>
+
+                            {/* All classes stacked vertically */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+                                {gradeClassList.map(cls => {
+                                    const renderCell = (dayKey, periodKey) => {
+                                        const cell = generatedTimetable?.classTimetables?.[cls]?.[dayKey]?.[periodKey];
+                                        if (!cell || !cell.subject) return null;
+                                        const sub = cell.subject.toUpperCase();
+                                        const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
+                                        const teacherFirst = cell.teacher
+                                            ? (() => { const pts = cell.teacher.trim().split(/\s+/); const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : ''; const si = pts[1] ? pts[1][0].toUpperCase() : ''; return si ? `${fn} ${si}` : fn; })()
+                                            : '';
+                                        return (
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+                                                <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>{abbr}</span>
+                                                {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1 }}>{teacherFirst}</span>}
+                                            </div>
+                                        );
+                                    };
+
+                                    return (
+                                        <div key={cls} style={{ background: '#1e293b', borderRadius: '1rem', padding: '1.5rem 2rem', border: '1px solid #334155' }}>
+                                            {/* Class header */}
+                                            <div style={{ textAlign: 'center', marginBottom: '1.2rem' }}>
+                                                <div style={{ fontSize: '1rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em' }}>
+                                                    THE CHOICE SCHOOL, Tripunithura &nbsp;·&nbsp; {academicYear || '2026-27'}
+                                                </div>
+                                                <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#0ea5e9', marginTop: '0.25rem', letterSpacing: '0.06em' }}>
+                                                    {cls}
+                                                </div>
+                                            </div>
+
+                                            {/* Timetable grid */}
+                                            <div style={{ overflowX: 'auto', width: '100%', maxWidth: 1200, margin: '0 auto' }}>
+                                                <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1100, background: 'transparent', color: '#f1f5f9', fontFamily: 'inherit' }}>
+                                                    <thead>
+                                                        <tr>
+                                                            <th style={ttCellHeader({})}></th>
+                                                            <th style={ttCellHeader({})}>1<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>8:35-9:15</span></th>
+                                                            <th style={ttCellHeader({})}>2<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>9:15-9:55</span></th>
+                                                            <th style={ttCellHeader({})}>BREAK-I<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>9:55-10:10</span></th>
+                                                            <th style={ttCellHeader({})}>3<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>10:10-10:50</span></th>
+                                                            <th style={ttCellHeader({})}>4<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>10:50-11:30</span></th>
+                                                            <th style={ttCellHeader({})}>5<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>11:30-12:10</span></th>
+                                                            <th style={ttCellHeader({})}>BREAK-II<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>12:10-12:20</span></th>
+                                                            <th style={ttCellHeader({})}>6<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>12:20-13:00</span></th>
+                                                            <th style={ttCellHeader({})}>LUNCH<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>13:00-13:30</span></th>
+                                                            <th style={ttCellHeader({})}>7<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>13:30-14:05</span></th>
+                                                            <th style={ttCellHeader({})}>8<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>14:05-14:55</span></th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {DAYS.map(([label, dayKey], i) => (
+                                                            <tr key={label}>
+                                                                <th style={ttCellDay()}>{label}</th>
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'P1')}</td>
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'P2')}</td>
+                                                                {i === 0 ? <td style={ttCellBreak('BREAK - I', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK - I</span></td> : null}
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'P3')}</td>
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'P4')}</td>
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'P5')}</td>
+                                                                {i === 0 ? <td style={ttCellBreak('BREAK - II', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK - II</span></td> : null}
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'P6')}</td>
+                                                                {i === 0 ? <td style={ttCellBreak('LUNCH BREAK', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH BREAK</span></td> : null}
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'P7')}</td>
+                                                                <td style={ttCell()}>{renderCell(dayKey, 'P8')}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
-
-                        {/* Content for active grade */}
-                        {activeGradeSubTab === '6' ? (
-                            <div style={{
-                                background: '#1e293b',
-                                borderRadius: '1rem',
-                                padding: '2rem',
-                                border: '1px solid #334155',
-                                minHeight: '400px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                textAlign: 'center',
-                                maxWidth: '100%',
-                            }}>
-                                {/* render preview component for iterative development */}
-                                <FormatTTPreview />
-                                {/* HEADER SECTION */}
-                                <div style={{ marginBottom: '1.5rem', width: '100%' }}>
-                                    <div style={{ fontSize: '2.1rem', fontWeight: 900, color: '#f1f5f9', letterSpacing: '0.01em', textAlign: 'center' }}>
-                                        THE CHOICE SCHOOL, Tripunithura
-                                    </div>
-                                    <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#a5b4fc', marginTop: '0.2rem', textAlign: 'center' }}>
-                                        2026-27
-                                    </div>
-                                    <div style={{ fontSize: '3rem', fontWeight: 900, color: '#4f46e5', marginTop: '0.2rem', textAlign: 'center', letterSpacing: '0.04em' }}>
-                                        6A
-                                    </div>
-                                </div>
-                                {/* TIMETABLE GRID */}
-                                <div style={{
-                                    overflowX: 'auto',
-                                    width: '100%',
-                                    maxWidth: 1200,
-                                    margin: '0 auto',
-                                }}>
-                                    <table style={{
-                                        borderCollapse: 'collapse',
-                                        width: '100%',
-                                        minWidth: 1100,
-                                        background: 'transparent',
-                                        color: '#f1f5f9',
-                                        fontFamily: 'inherit',
-                                    }}>
-                                        <thead>
-                                            <tr>
-                                                <th style={ttCellHeader({})}></th>
-                                                <th style={ttCellHeader({})}>1<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>8:35-9:15</span></th>
-                                                <th style={ttCellHeader({})}>2<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>9:15-9:55</span></th>
-                                                <th style={ttCellHeader({})}>BREAK-I<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>9:55-10:10</span></th>
-                                                <th style={ttCellHeader({})}>3<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>10:10-10:50</span></th>
-                                                <th style={ttCellHeader({})}>4<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>10:50-11:30</span></th>
-                                                <th style={ttCellHeader({})}>5<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>11:30-12:10</span></th>
-                                                <th style={ttCellHeader({})}>BREAK-II<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>12:10-12:20</span></th>
-                                                <th style={ttCellHeader({})}>6<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>12:20-13:00</span></th>
-                                                <th style={ttCellHeader({})}>LUNCH<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>13:00-13:30</span></th>
-                                                <th style={ttCellHeader({})}>7<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>13:30-14:05</span></th>
-                                                <th style={ttCellHeader({})}>8<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>14:05-14:55</span></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {[
-                                                ['MON', 'Monday'],
-                                                ['TUE', 'Tuesday'],
-                                                ['WED', 'Wednesday'],
-                                                ['THU', 'Thursday'],
-                                                ['FRI', 'Friday'],
-                                                ['SAT', 'Saturday']
-                                            ].map(([label, dayKey], i) => {
-                                                // Find all classes for the active grade sub-tab
-                                                const gradeClasses = CLASS_OPTIONS.filter(c => c.startsWith(activeGradeSubTab));
-                                                // For grade 6 tab, show 6A by default
-                                                const classKey = gradeClasses[0] || `${activeGradeSubTab}A`;
-                                                const dayData = generatedTimetable?.classTimetables?.[classKey]?.[dayKey] || {};
-
-                                                const getCellData = (periodKey) => {
-                                                    const cell = dayData[periodKey];
-                                                    if (!cell || !cell.subject) return null;
-                                                    const sub = cell.subject.toUpperCase();
-                                                    const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
-                                                    const teacherFirst = cell.teacher
-                                                        ? (() => { const pts = cell.teacher.trim().split(/\s+/); const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : ''; const si = pts[1] ? pts[1][0].toUpperCase() : ''; return si ? `${fn} ${si}` : fn; })()
-                                                        : '';
-                                                    return { abbr, teacherFirst };
-                                                };
-                                                const renderCell = (periodKey) => {
-                                                    const data = getCellData(periodKey);
-                                                    if (!data) return null;
-                                                    return (
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
-                                                            <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>{data.abbr}</span>
-                                                            {data.teacherFirst && (
-                                                                <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1, letterSpacing: '0.01em' }}>{data.teacherFirst}</span>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                };
-
-                                                return (
-                                                    <tr key={label}>
-                                                        <th style={ttCellDay()}>{label}</th>
-                                                        {/* P1 */}
-                                                        <td style={ttCell()}>{renderCell('P1')}</td>
-                                                        {/* P2 */}
-                                                        <td style={ttCell()}>{renderCell('P2')}</td>
-                                                        {/* BREAK-I (rowspan) */}
-                                                        {i === 0 ? (
-                                                            <td style={ttCellBreak('BREAK - I', 6)} rowSpan={6}>
-                                                                <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>
-                                                                    BREAK - I
-                                                                </span>
-                                                            </td>
-                                                        ) : null}
-                                                        {/* P3 */}
-                                                        <td style={ttCell()}>{renderCell('P3')}</td>
-                                                        {/* P4 */}
-                                                        <td style={ttCell()}>{renderCell('P4')}</td>
-                                                        {/* P5 */}
-                                                        <td style={ttCell()}>{renderCell('P5')}</td>
-                                                        {/* BREAK-II (rowspan) */}
-                                                        {i === 0 ? (
-                                                            <td style={ttCellBreak('BREAK - II', 6)} rowSpan={6}>
-                                                                <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>
-                                                                    BREAK - II
-                                                                </span>
-                                                            </td>
-                                                        ) : null}
-                                                        {/* P6 */}
-                                                        <td style={ttCell()}>{renderCell('P6')}</td>
-                                                        {/* LUNCH (rowspan) */}
-                                                        {i === 0 ? (
-                                                            <td style={ttCellBreak('LUNCH BREAK', 6)} rowSpan={6}>
-                                                                <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>
-                                                                    LUNCH BREAK
-                                                                </span>
-                                                            </td>
-                                                        ) : null}
-                                                        {/* P7 */}
-                                                        <td style={ttCell()}>{renderCell('P7')}</td>
-                                                        {/* P8 */}
-                                                        <td style={ttCell()}>{renderCell('P8')}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                {/* Print/Screen CSS */}
-                                <style>{`
-                                    @media print {
-                                        body { background: white !important; color: black !important; }
-                                        table, th, td { color: black !important; border-color: #222 !important; }
-                                    }
-                                `}</style>
-                            </div>
-                        ) : (
-                            /* Dynamic table for all other grades */
-                            <div style={{
-                                background: '#1e293b',
-                                borderRadius: '1rem',
-                                padding: '2rem',
-                                border: '1px solid #334155',
-                                minHeight: '400px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                textAlign: 'center',
-                                maxWidth: '100%',
-                            }}>
-                                <div style={{ marginBottom: '1.5rem', width: '100%' }}>
-                                    <div style={{ fontSize: '2.1rem', fontWeight: 900, color: '#f1f5f9', textAlign: 'center' }}>THE CHOICE SCHOOL, Tripunithura</div>
-                                    <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#a5b4fc', marginTop: '0.2rem', textAlign: 'center' }}>2026-27</div>
-                                    <div style={{ fontSize: '3rem', fontWeight: 900, color: '#4f46e5', marginTop: '0.2rem', textAlign: 'center', letterSpacing: '0.04em' }}>
-                                        {activeGradeSubTab}{CLASS_OPTIONS.filter(c => c.startsWith(activeGradeSubTab))[0]?.replace(activeGradeSubTab, '') || 'A'}
-                                    </div>
-                                </div>
-                                <div style={{ overflowX: 'auto', width: '100%', maxWidth: 1200, margin: '0 auto' }}>
-                                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1100, background: 'transparent', color: '#f1f5f9', fontFamily: 'inherit' }}>
-                                        <thead>
-                                            <tr>
-                                                <th style={ttCellHeader({})}></th>
-                                                <th style={ttCellHeader({})}>1<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>8:35-9:15</span></th>
-                                                <th style={ttCellHeader({})}>2<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>9:15-9:55</span></th>
-                                                <th style={ttCellHeader({})}>BREAK-I<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>9:55-10:10</span></th>
-                                                <th style={ttCellHeader({})}>3<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>10:10-10:50</span></th>
-                                                <th style={ttCellHeader({})}>4<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>10:50-11:30</span></th>
-                                                <th style={ttCellHeader({})}>5<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>11:30-12:10</span></th>
-                                                <th style={ttCellHeader({})}>BREAK-II<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>12:10-12:20</span></th>
-                                                <th style={ttCellHeader({})}>6<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>12:20-13:00</span></th>
-                                                <th style={ttCellHeader({})}>LUNCH<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>13:00-13:30</span></th>
-                                                <th style={ttCellHeader({})}>7<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>13:30-14:05</span></th>
-                                                <th style={ttCellHeader({})}>8<br /><span style={{ fontWeight: 400, fontSize: '0.8em' }}>14:05-14:55</span></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {[
-                                                ['MON', 'Monday'],
-                                                ['TUE', 'Tuesday'],
-                                                ['WED', 'Wednesday'],
-                                                ['THU', 'Thursday'],
-                                                ['FRI', 'Friday'],
-                                                ['SAT', 'Saturday']
-                                            ].map(([label, dayKey], i) => {
-                                                const gradeClasses = CLASS_OPTIONS.filter(c => c.startsWith(activeGradeSubTab));
-                                                const classKey = gradeClasses[0] || `${activeGradeSubTab}A`;
-                                                const dayData = generatedTimetable?.classTimetables?.[classKey]?.[dayKey] || {};
-                                                const getCellData = (periodKey) => {
-                                                    const cell = dayData[periodKey];
-                                                    if (!cell || !cell.subject) return null;
-                                                    const sub = cell.subject.toUpperCase();
-                                                    const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
-                                                    const teacherFirst = cell.teacher
-                                                        ? (() => { const pts = cell.teacher.trim().split(/\s+/); const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : ''; const si = pts[1] ? pts[1][0].toUpperCase() : ''; return si ? `${fn} ${si}` : fn; })()
-                                                        : '';
-                                                    return { abbr, teacherFirst };
-                                                };
-                                                const renderCell = (periodKey) => {
-                                                    const data = getCellData(periodKey);
-                                                    if (!data) return null;
-                                                    return (
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
-                                                            <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>{data.abbr}</span>
-                                                            {data.teacherFirst && (
-                                                                <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1, letterSpacing: '0.01em' }}>{data.teacherFirst}</span>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                };
-                                                return (
-                                                    <tr key={label}>
-                                                        <th style={ttCellDay()}>{label}</th>
-                                                        <td style={ttCell()}>{renderCell('P1')}</td>
-                                                        <td style={ttCell()}>{renderCell('P2')}</td>
-                                                        {i === 0 ? <td style={ttCellBreak('BREAK - I', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#fbbf24', writingMode: 'vertical-rl' }}>BREAK - I</span></td> : null}
-                                                        <td style={ttCell()}>{renderCell('P3')}</td>
-                                                        <td style={ttCell()}>{renderCell('P4')}</td>
-                                                        <td style={ttCell()}>{renderCell('P5')}</td>
-                                                        {i === 0 ? <td style={ttCellBreak('BREAK - II', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#fbbf24', writingMode: 'vertical-rl' }}>BREAK - II</span></td> : null}
-                                                        <td style={ttCell()}>{renderCell('P6')}</td>
-                                                        {i === 0 ? <td style={ttCellBreak('LUNCH BREAK', 6)} rowSpan={6}><span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.1em', color: '#38bdf8', writingMode: 'vertical-rl' }}>LUNCH BREAK</span></td> : null}
-                                                        <td style={ttCell()}>{renderCell('P7')}</td>
-                                                        <td style={ttCell()}>{renderCell('P8')}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                {!generatedTimetable && (
-                                    <div style={{ marginTop: '2rem', padding: '1rem', background: '#0f172a', borderRadius: '0.8rem', border: '1px dashed #4f46e5', maxWidth: '500px' }}>
-                                        <p style={{ color: '#94a3b8', fontSize: '0.95rem', margin: 0 }}>No timetable data yet. Use the Classes Alloted tab and click CREATE for each teacher.</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                )}
+                    );
+                })()}
 
                 {/* Tab 4: Subject Period Distribution */}
                 {activeTab === 2 && (
