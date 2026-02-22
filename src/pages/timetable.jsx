@@ -2804,7 +2804,17 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             }}>
                                 <thead>
                                     <tr style={{ background: '#1e293b' }}>
-                                        <th style={{ padding: '0.75rem', textAlign: 'left', width: '200px' }}>Teacher Name</th>
+                                        <th style={{
+                                            padding: '0.75rem',
+                                            textAlign: 'left',
+                                            width: '200px',
+                                            position: 'sticky',
+                                            left: 0,
+                                            background: '#1e293b',
+                                            zIndex: 20,
+                                            boxShadow: '4px 0 4px rgba(0,0,0,0.3)',
+                                            borderRight: '1px solid #334155'
+                                        }}>Teacher Name</th>
                                         <th style={{ padding: '0.75rem', textAlign: 'left', width: '200px' }}>Subject</th>
                                         <th style={{ padding: '0.75rem', textAlign: 'left' }}>Class Allotments</th>
                                         <th style={{ padding: '0.75rem', textAlign: 'center', width: '100px' }}>Total</th>
@@ -2824,7 +2834,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                         return (
                                             <tr key={row.id} style={{ borderBottom: '1px solid #334155' }}>
-                                                <td style={{ padding: '0.6rem', color: '#f1f5f9', fontWeight: '600', textAlign: 'left' }}>
+                                                <td style={{
+                                                    padding: '0.6rem',
+                                                    color: '#f1f5f9',
+                                                    fontWeight: '600',
+                                                    textAlign: 'left',
+                                                    position: 'sticky',
+                                                    left: 0,
+                                                    background: '#1e293b', // Match row background color
+                                                    zIndex: 10,
+                                                    boxShadow: '4px 0 4px rgba(0,0,0,0.3)',
+                                                    borderRight: '1px solid #334155'
+                                                }}>
                                                     {row.teacher}
                                                 </td>
                                                 <td style={{ padding: '0.6rem', minWidth: '170px' }}>
