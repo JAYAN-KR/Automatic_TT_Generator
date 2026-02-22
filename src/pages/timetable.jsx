@@ -2682,7 +2682,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 <td style={{ padding: '0.6rem', color: '#f1f5f9', fontWeight: '600', textAlign: 'left' }}>
                                                     {row.teacher}
                                                 </td>
-                                                <td style={{ padding: '0.6rem' }}>
+                                                <td style={{ padding: '0.6rem', minWidth: '170px' }}>
                                                     <select
                                                         value={row.subject}
                                                         onChange={e => updateAllotmentField(row.id, 'subject', e.target.value)}
@@ -3400,7 +3400,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     const sub = cell.subject.toUpperCase();
                                                     const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
                                                     const teacherFirst = cell.teacher
-                                                        ? cell.teacher.trim().split(/\s+/)[0].toLowerCase()
+                                                        ? (() => { const pts = cell.teacher.trim().split(/\s+/); const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : ''; const si = pts[1] ? pts[1][0].toUpperCase() : ''; return si ? `${fn} ${si}` : fn; })()
                                                         : '';
                                                     return { abbr, teacherFirst };
                                                 };
@@ -3531,7 +3531,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     const sub = cell.subject.toUpperCase();
                                                     const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
                                                     const teacherFirst = cell.teacher
-                                                        ? cell.teacher.trim().split(/\s+/)[0].toLowerCase()
+                                                        ? (() => { const pts = cell.teacher.trim().split(/\s+/); const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : ''; const si = pts[1] ? pts[1][0].toUpperCase() : ''; return si ? `${fn} ${si}` : fn; })()
                                                         : '';
                                                     return { abbr, teacherFirst };
                                                 };
