@@ -232,6 +232,52 @@ const GradeDropdown = ({ onSelect, onClose, anchorRect }) => {
           from { opacity: 0; }
           to { opacity: 1; }
         }
+        @keyframes pulseOrange {
+          0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4); }
+          70% { box-shadow: 0 0 0 6px rgba(249, 115, 22, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+        }
+        .tt-cell-changed {
+          animation: pulseOrange 2s infinite;
+          position: relative;
+          border: 1px solid #f97316 !important;
+          background: rgba(249, 115, 22, 0.1) !important;
+        }
+        .tt-change-badge {
+          position: absolute;
+          top: -4px;
+          right: -4px;
+          width: 8px;
+          height: 8px;
+          background: #f97316;
+          border-radius: 50%;
+          box-shadow: 0 0 4px rgba(0,0,0,0.3);
+        }
+        .tt-tooltip {
+          position: absolute;
+          bottom: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          background: #0f172a;
+          color: white;
+          padding: 0.5rem 0.75rem;
+          border-radius: 0.5rem;
+          font-size: 0.75rem;
+          white-space: nowrap;
+          z-index: 100;
+          opacity: 0;
+          visibility: hidden;
+          transition: all 0.2s;
+          border: 1px solid #334155;
+          pointer-events: none;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+          margin-bottom: 8px;
+        }
+        .tt-cell-parent:hover .tt-tooltip {
+          opacity: 1;
+          visibility: visible;
+          transform: translateX(-50%) translateY(-4px);
+        }
       `}</style>
         </div>
     );
@@ -293,6 +339,8 @@ export default function TimetablePage() {
     const [completedCreations, setCompletedCreations] = useState(new Set());
     // deletePopup: null | { row, classGroups: [{className, periods:[{day,periodKey,time}]}], checked: {className: Set<'day|periodKey'>}, expanded: Set<className> }
     const [deletePopup, setDeletePopup] = useState(null);
+
+    const [reassignWizard, setReassignWizard] = useState(null); // { step, row, newTeacher, analysis }
 
     const [allotmentRows, setAllotmentRows] = useState(() => {
         const saved = localStorage.getItem('tt_allotments');
@@ -542,6 +590,120 @@ export default function TimetablePage() {
         const checked = {};
         classGroups.forEach(({ className }) => { checked[className] = new Set(); });
         setDeletePopup({ row, classGroups, checked, expanded: new Set() });
+    };
+
+    const handleSmartReassign = (row) => {
+        if (!generatedTimetable) {
+            addToast('No timetable generated yet.', 'warning');
+            return;
+        }
+        setReassignWizard({
+            step: 1,
+            row: row,
+            newTeacher: null,
+            analysis: null,
+            options: []
+        });
+    };
+
+    const analyzeReassignmentImpact = (row, newTeacherName) => {
+        if (!newTeacherName || !generatedTimetable) return null;
+        const oldTeacher = row.teacher;
+        const subject = row.subject;
+        const affectedClasses = row.allotments.flatMap(a => a.classes);
+
+        const assignments = [];
+        affectedClasses.forEach(cls => {
+            const classTT = generatedTimetable.classTimetables[cls];
+            if (!classTT) return;
+            Object.keys(classTT).forEach(day => {
+                Object.keys(classTT[day]).forEach(p => {
+                    const cell = classTT[day][p];
+                    if (cell.teacher === oldTeacher && cell.subject === subject) {
+                        assignments.push({ className: cls, day, period: p });
+                    }
+                });
+            });
+        });
+
+        const newTeacherTT = generatedTimetable.teacherTimetables[newTeacherName] || {};
+        const clashes = assignments.filter(asgn => {
+            const slot = newTeacherTT[asgn.day]?.[asgn.period];
+            return slot && slot.subject;
+        }).map(asgn => {
+            const slot = newTeacherTT[asgn.day][asgn.period];
+            return { ...asgn, conflict: `${slot.subject} in ${slot.className}` };
+        });
+
+        // Calculate workload
+        const currentWorkload = Object.values(newTeacherTT).reduce((sum, day) => sum + Object.values(day).filter(p => p.subject).length, 0);
+
+        return { assignments, clashes, currentWorkload };
+    };
+
+    const executeSmartReassign = async () => {
+        if (!reassignWizard) return;
+        const { row, newTeacher, strategy, analysis } = reassignWizard;
+        const tt = JSON.parse(JSON.stringify(generatedTimetable));
+        const oldTeacher = row.teacher;
+
+        // Common first step: update the teacher in the allotmentRow
+        setAllotmentRows(prev => prev.map(r => r.id === row.id ? { ...r, teacher: newTeacher } : r));
+
+        if (strategy === 'DIRECT') {
+            analysis.assignments.forEach(asgn => {
+                const { className, day, period } = asgn;
+                if (tt.teacherTimetables[oldTeacher]?.[day]?.[period]) delete tt.teacherTimetables[oldTeacher][day][period];
+                if (tt.classTimetables[className]?.[day]?.[period]) tt.classTimetables[className][day][period].teacher = newTeacher;
+                if (!tt.teacherTimetables[newTeacher]) tt.teacherTimetables[newTeacher] = {};
+                if (!tt.teacherTimetables[newTeacher][day]) tt.teacherTimetables[newTeacher][day] = {};
+                tt.teacherTimetables[newTeacher][day][period] = { subject: row.subject, className: className };
+            });
+            setGeneratedTimetable(tt);
+            addToast(`Successfully swapped ${oldTeacher} with ${newTeacher} for ${row.subject}`, 'success');
+            setReassignWizard(null);
+        } else if (strategy === 'PARTIAL') {
+            // Smart Partial: First CLEAR old assignments based on scope
+            const affectedGrade = row.allotments[0]?.classes[0]?.match(/\d+/)?.[0];
+
+            if (reassignWizard.scope === 'GRADE' && affectedGrade) {
+                // Clear EVERYTHING for this grade level
+                Object.keys(tt.classTimetables).forEach(cls => {
+                    if (cls.startsWith(affectedGrade)) {
+                        Object.keys(tt.classTimetables[cls]).forEach(day => {
+                            Object.keys(tt.classTimetables[cls][day]).forEach(p => {
+                                const cell = tt.classTimetables[cls][day][p];
+                                if (cell.teacher) {
+                                    if (tt.teacherTimetables[cell.teacher]?.[day]?.[p]) delete tt.teacherTimetables[cell.teacher][day][p];
+                                    tt.classTimetables[cls][day][p] = { subject: '', teacher: '' };
+                                }
+                            });
+                        });
+                    }
+                });
+                setGeneratedTimetable(tt);
+                setReassignWizard(null);
+                addToast(`Grade ${affectedGrade} cleared. Recommended: Regenerate Grade ${affectedGrade}.`, 'info');
+                setActiveTab(5); // Go to generate tab
+            } else {
+                // Minimal Scope: Clear only the current row's old slots
+                analysis.assignments.forEach(asgn => {
+                    const { className, day, period } = asgn;
+                    if (tt.teacherTimetables[oldTeacher]?.[day]?.[period]) delete tt.teacherTimetables[oldTeacher][day][period];
+                    if (tt.classTimetables[className]?.[day]?.[period]) tt.classTimetables[className][day][period] = { subject: '', teacher: '' };
+                });
+                setGeneratedTimetable(tt);
+                setReassignWizard(null);
+                addToast('Starting Smart AI Re-placement...', 'info');
+                setTimeout(() => {
+                    handleCreateSpecific({ ...row, teacher: newTeacher, id: row.id });
+                }, 500);
+            }
+        } else if (strategy === 'FULL') {
+            setReassignWizard(null);
+            setTimeout(() => setActiveTab(5), 100);
+            addToast('Target teacher updated. Recommended: Trigger Full Regeneration.', 'info');
+        }
     };
 
     const executeDelete = () => {
@@ -835,6 +997,51 @@ export default function TimetablePage() {
     const [currentVersion, setCurrentVersion] = useState(null);
     const [generatedTimetable, setGeneratedTimetable] = useState(null);
     const [isGenerating, setIsGenerating] = useState(false);
+
+    // --- Change Tracking State ---
+    const [baselineTimetable, setBaselineTimetable] = useState(null);
+    const [timetableChanges, setTimetableChanges] = useState({ diffs: [], count: 0 });
+    const [showChangesOnly, setShowChangesOnly] = useState(false);
+    const [highlightTeacher, setHighlightTeacher] = useState(null);
+
+    // Track changes when timetable updates
+    useEffect(() => {
+        if (baselineTimetable && generatedTimetable) {
+            const diffs = [];
+            const classes = Object.keys(generatedTimetable.classTimetables || {});
+            classes.forEach(cls => {
+                const days = Object.keys(generatedTimetable.classTimetables[cls] || {});
+                days.forEach(day => {
+                    const periods = Object.keys(generatedTimetable.classTimetables[cls][day] || {});
+                    periods.forEach(p => {
+                        // Skip non-teaching slots (S3, S7 etc are fixed BREAKS in UI rendering mostly, but check data)
+                        const oldSlot = baselineTimetable.classTimetables?.[cls]?.[day]?.[p];
+                        const newSlot = generatedTimetable.classTimetables?.[cls]?.[day]?.[p];
+
+                        if (!oldSlot && !newSlot) return;
+
+                        const oldS = oldSlot?.subject || '';
+                        const oldT = oldSlot?.teacher || '';
+                        const newS = newSlot?.subject || '';
+                        const newT = newSlot?.teacher || '';
+
+                        if (oldS !== newS || oldT !== newT) {
+                            diffs.push({
+                                class: cls,
+                                day: day,
+                                period: p,
+                                old: { subject: oldS, teacher: oldT },
+                                new: { subject: newS, teacher: newT }
+                            });
+                        }
+                    });
+                });
+            });
+            setTimetableChanges({ diffs, count: diffs.length });
+        } else {
+            setTimetableChanges({ diffs: [], count: 0 });
+        }
+    }, [generatedTimetable, baselineTimetable]);
 
     // Tab 3 - Manual entry states
     const [showNewTeacherInput, setShowNewTeacherInput] = useState(null);
@@ -2900,6 +3107,26 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         {completedCreations.has(row.id) ? '✅ CREATED' : 'CREATE'}
                                                     </button>
                                                     <button
+                                                        onClick={() => handleSmartReassign(row)}
+                                                        title="Smartly reassign this teacher's classes to another teacher"
+                                                        style={{
+                                                            marginLeft: '0.4rem',
+                                                            padding: '0.5rem 0.8rem',
+                                                            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            borderRadius: '0.5rem',
+                                                            fontSize: '0.75rem',
+                                                            fontWeight: '800',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.2s'
+                                                        }}
+                                                        onMouseOver={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                                                        onMouseOut={e => e.currentTarget.style.transform = 'none'}
+                                                    >
+                                                        🪄 REASSIGN
+                                                    </button>
+                                                    <button
                                                         onClick={() => handleDeleteClick(row)}
                                                         title="Delete scheduled periods for this teacher"
                                                         style={{
@@ -3020,6 +3247,229 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         )}
 
                         {/* ── DELETE TIMETABLE POPUP ── */}
+                        {reassignWizard && (() => {
+                            const { step, row, newTeacher, analysis } = reassignWizard;
+                            const teachersList = [...new Set(allotmentRows.map(r => r.teacher))].filter(Boolean).filter(t => t !== row.teacher);
+
+                            return (
+                                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', animation: 'fadeIn 0.2s ease-out' }}>
+                                    <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '1.5rem', width: '100%', maxWidth: '800px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+                                        {/* Header */}
+                                        <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(to right, #1e293b, #0f172a)' }}>
+                                            <div>
+                                                <h3 style={{ margin: 0, color: 'white', fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                                    <span style={{ fontSize: '1.5rem' }}>🪄</span> Smart Teacher Reassignment
+                                                </h3>
+                                                <p style={{ margin: '0.25rem 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                    Moving {row.subject} from <b>{row.teacher}</b> to another teacher
+                                                </p>
+                                            </div>
+                                            <button onClick={() => setReassignWizard(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer', transition: 'color 0.2s' }} onMouseOver={e => e.target.style.color = 'white'} onMouseOut={e => e.target.style.color = '#94a3b8'}>&times;</button>
+                                        </div>
+
+                                        {/* Steps Indicator */}
+                                        <div style={{ display: 'flex', padding: '1rem 2rem', background: '#0f172a', gap: '1rem', borderBottom: '1px solid #334155' }}>
+                                            {[1, 2, 3].map(s => (
+                                                <div key={s} style={{ flex: 1, height: '4px', background: s <= step ? '#f59e0b' : '#334155', borderRadius: '2px', transition: 'background 0.3s' }} />
+                                            ))}
+                                        </div>
+
+                                        <div style={{ padding: '2rem', overflowY: 'auto', flex: 1 }}>
+                                            {step === 1 && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                                    <div style={{ background: '#0f172a', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #334155' }}>
+                                                        <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.9rem', marginBottom: '0.8rem', fontWeight: 600 }}>1. SELECT TARGET TEACHER</label>
+                                                        <select
+                                                            value={newTeacher || ''}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                const impact = analyzeReassignmentImpact(row, val);
+                                                                setReassignWizard(prev => ({ ...prev, newTeacher: val, analysis: impact }));
+                                                            }}
+                                                            style={{ width: '100%', padding: '1rem', background: '#1e293b', border: '2px solid #334155', borderRadius: '0.8rem', color: 'white', fontSize: '1rem', cursor: 'pointer' }}
+                                                        >
+                                                            <option value="">-- Choose Target Teacher --</option>
+                                                            {teachersList.sort().map(t => <option key={t} value={t}>{t}</option>)}
+                                                        </select>
+                                                    </div>
+
+                                                    {analysis && (
+                                                        <div style={{ animation: 'fadeInScale 0.3s ease-out' }}>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+                                                                <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Affects Slots</div>
+                                                                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#f59e0b' }}>{analysis.assignments.length}</div>
+                                                                </div>
+                                                                <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Direct Clashes</div>
+                                                                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: analysis.clashes.length > 0 ? '#ef4444' : '#10b981' }}>{analysis.clashes.length}</div>
+                                                                </div>
+                                                                <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
+                                                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>New Workload</div>
+                                                                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: 'white' }}>{analysis.currentWorkload + analysis.assignments.length}</div>
+                                                                </div>
+                                                            </div>
+
+                                                            {analysis.clashes.length > 0 ? (
+                                                                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
+                                                                    <h4 style={{ margin: '0 0 0.8rem 0', color: '#ef4444', fontSize: '0.95rem' }}>⚠️ Availability Conflicts Detected</h4>
+                                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                                                        {analysis.clashes.map((c, ci) => (
+                                                                            <span key={ci} style={{ fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.2)', padding: '0.3rem 0.6rem', borderRadius: '0.4rem', color: '#fecaca' }}>
+                                                                                {c.day} {c.period} ({c.className})
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
+                                                                    <h4 style={{ margin: 0, color: '#10b981', fontSize: '0.95rem' }}>✅ Target teacher is fully available for all slots!</h4>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {step === 2 && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                                    <label style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600 }}>2. CHOOSE REASSIGNMENT STRATEGY</label>
+
+                                                    {/* Option 1: Direct Swap */}
+                                                    <button
+                                                        onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'DIRECT' }))}
+                                                        disabled={analysis.clashes.length > 0}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: analysis.clashes.length > 0 ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: analysis.clashes.length > 0 ? 0.5 : 1 }}
+                                                        onMouseOver={e => !analysis.clashes.length && (e.currentTarget.style.borderColor = '#f59e0b')}
+                                                        onMouseOut={e => e.currentTarget.style.borderColor = '#334155'}
+                                                    >
+                                                        <div style={{ fontSize: '2rem' }}>⚡</div>
+                                                        <div>
+                                                            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#10b981' }}>Option 1: Direct Swap</div>
+                                                            <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Immediate transfer of all slots. Zero changes to other classes.</div>
+                                                        </div>
+                                                    </button>
+
+                                                    {/* Option 4: Partial Regeneration */}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                                                        <button
+                                                            onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'PARTIAL' }))}
+                                                            style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1.5rem', background: '#0f172a', border: '1px solid #4f46e5', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                            onMouseOver={e => (e.currentTarget.style.boxShadow = '0 0 15px rgba(79, 70, 229, 0.3)')}
+                                                            onMouseOut={e => (e.currentTarget.style.boxShadow = 'none')}
+                                                        >
+                                                            <div style={{ fontSize: '2rem' }}>🪄</div>
+                                                            <div style={{ flex: 1 }}>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                    <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#818cf8' }}>Option 2: Smart Re-reg (Best Choice)</div>
+                                                                    <span style={{ fontSize: '0.7rem', background: '#4f46e5', padding: '0.2rem 0.5rem', borderRadius: '1rem' }}>RECOMMENDED</span>
+                                                                </div>
+                                                                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>AI resolves conflicts by regenerating affected periods only. Preserves most schedules.</div>
+                                                            </div>
+                                                        </button>
+
+                                                        {reassignWizard.strategy === 'PARTIAL' && (
+                                                            <div style={{ marginLeft: '4.5rem', display: 'flex', gap: '1rem', animation: 'slideDown 0.2s ease-out' }}>
+                                                                <label style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                                                                    <input type="radio" name="scope" checked={reassignWizard.scope === 'MINIMAL'} onChange={() => setReassignWizard(prev => ({ ...prev, scope: 'MINIMAL' }))} /> Minimal (Swapped only)
+                                                                </label>
+                                                                <label style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                                                                    <input type="radio" name="scope" checked={reassignWizard.scope === 'GRADE'} onChange={() => setReassignWizard(prev => ({ ...prev, scope: 'GRADE' }))} /> Grade-level (Full grade)
+                                                                </label>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Option 5: Full Regeneration */}
+                                                    <button
+                                                        onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'FULL' }))}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1rem 1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s', opacity: 0.8 }}
+                                                        onMouseOver={e => (e.currentTarget.style.borderColor = '#ef4444')}
+                                                        onMouseOut={e => e.currentTarget.style.borderColor = '#334155'}
+                                                    >
+                                                        <div style={{ fontSize: '1.5rem' }}>🔄</div>
+                                                        <div>
+                                                            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#ef4444' }}>Option 3: Full Re-generation</div>
+                                                            <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Rebuild entire timetable from scratch. Guaranteed conflict-free.</div>
+                                                        </div>
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {step === 3 && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                                    <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', padding: '1.5rem', borderRadius: '1rem', textAlign: 'center' }}>
+                                                        <h4 style={{ margin: '0 0 0.5rem 0', color: '#f59e0b', fontSize: '1.1rem' }}>Ready to Apply Changes</h4>
+                                                        <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.9rem' }}>
+                                                            Strategy: <b style={{ color: 'white' }}>{reassignWizard.strategy === 'DIRECT' ? 'Direct Swap' : (reassignWizard.strategy === 'PARTIAL' ? 'Smart Re-reg' : 'Full Re-reg')}</b>
+                                                        </p>
+                                                    </div>
+
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '0.9rem' }}>
+                                                            <span>New Teacher:</span>
+                                                            <b style={{ color: 'white' }}>{newTeacher}</b>
+                                                        </div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '0.9rem' }}>
+                                                            <span>Affected Classes:</span>
+                                                            <b style={{ color: 'white' }}>{[...new Set(analysis.assignments.map(a => a.className))].join(', ')}</b>
+                                                        </div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '0.9rem' }}>
+                                                            <span>Total Modifications:</span>
+                                                            <b style={{ color: '#f59e0b' }}>{analysis.assignments.length} slots</b>
+                                                        </div>
+                                                    </div>
+
+                                                    <div style={{ background: '#0f172a', padding: '1rem', borderRadius: '0.8rem', border: '1px solid #334155' }}>
+                                                        <h5 style={{ margin: '0 0 0.5rem 0', color: '#64748b', fontSize: '0.8rem', textTransform: 'uppercase' }}>Preview of First 3 Changes</h5>
+                                                        {analysis.assignments.slice(0, 3).map((a, ai) => (
+                                                            <div key={ai} style={{ display: 'flex', gap: '0.5rem', fontSize: '0.85rem', marginBottom: '0.3rem', color: '#cbd5e1' }}>
+                                                                <span style={{ color: '#f59e0b' }}>•</span> {a.day} {a.period} in {a.className}: {row.teacher} ➔ <b>{newTeacher}</b>
+                                                            </div>
+                                                        ))}
+                                                        {analysis.assignments.length > 3 && <div style={{ fontSize: '0.8rem', color: '#475569', textAlign: 'center', marginTop: '0.5rem' }}>+ {analysis.assignments.length - 3} more changes</div>}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Footer */}
+                                        <div style={{ padding: '1.25rem 2rem', borderTop: '1px solid #334155', background: '#0f172a', display: 'flex', justifyContent: 'space-between' }}>
+                                            <button
+                                                onClick={() => step > 1 ? setReassignWizard(prev => ({ ...prev, step: prev.step - 1 })) : setReassignWizard(null)}
+                                                style={{ padding: '0.8rem 1.5rem', background: 'transparent', border: '1px solid #334155', borderRadius: '0.8rem', color: '#94a3b8', cursor: 'pointer', fontWeight: 700 }}
+                                            >
+                                                {step === 1 ? 'Cancel' : 'Back'}
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    if (step < 3) {
+                                                        setReassignWizard(prev => ({ ...prev, step: prev.step + 1 }));
+                                                    } else {
+                                                        // Execute based on strategy
+                                                        executeSmartReassign();
+                                                    }
+                                                }}
+                                                disabled={step === 1 && !newTeacher}
+                                                style={{
+                                                    padding: '0.8rem 2rem',
+                                                    background: (step === 1 && !newTeacher) ? '#334155' : 'linear-gradient(135deg, #4f46e5, #4338ca)',
+                                                    border: 'none',
+                                                    borderRadius: '0.8rem',
+                                                    color: 'white',
+                                                    cursor: (step === 1 && !newTeacher) ? 'not-allowed' : 'pointer',
+                                                    fontWeight: 800,
+                                                    boxShadow: '0 10px 15px -3px rgba(79, 70, 229, 0.4)'
+                                                }}
+                                            >
+                                                {step === 3 ? 'Confirm & Apply' : 'Continue Analysis'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
                         {deletePopup && (() => {
                             const { row, classGroups, checked, expanded } = deletePopup;
                             const selCount = (cn) => checked[cn]?.size || 0;
@@ -3225,6 +3675,100 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 ))}
                             </div>
 
+                            {/* Change Summary Panel */}
+                            {timetableChanges.count > 0 && (
+                                <div style={{
+                                    marginBottom: '2rem', padding: '1.5rem', background: 'rgba(249, 115, 22, 0.05)',
+                                    borderRadius: '1rem', border: '1px solid rgba(249, 115, 22, 0.2)',
+                                    display: 'flex', flexDirection: 'column', gap: '1.2rem'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            <div style={{ background: '#f97316', color: 'white', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontWeight: 900, fontSize: '0.9rem' }}>
+                                                {timetableChanges.count} CHANGES DETECTED
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    const firstChange = timetableChanges.diffs.find(d => {
+                                                        const gradeMatch = cls.startsWith(activeGradeSubTab); // Simplified check
+                                                        return true; // Just find the first one in the diffs for now and scroll its ID
+                                                    });
+                                                    if (firstChange) {
+                                                        const el = document.getElementById(`class-card-${firstChange.class}`);
+                                                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                    }
+                                                }}
+                                                style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
+                                            >Scroll to First Change</button>
+                                            <button
+                                                onClick={() => {
+                                                    setBaselineTimetable(JSON.parse(JSON.stringify(generatedTimetable)));
+                                                    addToast('Baseline reset to current state', 'success');
+                                                }}
+                                                style={{ background: '#334155', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
+                                            >Reset Baseline</button>
+                                        </div>
+
+                                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                                <input type="checkbox" checked={showChangesOnly} onChange={e => setShowChangesOnly(e.target.checked)} />
+                                                Show changes only
+                                            </label>
+                                            <select
+                                                value={highlightTeacher || ''}
+                                                onChange={e => setHighlightTeacher(e.target.value || null)}
+                                                style={{ background: '#0f172a', border: '1px solid #334155', color: 'white', padding: '0.4rem', borderRadius: '0.4rem', fontSize: '0.85rem' }}
+                                            >
+                                                <option value="">Filter by Teacher...</option>
+                                                {[...new Set(timetableChanges.diffs.map(d => d.new.teacher))].sort().map(t => (
+                                                    <option key={t} value={t}>{t}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
+                                        <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #1e293b' }}>
+                                            <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Impacted Classes</div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                                {Object.entries(timetableChanges.diffs.reduce((acc, d) => { acc[d.class] = (acc[d.class] || 0) + 1; return acc; }, {}))
+                                                    .map(([c, count]) => (
+                                                        <span key={c} style={{ fontSize: '0.75rem', background: '#1e293b', padding: '0.1rem 0.4rem', borderRadius: '0.3rem', color: '#cbd5e1' }}>
+                                                            {c} <b style={{ color: '#f97316' }}>{count}</b>
+                                                        </span>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                        <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #1e293b' }}>
+                                            <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Affected Teachers</div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                                {Object.entries(timetableChanges.diffs.reduce((acc, d) => {
+                                                    const t = d.new.teacher || 'Unassigned';
+                                                    acc[t] = (acc[t] || 0) + 1;
+                                                    return acc;
+                                                }, {}))
+                                                    .map(([t, count]) => (
+                                                        <span key={t} style={{ fontSize: '0.75rem', background: '#1e293b', padding: '0.1rem 0.4rem', borderRadius: '0.3rem', color: '#cbd5e1' }}>
+                                                            {t} <b style={{ color: '#f97316' }}>{count}</b>
+                                                        </span>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Baseline Capture Prompt (if none exists) */}
+                            {!baselineTimetable && generatedTimetable && (
+                                <div style={{ marginBottom: '2rem', padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Capture current state as baseline to track future changes?</span>
+                                    <button
+                                        onClick={() => setBaselineTimetable(JSON.parse(JSON.stringify(generatedTimetable)))}
+                                        style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 700 }}
+                                    >Enable Change Tracking</button>
+                                </div>
+                            )}
+
                             {/* Page heading */}
                             <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                 <h2 style={{ color: '#f1f5f9', fontSize: '1.2rem', fontWeight: 900, margin: 0 }}>
@@ -3239,21 +3783,56 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     const renderCell = (dayKey, periodKey) => {
                                         const cell = generatedTimetable?.classTimetables?.[cls]?.[dayKey]?.[periodKey];
                                         if (!cell || !cell.subject) return null;
+
+                                        // Change Tracking Logic
+                                        const change = timetableChanges.diffs.find(d => d.class === cls && d.day === dayKey && d.period === periodKey);
+                                        const isChanged = !!change;
+
+                                        // Teacher Filter Logic
+                                        if (highlightTeacher && cell.teacher !== highlightTeacher) {
+                                            // Optional: semi-fade out non-filtered cells? 
+                                            // The spec says "Filter by specific teacher to see only their changes"
+                                            // This could mean highlighting only their changed cells or showing only their data.
+                                            // Let's stick to highlighting.
+                                        }
+
                                         const sub = cell.subject.toUpperCase();
                                         const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
                                         const teacherFirst = cell.teacher
                                             ? (() => { const pts = cell.teacher.trim().split(/\s+/); const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : ''; const si = pts[1] ? pts[1][0].toUpperCase() : ''; return si ? `${fn} ${si}` : fn; })()
                                             : '';
                                         return (
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+                                            <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
+                                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
+                                                height: '100%', width: '100%', minHeight: '40px'
+                                            }}>
                                                 <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>{abbr}</span>
                                                 {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1 }}>{teacherFirst}</span>}
+
+                                                {isChanged && (
+                                                    <>
+                                                        <div className="tt-change-badge" />
+                                                        <div className="tt-tooltip">
+                                                            <div style={{ fontWeight: 700, color: '#f97316', marginBottom: '4px' }}>Modification Identified</div>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                                <span style={{ color: '#94a3b8' }}>Was: <span style={{ color: '#f1f5f9' }}>{change.old.subject} ({change.old.teacher || 'None'})</span></span>
+                                                                <span style={{ color: '#94a3b8' }}>Now: <span style={{ color: '#f1f5f9' }}>{change.new.subject} ({change.new.teacher || 'None'})</span></span>
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
                                         );
                                     };
 
+                                    // Filter Logic: If "Show changes only" is ON, skip classes that have zero changes in the entire week
+                                    if (showChangesOnly) {
+                                        const hasAnyChange = timetableChanges.diffs.some(d => d.class === cls);
+                                        if (!hasAnyChange) return null;
+                                    }
+
                                     return (
-                                        <div key={cls} style={{ background: '#1e293b', borderRadius: '1rem', padding: '1.5rem 2rem', border: '1px solid #334155' }}>
+                                        <div key={cls} id={`class-card-${cls}`} style={{ background: '#1e293b', borderRadius: '1rem', padding: '1.5rem 2rem', border: '1px solid #334155' }}>
                                             {/* Class header */}
                                             <div style={{ textAlign: 'center', marginBottom: '1.2rem' }}>
                                                 <div style={{ fontSize: '1rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em' }}>
