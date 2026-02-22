@@ -290,6 +290,8 @@ export default function TimetablePage() {
     // --- Interactive Builder State ---
     const [creationStatus, setCreationStatus] = useState(null); // { teacher, subject, messages: [], progress: 0, completedCount: 0, isError: false }
     const [completedCreations, setCompletedCreations] = useState(new Set());
+    // deletePopup: null | { row, classGroups: [{className, periods:[{day,periodKey,time}]}], checked: {className: Set<'day|periodKey'>}, expanded: Set<className> }
+    const [deletePopup, setDeletePopup] = useState(null);
 
     const [allotmentRows, setAllotmentRows] = useState(() => {
         const saved = localStorage.getItem('tt_allotments');
@@ -499,6 +501,96 @@ export default function TimetablePage() {
         setMergePopup(null);
         setSelectedGroups([]);
         addToast('Classes merged successfully', 'success');
+    };
+
+    // ─── DELETE TIMETABLE POPUP HANDLERS ──────────────────────────────────────────
+    const PERIOD_TIMES = {
+        P1: '8:35', P2: '9:15', P3: '10:10', P4: '10:50',
+        P5: '11:30', P6: '12:20', P7: '13:30', P8: '14:05'
+    };
+    const DAY_LABELS = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat' };
+
+    const handleDeleteClick = (row) => {
+        if (!generatedTimetable) {
+            addToast('No timetable generated yet.', 'warning');
+            return;
+        }
+        const teacher = row.teacher;
+        const tTT = generatedTimetable.teacherTimetables?.[teacher] || {};
+        const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const PERIODS = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'];
+        const byClass = {};
+        DAYS_ORDER.forEach(day => {
+            PERIODS.forEach(p => {
+                const slot = tTT[day]?.[p];
+                if (!slot) return;
+                const classes = (slot.className || '').split('/').map(s => s.trim()).filter(Boolean);
+                classes.forEach(cn => {
+                    if (!byClass[cn]) byClass[cn] = [];
+                    byClass[cn].push({ day, periodKey: p, time: PERIOD_TIMES[p] || '' });
+                });
+            });
+        });
+        const classGroups = Object.entries(byClass).sort(([a], [b]) => a.localeCompare(b))
+            .map(([className, periods]) => ({ className, periods }));
+        if (classGroups.length === 0) {
+            addToast('No scheduled periods found for this teacher.', 'info');
+            return;
+        }
+        const checked = {};
+        classGroups.forEach(({ className }) => { checked[className] = new Set(); });
+        setDeletePopup({ row, classGroups, checked, expanded: new Set() });
+    };
+
+    const executeDelete = () => {
+        if (!deletePopup) return;
+        const { row, classGroups, checked } = deletePopup;
+        const teacher = row.teacher;
+        const toDelete = [];
+        classGroups.forEach(({ className, periods }) => {
+            const sel = checked[className];
+            periods.forEach(({ day, periodKey }) => {
+                if (sel.has(`${day}|${periodKey}`)) toDelete.push({ day, periodKey, className });
+            });
+        });
+        if (toDelete.length === 0) { addToast('No periods selected to delete.', 'warning'); return; }
+        setGeneratedTimetable(prev => {
+            if (!prev) return prev;
+            const next = {
+                ...prev,
+                classTimetables: JSON.parse(JSON.stringify(prev.classTimetables || {})),
+                teacherTimetables: JSON.parse(JSON.stringify(prev.teacherTimetables || {}))
+            };
+            toDelete.forEach(({ day, periodKey, className }) => {
+                if (next.classTimetables[className]?.[day]?.[periodKey]) {
+                    delete next.classTimetables[className][day][periodKey];
+                }
+                const tSlot = next.teacherTimetables[teacher]?.[day]?.[periodKey];
+                if (tSlot) {
+                    const rem = (tSlot.className || '').split('/').map(s => s.trim()).filter(cn => cn !== className);
+                    if (rem.length === 0) delete next.teacherTimetables[teacher][day][periodKey];
+                    else next.teacherTimetables[teacher][day][periodKey] = { ...tSlot, className: rem.join('/') };
+                }
+            });
+            return next;
+        });
+        const byClassMsg = {};
+        toDelete.forEach(({ day, periodKey, className }) => {
+            if (!byClassMsg[className]) byClassMsg[className] = [];
+            byClassMsg[className].push(`${DAY_LABELS[day] || day} ${periodKey}`);
+        });
+        Object.entries(byClassMsg).forEach(([cn, slots]) => {
+            addToast(`🗑️ Deleted ${slots.length} period(s) from ${cn}: ${slots.join(', ')}`, 'success');
+        });
+        setCompletedCreations(prev => {
+            const next = new Set(prev);
+            classGroups.forEach(({ className, periods }) => {
+                const sel = checked[className];
+                if (sel.size > 0) next.delete(row.id);
+            });
+            return next;
+        });
+        setDeletePopup(null);
     };
 
     // Persistent Storage Management for Allotments
@@ -2850,7 +2942,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 'bold' }}>
                                                     {row.total}
                                                 </td>
-                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                     <button
                                                         onClick={() => handleCreateSpecific(row)}
                                                         disabled={creationStatus || completedCreations.has(row.id)}
@@ -2868,6 +2960,26 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         }}
                                                     >
                                                         {completedCreations.has(row.id) ? '✅ CREATED' : 'CREATE'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteClick(row)}
+                                                        title="Delete scheduled periods for this teacher"
+                                                        style={{
+                                                            marginLeft: '0.4rem',
+                                                            padding: '0.5rem 0.8rem',
+                                                            background: '#991b1b',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            borderRadius: '0.5rem',
+                                                            fontSize: '0.75rem',
+                                                            fontWeight: '800',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.2s'
+                                                        }}
+                                                        onMouseOver={e => e.currentTarget.style.background = '#dc2626'}
+                                                        onMouseOut={e => e.currentTarget.style.background = '#991b1b'}
+                                                    >
+                                                        🗑️ DELETE
                                                     </button>
                                                 </td>
                                                 <td style={{ padding: '0.6rem', textAlign: 'center' }}>
@@ -2968,6 +3080,152 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 </div>
                             </div>
                         )}
+
+                        {/* ── DELETE TIMETABLE POPUP ── */}
+                        {deletePopup && (() => {
+                            const { row, classGroups, checked, expanded } = deletePopup;
+                            const selCount = (cn) => checked[cn]?.size || 0;
+                            const totalSel = classGroups.reduce((s, { className }) => s + selCount(className), 0);
+
+                            const togglePeriod = (cn, key) => setDeletePopup(prev => {
+                                const nxt = { ...prev, checked: { ...prev.checked } };
+                                const set = new Set(nxt.checked[cn]);
+                                if (set.has(key)) set.delete(key); else set.add(key);
+                                nxt.checked[cn] = set;
+                                return nxt;
+                            });
+                            const toggleClass = (cn, periods) => setDeletePopup(prev => {
+                                const nxt = { ...prev, checked: { ...prev.checked } };
+                                const allKeys = periods.map(p => `${p.day}|${p.periodKey}`);
+                                const allChecked = allKeys.every(k => nxt.checked[cn]?.has(k));
+                                nxt.checked[cn] = allChecked ? new Set() : new Set(allKeys);
+                                return nxt;
+                            });
+                            const toggleExpand = (cn) => setDeletePopup(prev => {
+                                const exp = new Set(prev.expanded);
+                                if (exp.has(cn)) exp.delete(cn); else exp.add(cn);
+                                return { ...prev, expanded: exp };
+                            });
+                            const selectAll = () => setDeletePopup(prev => ({
+                                ...prev, checked: Object.fromEntries(
+                                    prev.classGroups.map(({ className, periods }) =>
+                                        [className, new Set(periods.map(p => `${p.day}|${p.periodKey}`))])
+                                )
+                            }));
+                            const deselectAll = () => setDeletePopup(prev => ({
+                                ...prev, checked: Object.fromEntries(prev.classGroups.map(({ className }) => [className, new Set()]))
+                            }));
+
+                            return (
+                                <div onClick={() => setDeletePopup(null)} style={{
+                                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                                    background: 'rgba(0,0,0,0.75)', display: 'flex',
+                                    justifyContent: 'center', alignItems: 'center',
+                                    zIndex: 4000, backdropFilter: 'blur(5px)',
+                                    animation: 'fadeIn 0.2s ease-out'
+                                }}>
+                                    <div onClick={e => e.stopPropagation()} style={{
+                                        background: '#0f172a', border: '1px solid #dc2626',
+                                        borderRadius: '1.25rem', width: '560px', maxWidth: '95vw',
+                                        maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+                                        boxShadow: '0 25px 50px -12px rgba(220,38,38,0.35)', overflow: 'hidden'
+                                    }}>
+                                        {/* Header */}
+                                        <div style={{ padding: '1.25rem 1.5rem', background: '#1e293b', borderBottom: '1px solid #334155', flexShrink: 0 }}>
+                                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#f87171', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Delete Timetable</div>
+                                            <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f1f5f9' }}>{row.teacher}</div>
+                                            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.1rem' }}>{row.subject}</div>
+                                        </div>
+                                        {/* Bulk actions bar */}
+                                        <div style={{ padding: '0.6rem 1.5rem', background: '#1e293b', borderBottom: '1px solid #0f172a', display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}>
+                                            <span style={{ fontSize: '0.78rem', color: '#64748b', flexGrow: 1 }}>Select periods to remove:</span>
+                                            <button onClick={selectAll} style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Select All</button>
+                                            <button onClick={deselectAll} style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Deselect All</button>
+                                        </div>
+                                        {/* Classes list */}
+                                        <div style={{ overflowY: 'auto', flexGrow: 1, padding: '0.75rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                                            {classGroups.map(({ className, periods }) => {
+                                                const allKeys = periods.map(p => `${p.day}|${p.periodKey}`);
+                                                const sel = checked[className];
+                                                const allChecked = allKeys.length > 0 && allKeys.every(k => sel?.has(k));
+                                                const anyChecked = allKeys.some(k => sel?.has(k));
+                                                const isExpanded = expanded.has(className);
+                                                return (
+                                                    <div key={className}>
+                                                        <div style={{
+                                                            display: 'flex', alignItems: 'center', gap: '0.6rem',
+                                                            padding: '0.55rem 0.8rem',
+                                                            background: anyChecked ? 'rgba(220,38,38,0.1)' : '#1e293b',
+                                                            borderRadius: '0.55rem',
+                                                            border: `1px solid ${anyChecked ? 'rgba(220,38,38,0.5)' : '#334155'}`,
+                                                            transition: 'all 0.15s'
+                                                        }}>
+                                                            <input type="checkbox" checked={allChecked}
+                                                                ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
+                                                                onChange={() => toggleClass(className, periods)}
+                                                                style={{ width: 16, height: 16, accentColor: '#dc2626', cursor: 'pointer', flexShrink: 0 }} />
+                                                            <span onClick={() => toggleClass(className, periods)}
+                                                                style={{ fontWeight: 700, color: '#f1f5f9', fontSize: '0.92rem', flexGrow: 1, cursor: 'pointer' }}>{className}</span>
+                                                            <span style={{ fontSize: '0.73rem', color: '#64748b' }}>{periods.length} period{periods.length !== 1 ? 's' : ''}</span>
+                                                            {anyChecked && !allChecked && (
+                                                                <span style={{ fontSize: '0.68rem', color: '#f87171', background: 'rgba(220,38,38,0.18)', padding: '0.12rem 0.4rem', borderRadius: '0.3rem' }}>{sel.size} sel</span>
+                                                            )}
+                                                            <button onClick={() => toggleExpand(className)}
+                                                                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.75rem', padding: '0 0.15rem', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>&#9660;</button>
+                                                        </div>
+                                                        {isExpanded && (
+                                                            <div style={{ marginLeft: '1.8rem', marginTop: '0.2rem', display: 'flex', flexDirection: 'column', gap: '0.18rem' }}>
+                                                                {periods.map(({ day, periodKey, time }) => {
+                                                                    const key = `${day}|${periodKey}`;
+                                                                    const isCk = sel?.has(key);
+                                                                    return (
+                                                                        <label key={key} style={{
+                                                                            display: 'flex', alignItems: 'center', gap: '0.45rem',
+                                                                            padding: '0.32rem 0.55rem',
+                                                                            background: isCk ? 'rgba(220,38,38,0.07)' : 'transparent',
+                                                                            borderRadius: '0.35rem', cursor: 'pointer',
+                                                                            border: `1px solid ${isCk ? 'rgba(220,38,38,0.25)' : 'transparent'}`,
+                                                                            transition: 'all 0.1s'
+                                                                        }}>
+                                                                            <input type="checkbox" checked={!!isCk} onChange={() => togglePeriod(className, key)}
+                                                                                style={{ width: 13, height: 13, accentColor: '#dc2626', cursor: 'pointer', flexShrink: 0 }} />
+                                                                            <span style={{ fontSize: '0.8rem', color: isCk ? '#fca5a5' : '#94a3b8' }}>
+                                                                                <span style={{ fontWeight: 600, color: isCk ? '#f87171' : '#cbd5e1' }}>{DAY_LABELS[day] || day}</span>
+                                                                                {' '}{periodKey} <span style={{ color: '#475569', fontSize: '0.72rem' }}>({time})</span>
+                                                                            </span>
+                                                                        </label>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        {/* Footer */}
+                                        <div style={{ padding: '0.9rem 1.5rem', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: '#0f172a' }}>
+                                            <span style={{ fontSize: '0.78rem', color: totalSel > 0 ? '#f87171' : '#475569' }}>
+                                                {totalSel > 0 ? `${totalSel} period${totalSel !== 1 ? 's' : ''} selected` : 'Nothing selected'}
+                                            </span>
+                                            <div style={{ display: 'flex', gap: '0.55rem' }}>
+                                                <button onClick={() => setDeletePopup(null)} style={{ padding: '0.55rem 1.1rem', background: 'transparent', border: '1px solid #334155', borderRadius: '0.55rem', color: '#94a3b8', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}>Cancel</button>
+                                                <button onClick={executeDelete} disabled={totalSel === 0} style={{
+                                                    padding: '0.55rem 1.25rem',
+                                                    background: totalSel === 0 ? '#1e293b' : 'linear-gradient(135deg, #dc2626, #b91c1c)',
+                                                    border: `1px solid ${totalSel === 0 ? '#334155' : '#dc2626'}`,
+                                                    borderRadius: '0.55rem',
+                                                    color: totalSel === 0 ? '#475569' : '#fff',
+                                                    cursor: totalSel === 0 ? 'not-allowed' : 'pointer',
+                                                    fontWeight: 800, fontSize: '0.82rem',
+                                                    boxShadow: totalSel > 0 ? '0 4px 12px rgba(220,38,38,0.4)' : 'none',
+                                                    transition: 'all 0.2s'
+                                                }}>🗑️ Delete {totalSel > 0 ? `(${totalSel})` : ''}</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                         <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
                             <button
                                 onClick={addAllotmentRow}
