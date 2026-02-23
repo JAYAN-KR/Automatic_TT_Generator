@@ -325,7 +325,30 @@ export default function TimetablePage() {
     const [showAddSubject, setShowAddSubject] = useState(false);
     const [mappingRows, setMappingRows] = useState(() => {
         const saved = localStorage.getItem('tt_mapping_rows');
-        return saved ? JSON.parse(saved) : [];
+        if (!saved) return [];
+        try {
+            const data = JSON.parse(saved);
+            // Migration: Convert flat mappings to teacher-grouped mappings if needed
+            if (data.length > 0 && data[0].subject && !data[0].subjects) {
+                const grouped = {};
+                data.forEach(m => {
+                    const tKey = m.teacher || 'Unknown';
+                    if (!grouped[tKey]) {
+                        grouped[tKey] = {
+                            id: m.id || Date.now() + Math.random(),
+                            teacher: m.teacher,
+                            subjects: [],
+                            level: m.level || 'Main'
+                        };
+                    }
+                    if (m.subject && !grouped[tKey].subjects.includes(m.subject)) {
+                        grouped[tKey].subjects.push(m.subject);
+                    }
+                });
+                return Object.values(grouped);
+            }
+            return data;
+        } catch { return []; }
     });
     const [addingTeacherRowId, setAddingTeacherRowId] = useState(null);
     const [newTeacherValue, setNewTeacherValue] = useState('');
@@ -432,8 +455,7 @@ export default function TimetablePage() {
         setAllotmentRows(prev => [...prev, {
             id: Date.now(),
             teacher: '',
-            subject: '',
-            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
+            allotments: [{ id: Date.now() + Math.random(), subject: '', classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
             total: 0
         }]);
     };
@@ -457,6 +479,8 @@ export default function TimetablePage() {
 
             if (field === 'class') {
                 updatedGroup.classes = [value];
+            } else if (field === 'subject') {
+                updatedGroup.subject = value;
             } else if (field === 'periods') {
                 const numVal = Number(value);
                 updatedGroup.periods = numVal;
@@ -487,7 +511,7 @@ export default function TimetablePage() {
             if (r.id !== rowId) return r;
             return {
                 ...r,
-                allotments: [...r.allotments, { id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }]
+                allotments: [...r.allotments, { id: Date.now() + Math.random(), subject: '', classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }]
             };
         }));
     };
@@ -499,7 +523,7 @@ export default function TimetablePage() {
             if (r.allotments.length <= 1) {
                 const lastGroup = r.allotments[r.allotments.length - 1];
                 const grade = lastGroup?.classes[0]?.match(/\d+/)?.[0];
-                const newGroup = { id: Date.now() + Math.random(), classes: [grade ? grade + 'A' : '6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false };
+                const newGroup = { id: Date.now() + Math.random(), subject: lastGroup?.subject || '', classes: [grade ? grade + 'A' : '6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false };
                 return {
                     ...r,
                     allotments: [newGroup],
@@ -526,6 +550,7 @@ export default function TimetablePage() {
             const newGroups = [...r.allotments];
             const splitGroups = group.classes.map(c => ({
                 id: Date.now() + Math.random(),
+                subject: group.subject || '',
                 classes: [c],
                 periods: group.periods,
                 tBlock: 0,
@@ -557,6 +582,7 @@ export default function TimetablePage() {
             // Create the new merged group
             const newGroup = {
                 id: Date.now() + Math.random(),
+                subject: r.allotments[mergePopup.groupIndices[0]].subject || '',
                 classes: [...new Set(mergedClasses)], // Dedupe just in case
                 periods: numPeriods,
                 tBlock: 0,
@@ -1492,25 +1518,29 @@ export default function TimetablePage() {
         reader.onload = (evt) => {
             const text = evt.target.result;
             const rows = text.split('\n').map(r => r.trim()).filter(r => r);
-            const newRows = [];
-            const teacherSet = new Set();
+            const grouped = {};
             const subjectSet = new Set();
             for (const r of rows) {
                 const [teacher, subject, level] = r.split(',').map(x => x.trim());
                 if (!teacher || !subject) continue;
-                teacherSet.add(teacher);
+
+                if (!grouped[teacher]) {
+                    grouped[teacher] = {
+                        id: Date.now() + Math.random(),
+                        teacher,
+                        subjects: [],
+                        level: level || 'Main'
+                    };
+                }
+                if (!grouped[teacher].subjects.includes(subject)) {
+                    grouped[teacher].subjects.push(subject);
+                }
                 subjectSet.add(subject);
-                newRows.push({
-                    id: Date.now() + Math.random(),
-                    teacher,
-                    subject,
-                    abbreviation: SUBJECT_ABBR[subject.toUpperCase()] || '—',
-                    level: level || 'Main'
-                });
             }
-            setTeachers(Array.from(teacherSet));
-            setSubjects(Array.from(subjectSet));
-            setMappingRows(newRows);
+            const finalMappingRows = Object.values(grouped);
+            setTeachers(finalMappingRows.map(m => m.teacher).sort());
+            setSubjects(Array.from(subjectSet).sort());
+            setMappingRows(finalMappingRows);
             setIsUploading(false);
         };
         reader.readAsText(file);
@@ -1954,12 +1984,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
     };
 
     const handleCreateSpecific = async (row, baseTT = null) => {
-        if (!row.teacher || !row.subject) {
-            addToast('Teacher and Subject must be selected', 'warning');
+        if (!row.teacher) {
+            addToast('Teacher must be selected', 'warning');
             return null;
         }
 
-        console.log('🟢 [CREATE] Clicked for:', row.teacher, row.subject, row.allotments);
+        console.log('🟢 [CREATE] Clicked for:', row.teacher, row.allotments);
 
         // ── Build or reuse working timetable ───────────────────────────────────
         let currentTT = baseTT || generatedTimetable;
@@ -1991,10 +2021,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         }
 
         setCreationStatus({
-            teacher: row.teacher, subject: row.subject,
+            teacher: row.teacher, subject: 'Multiple subjects...',
             messages: [
                 `═══════════════════════════════════════`,
-                `CREATING: ${row.teacher} (${row.subject})`,
+                `CREATING: ${row.teacher}`,
                 `═══════════════════════════════════════`
             ],
             progress: 0, completedCount: completedCreations.size + 1, isError: false
@@ -2007,7 +2037,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
         try {
             const teacher = row.teacher;
-            const subject = row.subject;
 
             // ── Build tasks list ────────────────────────────────────────────────
             const tasks = [];
@@ -2023,13 +2052,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                 const pDay = group.preferredDay || 'Any';
 
-                for (let i = 0; i < tBlocksCount; i++) tasks.push({ type: 'TBLOCK', teacher, subject, classes: group.classes, preferredDay: pDay });
-                for (let i = 0; i < lBlocksCount; i++) tasks.push({ type: 'LBLOCK', teacher, subject, classes: group.classes, preferredDay: 'Any' }); // Lab blocks usually flexible
-                for (let i = 0; i < singles; i++) tasks.push({ type: 'SINGLE', teacher, subject, classes: group.classes, preferredDay: pDay });
+                for (let i = 0; i < tBlocksCount; i++) tasks.push({ type: 'TBLOCK', teacher, subject: group.subject, classes: group.classes, preferredDay: pDay });
+                for (let i = 0; i < lBlocksCount; i++) tasks.push({ type: 'LBLOCK', teacher, subject: group.subject, classes: group.classes, preferredDay: 'Any' }); // Lab blocks usually flexible
+                for (let i = 0; i < singles; i++) tasks.push({ type: 'SINGLE', teacher, subject: group.subject, classes: group.classes, preferredDay: pDay });
             });
 
             if (tasks.length === 0) {
-                addMessage(`→ No periods set for ${row.teacher} (${row.subject}). Skipping.`);
+                addMessage(`→ No periods set for ${row.teacher}. Skipping.`);
                 await sleep(500);
                 return currentTT; // Return existing TT to continue batch
             }
@@ -2051,8 +2080,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const PRDS = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
 
             // ── Teacher Availability Logic ────────────────────────────────────
-            const mapping = mappingRows.find(m => m.teacher === teacher && m.subject === subject);
-            const levelStr = mapping?.level || 'Main';
+            const teacherMapping = mappingRows.find(m => m.teacher === teacher);
+            const levelStr = teacherMapping?.level || 'Main';
             const isMiddle = levelStr.includes('Middle');
 
             // Exclude Breaks (S3, S7) and Lunch (S9 for Middle, S10 for Main)
@@ -2196,11 +2225,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                     // Commit Theory Block
                     task.classes.forEach(cn => {
-                        tt.classTimetables[cn][best.d][best.p1] = { subject, teacher, isBlock: true, isTBlock: true };
-                        tt.classTimetables[cn][best.d][best.p2] = { subject, teacher, isBlock: true, isTBlock: true };
+                        tt.classTimetables[cn][best.d][best.p1] = { subject: task.subject, teacher, isBlock: true, isTBlock: true };
+                        tt.classTimetables[cn][best.d][best.p2] = { subject: task.subject, teacher, isBlock: true, isTBlock: true };
                     });
-                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject, isBlock: true, isTBlock: true };
-                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject, isBlock: true, isTBlock: true };
+                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, isTBlock: true };
+                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, isTBlock: true };
                     tt.teacherTimetables[teacher][best.d].periodCount += 2;
                     tt.teacherTimetables[teacher].weeklyPeriods += 2;
 
@@ -2229,7 +2258,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     // Try to find a day that doesn't have ANY periods for this subject yet (Theory or Lab)
                     const subjectOnDay = (d) =>
                         PRDS.some(p =>
-                            task.classes.some(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject === subject))
+                            task.classes.some(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject === task.subject))
                         );
 
                     outer_l:
@@ -2280,11 +2309,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                     // Commit Lab Block
                     task.classes.forEach(cn => {
-                        tt.classTimetables[cn][best.d][best.p1] = { subject, teacher, isBlock: true, isLBlock: true };
-                        tt.classTimetables[cn][best.d][best.p2] = { subject, teacher, isBlock: true, isLBlock: true };
+                        tt.classTimetables[cn][best.d][best.p1] = { subject: task.subject, teacher, isBlock: true, isLBlock: true };
+                        tt.classTimetables[cn][best.d][best.p2] = { subject: task.subject, teacher, isBlock: true, isLBlock: true };
                     });
-                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject, isBlock: true, isLBlock: true };
-                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject, isBlock: true, isLBlock: true };
+                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, isLBlock: true };
+                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, isLBlock: true };
                     tt.teacherTimetables[teacher][best.d].periodCount += 2;
                     tt.teacherTimetables[teacher].weeklyPeriods += 2;
 
@@ -2337,7 +2366,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     // If subject already has 2+ periods on this day, skip it
                     const subjectCountOnDay = (d) =>
                         PRDS.reduce((count, p) =>
-                            count + (task.classes.some(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject === subject)) ? 1 : 0)
+                            count + (task.classes.some(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject === task.subject)) ? 1 : 0)
                             , 0);
 
                     // Strategy: diagonal walk, but try to find a day with 0 periods of this subject first
@@ -2386,9 +2415,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                     // Commit pick
                     task.classes.forEach(cn => {
-                        tt.classTimetables[cn][pick.d][pick.p] = { subject, teacher, isBlock: false };
+                        tt.classTimetables[cn][pick.d][pick.p] = { subject: task.subject, teacher, isBlock: false };
                     });
-                    tt.teacherTimetables[teacher][pick.d][pick.p] = { className: task.classes.join('/'), subject, isBlock: false };
+                    tt.teacherTimetables[teacher][pick.d][pick.p] = { className: task.classes.join('/'), subject: task.subject, isBlock: false };
                     tt.teacherTimetables[teacher][pick.d].periodCount += 1;
                     tt.teacherTimetables[teacher].weeklyPeriods += 1;
 
@@ -2430,8 +2459,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
     const handleBatchGenerate = async (label, criteria) => {
         const rowsToProcess = allotmentRows.filter(row => {
-            if (!row.teacher || !row.subject) return false;
-            // Only process rows that haven't been completed yet
+            if (!row.teacher) return false;
+            // Support both old root subject and new allotment-level subjects
+            const hasSubject = (row.allotments || []).some(a => a.subject) || !!row.subject;
+            if (!hasSubject) return false;
             if (completedCreations.has(row.id)) return false;
 
             const allClasses = row.allotments.flatMap(a => a.classes);
@@ -2564,48 +2595,55 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const legacyDistribution = { __merged: {}, __blocks: {}, __days: {} };
 
             allotmentRows.forEach(row => {
-                if (!row.teacher || !row.subject) return;
+                if (!row.teacher) return;
 
-                const selectedClasses = [];
-                row.allotments.forEach(group => {
-                    const groupPeriods = Number(group.periods) || 0;
-                    if (groupPeriods === 0) return;
+                // Group allotments by subject for this teacher to create mappings
+                const subjectsHandled = new Set();
+                (row.allotments || []).forEach(a => { if (a.subject) subjectsHandled.add(a.subject); });
 
-                    group.classes.forEach(cls => {
-                        selectedClasses.push(cls);
-                        if (!legacyDistribution[cls]) legacyDistribution[cls] = {};
-                        legacyDistribution[cls][row.subject] = groupPeriods;
+                subjectsHandled.forEach(sub => {
+                    const selectedClasses = [];
+                    const subAllotments = (row.allotments || []).filter(a => a.subject === sub);
 
-                        // Store block periods and preferred day metadata
-                        if (!legacyDistribution.__blocks[cls]) legacyDistribution.__blocks[cls] = {};
-                        legacyDistribution.__blocks[cls][row.subject] = Number(group.blockPeriods) || 0;
+                    subAllotments.forEach(group => {
+                        const groupPeriods = Number(group.periods) || 0;
+                        if (groupPeriods === 0) return;
 
-                        if (!legacyDistribution.__days[cls]) legacyDistribution.__days[cls] = {};
-                        legacyDistribution.__days[cls][row.subject] = group.preferredDay || 'Any';
+                        group.classes.forEach(cls => {
+                            selectedClasses.push(cls);
+                            if (!legacyDistribution[cls]) legacyDistribution[cls] = {};
+                            legacyDistribution[cls][sub] = groupPeriods;
+
+                            if (!legacyDistribution.__blocks[cls]) legacyDistribution.__blocks[cls] = {};
+                            legacyDistribution.__blocks[cls][sub] = Number(group.blockPeriods) || 0;
+
+                            if (!legacyDistribution.__days[cls]) legacyDistribution.__days[cls] = {};
+                            legacyDistribution.__days[cls][sub] = group.preferredDay || 'Any';
+                        });
+
+                        if (group.isMerged) {
+                            if (!legacyDistribution.__merged[sub]) {
+                                legacyDistribution.__merged[sub] = [];
+                            }
+                            legacyDistribution.__merged[sub].push({
+                                classes: group.classes,
+                                total: groupPeriods,
+                                blockPeriods: Number(group.blockPeriods) || 0,
+                                preferredDay: group.preferredDay || 'Any',
+                                subject: sub
+                            });
+                        }
                     });
 
-                    if (group.isMerged) {
-                        if (!legacyDistribution.__merged[row.subject]) {
-                            legacyDistribution.__merged[row.subject] = [];
-                        }
-                        legacyDistribution.__merged[row.subject].push({
-                            classes: group.classes,
-                            total: groupPeriods,
-                            blockPeriods: Number(group.blockPeriods) || 0,
-                            preferredDay: group.preferredDay || 'Any',
-                            subject: row.subject
+                    const uniqueClasses = [...new Set(selectedClasses)];
+                    if (uniqueClasses.length > 0) {
+                        legacyMappings.push({
+                            teacher: row.teacher,
+                            subject: sub,
+                            selectedClasses: uniqueClasses
                         });
                     }
                 });
-
-                const uniqueSelected = [...new Set(selectedClasses)];
-                if (uniqueSelected.length > 0) {
-                    legacyMappings.push({
-                        teacher: row.teacher,
-                        subject: row.subject,
-                        selectedClasses: uniqueSelected
-                    });
-                }
             });
 
             console.log('Generated Legacy Data:', {
@@ -2770,396 +2808,204 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 {/* Tab 0: Teachers & Subjects with mapping table (selection-only) */}
                 {activeTab === 0 && (
                     <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                        <button
-                            disabled={isSaving}
-                            onClick={async () => {
-                                // Build teacher-subject pairs from mappingRows
-                                const rawPairs = mappingRows
-                                    .filter(r => r.teacher && r.subject)
-                                    .map(r => ({ teacher: r.teacher, subject: r.subject }));
-                                let teacherSubjectPairs = [...new Map(rawPairs.map(p => [`${p.teacher}||${p.subject}`, p])).values()];
-                                teacherSubjectPairs.sort((a, b) => {
-                                    const ta = a.teacher.toLowerCase(), tb = b.teacher.toLowerCase();
-                                    if (ta < tb) return -1; if (ta > tb) return 1;
-                                    const sa = a.subject.toLowerCase(), sb = b.subject.toLowerCase();
-                                    if (sa < sb) return -1; if (sa > sb) return 1;
-                                    return 0;
-                                });
+                        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+                            <button
+                                disabled={isSaving}
+                                onClick={async () => {
+                                    const allTeachers = Array.from(new Set(mappingRows.map(r => r.teacher).filter(Boolean))).sort();
+                                    const consolidatedMappings = allTeachers.map(t => {
+                                        const rows = mappingRows.filter(r => r.teacher === t);
+                                        const subjectsList = Array.from(new Set(rows.flatMap(r => r.subjects || (r.subject ? [r.subject] : [])))).sort();
+                                        return {
+                                            id: rows[0].id,
+                                            teacher: t,
+                                            subjects: subjectsList,
+                                            level: rows[0].level || 'Main'
+                                        };
+                                    });
+                                    const allSubjects = Array.from(new Set(consolidatedMappings.flatMap(m => m.subjects))).sort();
 
-                                // Build unique teachers + subjects from rows
-                                const allTeachers = Array.from(new Set(mappingRows.map(r => r.teacher).filter(Boolean))).sort();
-                                const allSubjects = Array.from(new Set(mappingRows.map(r => r.subject).filter(Boolean))).sort();
+                                    if (allTeachers.length > 0) setTeachers(allTeachers);
+                                    if (allSubjects.length > 0) setSubjects(allSubjects);
+                                    setMappingRows(consolidatedMappings);
+                                    await saveDptData(consolidatedMappings, allTeachers, allSubjects);
 
-                                // Update state
-                                if (allTeachers.length > 0) setTeachers(allTeachers);
-                                if (allSubjects.length > 0) setSubjects(allSubjects);
+                                    const teacherAllotmentsMap = new Map();
+                                    allotmentRows.forEach(row => {
+                                        if (!row.teacher) return;
+                                        if (!teacherAllotmentsMap.has(row.teacher)) teacherAllotmentsMap.set(row.teacher, []);
+                                        const updatedGroups = (row.allotments || []).map(g => ({
+                                            ...g,
+                                            subject: g.subject || row.subject || ''
+                                        }));
+                                        teacherAllotmentsMap.get(row.teacher).push(...updatedGroups);
+                                    });
 
-                                // Save to cloud + local
-                                await saveDptData(mappingRows, allTeachers, allSubjects);
+                                    const mergedRows = allTeachers.map(t => {
+                                        const existingGroups = teacherAllotmentsMap.get(t) || [];
+                                        const tMapping = consolidatedMappings.find(m => m.teacher === t);
+                                        const defaultSub = tMapping?.subjects?.[0] || '';
+                                        if (existingGroups.length === 0) {
+                                            return {
+                                                id: t,
+                                                teacher: t,
+                                                allotments: [{ id: Date.now() + Math.random(), subject: defaultSub, classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
+                                                total: 0
+                                            };
+                                        }
+                                        const validGroups = existingGroups.map(g => ({
+                                            ...g,
+                                            subject: (tMapping?.subjects?.includes(g.subject) ? g.subject : defaultSub)
+                                        }));
+                                        return {
+                                            id: t,
+                                            teacher: t,
+                                            allotments: validGroups,
+                                            total: validGroups.reduce((sum, g) => sum + (Number(g.periods) || 0), 0)
+                                        };
+                                    }).sort((a, b) => a.teacher.localeCompare(b.teacher));
 
-                                // Sync allotment rows — MERGE new pairs into existing rows
-                                // (preserve existing class/period data; only add truly new pairs)
-                                // Sort alphabetically: teacher A→Z, then subject A→Z
-                                localStorage.setItem('tt_teacher_subject_pairs', JSON.stringify(teacherSubjectPairs));
-
-                                // Compute merged array from CURRENT allotmentRows state directly
-                                // (not inside functional updater) so we can immediately save to Firestore
-                                const existingMap = new Map(
-                                    allotmentRows.map(r => [`${r.teacher}||${r.subject}`, r])
-                                );
-                                const mergedRows = teacherSubjectPairs.map(p => {
-                                    const key = `${p.teacher}||${p.subject}`;
-                                    if (existingMap.has(key)) return existingMap.get(key);
-                                    return {
-                                        id: key,
-                                        teacher: p.teacher,
-                                        subject: p.subject,
-                                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, preferredDay: 'Any', isMerged: false }],
-                                        total: 0
-                                    };
-                                }).sort((a, b) => {
-                                    const ta = a.teacher.toLowerCase(), tb = b.teacher.toLowerCase();
-                                    if (ta < tb) return -1; if (ta > tb) return 1;
-                                    return a.subject.toLowerCase().localeCompare(b.subject.toLowerCase());
-                                });
-
-                                // Update React state
-                                setAllotmentRows(mergedRows);
-
-                                // Immediately persist to Firestore + localStorage (don't rely on debounce)
-                                await saveAllotments(mergedRows);
-
-                                // Switch to Tab 2 so user can see the updated list right away
-                                setActiveTab(1);
-                            }}
-                            style={{
-                                padding: '0.75rem 1.5rem',
-                                background: isSaving ? '#64748b' : '#10b981',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '0.75rem',
-                                cursor: isSaving ? 'not-allowed' : 'pointer',
-                                marginBottom: '1rem',
-                                marginRight: '0.75rem',
-                                fontWeight: 'bold',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.5rem'
-                            }}
-                        >
-                            {isSaving ? '⏳ Saving...' : '💾 Save to Cloud & Next Tab'}
-                        </button>
-                        <button
-                            onClick={() => loadDptData()}
-                            style={{
-                                padding: '0.75rem 1.2rem',
-                                background: '#4f46e5',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '0.75rem',
-                                cursor: 'pointer',
-                                marginBottom: '1rem',
-                                fontWeight: 'bold',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.5rem'
-                            }}
-                        >
-                            ☁️ Reload from Cloud
-                        </button>
-                        {/* upload button */}
-                        <div style={{ marginBottom: '2rem' }}>
+                                    setAllotmentRows(mergedRows);
+                                    await saveAllotments(mergedRows);
+                                    setActiveTab(1);
+                                }}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: isSaving ? '#64748b' : 'linear-gradient(135deg, #10b981, #059669)',
+                                    color: 'white', border: 'none', borderRadius: '0.75rem', cursor: 'pointer', fontWeight: 'bold'
+                                }}
+                            >
+                                {isSaving ? '⏳ Saving...' : '💾 Save & Next Tab'}
+                            </button>
+                            <button
+                                onClick={() => loadDptData()}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
+                                    color: 'white', border: 'none', borderRadius: '0.75rem', cursor: 'pointer', fontWeight: 'bold'
+                                }}
+                            >
+                                ☁️ Reload Cloud
+                            </button>
                             <label style={{
-                                display: 'inline-block',
-                                padding: '0.6rem 1rem',
-                                background: '#10b981',
-                                color: 'white',
-                                borderRadius: '0.8rem',
-                                cursor: 'pointer'
+                                padding: '0.75rem 1.5rem', background: '#334155', color: 'white', borderRadius: '0.75rem', cursor: 'pointer', fontWeight: 'bold'
                             }}>
                                 📤 Upload CSV
-                                <input
-                                    type="file"
-                                    accept=".csv,.xlsx"
-                                    style={{ display: 'none' }}
-                                    onChange={handleUpload}
-                                />
+                                <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleUpload} />
                             </label>
-                            {uploadedFileName && (
-                                <span style={{ marginLeft: '1rem', color: '#10b981' }}>✓ {uploadedFileName}</span>
-                            )}
                         </div>
 
-                        {/* mapping table */}
-                        <div style={{ overflowX: 'auto', marginBottom: '2rem' }}>
-                            <table style={{
-                                width: '100%',
-                                borderCollapse: 'collapse',
-                                border: '1px solid #334155'
-                            }}>
+                        <div style={{ overflowX: 'auto', marginBottom: '2rem', borderRadius: '1rem', border: '1px solid #334155', background: '#0f172a' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
-                                    <tr style={{ background: '#0f172a' }}>
-                                        <th style={{ padding: '1rem', textAlign: 'left', color: '#94a3b8', borderBottom: '2px solid #334155' }}>Teacher</th>
-                                        <th style={{ padding: '1rem', textAlign: 'left', color: '#94a3b8', borderBottom: '2px solid #334155', width: '16%' }}>Subject</th>
-                                        <th style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', borderBottom: '2px solid #334155', width: '70px' }}>Abbr</th>
-                                        <th style={{ padding: '1rem', textAlign: 'left', color: '#94a3b8', borderBottom: '2px solid #334155' }}>Level</th>
-                                        <th style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', borderBottom: '2px solid #334155', width: '100px' }}>Action</th>
+                                    <tr style={{ background: '#1e293b' }}>
+                                        <th style={{ padding: '1rem', textAlign: 'left', color: '#94a3b8' }}>Teacher Name</th>
+                                        <th style={{ padding: '1rem', textAlign: 'left', color: '#94a3b8' }}>Subjects Handled</th>
+                                        <th style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', width: '120px' }}>Level</th>
+                                        <th style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', width: '100px' }}>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {mappingRows.map((row, idx) => (
                                         <tr key={row.id} style={{ borderBottom: '1px solid #334155' }}>
-                                            <td style={{ padding: '0.8rem' }}>
+                                            <td style={{ padding: '1rem' }}>
                                                 {addingTeacherRowId === row.id ? (
-                                                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
                                                         <input
-                                                            type="text"
+                                                            autoFocus
                                                             value={newTeacherValue}
                                                             onChange={e => setNewTeacherValue(e.target.value)}
-                                                            placeholder="New teacher..."
-                                                            style={{
-                                                                flex: 1,
-                                                                padding: '0.5rem',
-                                                                background: '#0f172a',
-                                                                color: '#f1f5f9',
-                                                                border: '1px solid #10b981',
-                                                                borderRadius: '0.4rem'
-                                                            }}
+                                                            placeholder="Enter name..."
+                                                            style={{ padding: '0.5rem', background: '#1e293b', color: '#fff', border: '1px solid #10b981', borderRadius: '0.5rem', flex: 1 }}
                                                         />
-                                                        <button
-                                                            onClick={() => {
-                                                                if (newTeacherValue.trim()) {
-                                                                    setTeachers(prev => Array.from(new Set([...prev, newTeacherValue.trim()])).sort());
-                                                                    const updated = [...mappingRows];
-                                                                    updated[idx].teacher = newTeacherValue.trim();
-                                                                    setMappingRows(updated);
-                                                                    setNewTeacherValue('');
-                                                                    setAddingTeacherRowId(null);
-                                                                }
-                                                            }}
-                                                            style={{
-                                                                padding: '0.5rem 0.8rem',
-                                                                background: '#10b981',
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '0.4rem',
-                                                                cursor: 'pointer',
-                                                                fontSize: '0.8rem'
-                                                            }}
-                                                        >✓</button>
-                                                        <button
-                                                            onClick={() => {
-                                                                setNewTeacherValue('');
-                                                                setAddingTeacherRowId(null);
-                                                            }}
-                                                            style={{
-                                                                padding: '0.5rem 0.8rem',
-                                                                background: '#ef4444',
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '0.4rem',
-                                                                cursor: 'pointer',
-                                                                fontSize: '0.8rem'
-                                                            }}
-                                                        >✕</button>
+                                                        <button onClick={() => {
+                                                            if (newTeacherValue.trim()) {
+                                                                setTeachers(p => Array.from(new Set([...p, newTeacherValue.trim()])).sort());
+                                                                const r = [...mappingRows]; r[idx].teacher = newTeacherValue.trim();
+                                                                setMappingRows(r); setNewTeacherValue(''); setAddingTeacherRowId(null);
+                                                            }
+                                                        }} style={{ padding: '0.5rem', background: '#10b981', color: '#fff', border: 'none', borderRadius: '0.5rem' }}>✓</button>
                                                     </div>
                                                 ) : (
                                                     <select
                                                         value={row.teacher}
-                                                        onChange={(e) => {
-                                                            if (e.target.value === '_type_new') {
-                                                                setAddingTeacherRowId(row.id);
-                                                                setNewTeacherValue('');
-                                                            } else {
-                                                                const updated = [...mappingRows];
-                                                                updated[idx].teacher = e.target.value;
-                                                                setMappingRows(updated);
-                                                            }
-                                                        }}
-                                                        style={{
-                                                            width: '100%',
-                                                            padding: '0.6rem',
-                                                            background: '#0f172a',
-                                                            color: '#f1f5f9',
-                                                            border: '1px solid #334155',
-                                                            borderRadius: '0.4rem'
-                                                        }}
+                                                        onChange={e => e.target.value === '_type_new' ? setAddingTeacherRowId(row.id) : (() => { const r = [...mappingRows]; r[idx].teacher = e.target.value; setMappingRows(r) })()}
+                                                        style={{ width: '100%', padding: '0.7rem', background: '#1e293b', color: '#fff', border: '1px solid #334155', borderRadius: '0.5rem' }}
                                                     >
-                                                        <option value="" style={{ color: '#000', background: '#fff' }}>-- select teacher --</option>
-                                                        {[...teachers].sort().map(t => (
-                                                            <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>{t}</option>
-                                                        ))}
-                                                        <option disabled style={{ color: '#000', background: '#fff' }}>──────────────</option>
-                                                        <option value="_type_new" style={{ color: '#000', background: '#fff' }}>✏️ Type New Teacher</option>
+                                                        <option value="">-- Select Teacher --</option>
+                                                        {teachers.map(t => <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>{t}</option>)}
+                                                        <option value="_type_new" style={{ color: '#000', background: '#fff' }}>✏️ New Teacher...</option>
                                                     </select>
                                                 )}
                                             </td>
-                                            <td style={{ padding: '0.8rem', width: '16%' }}>
-                                                {addingSubjectRowId === row.id ? (
-                                                    <div style={{ display: 'flex', gap: '0.4rem' }}>
-                                                        <input
-                                                            type="text"
-                                                            value={newSubjectValue}
-                                                            onChange={e => setNewSubjectValue(e.target.value)}
-                                                            placeholder="New subject..."
-                                                            style={{
-                                                                flex: 1,
-                                                                padding: '0.5rem',
-                                                                background: '#0f172a',
-                                                                color: '#f1f5f9',
-                                                                border: '1px solid #10b981',
-                                                                borderRadius: '0.4rem'
-                                                            }}
-                                                        />
-                                                        <button
-                                                            onClick={() => {
-                                                                if (newSubjectValue.trim()) {
-                                                                    setSubjects(prev => Array.from(new Set([...prev, newSubjectValue.trim()])).sort());
-                                                                    const updated = [...mappingRows];
-                                                                    updated[idx].subject = newSubjectValue.trim();
-                                                                    updated[idx].abbreviation = SUBJECT_ABBR[newSubjectValue.trim().toUpperCase()] || '—';
-                                                                    setMappingRows(updated);
-                                                                    setNewSubjectValue('');
-                                                                    setAddingSubjectRowId(null);
-                                                                }
-                                                            }}
-                                                            style={{
-                                                                padding: '0.5rem 0.8rem',
-                                                                background: '#10b981',
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '0.4rem',
-                                                                cursor: 'pointer',
-                                                                fontSize: '0.8rem'
-                                                            }}
-                                                        >✓</button>
-                                                        <button
-                                                            onClick={() => {
-                                                                setNewSubjectValue('');
-                                                                setAddingSubjectRowId(null);
-                                                            }}
-                                                            style={{
-                                                                padding: '0.5rem 0.8rem',
-                                                                background: '#ef4444',
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '0.4rem',
-                                                                cursor: 'pointer',
-                                                                fontSize: '0.8rem'
-                                                            }}
-                                                        >✕</button>
-                                                    </div>
-                                                ) : (
+                                            <td style={{ padding: '1rem' }}>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                                                    {(row.subjects || []).map(s => (
+                                                        <div key={s} style={{ background: '#4f46e5', color: '#fff', padding: '0.3rem 0.6rem', borderRadius: '0.4rem', fontSize: '0.8rem', display: 'flex', gap: '0.5rem' }}>
+                                                            {s} <span onClick={() => { const r = [...mappingRows]; r[idx].subjects = r[idx].subjects.filter(x => x !== s); setMappingRows(r); }} style={{ cursor: 'pointer', fontWeight: 'bold' }}>×</span>
+                                                        </div>
+                                                    ))}
                                                     <select
-                                                        value={row.subject}
-                                                        onChange={(e) => {
-                                                            if (e.target.value === '_type_new') {
-                                                                setAddingSubjectRowId(row.id);
-                                                                setNewSubjectValue('');
-                                                            } else {
-                                                                const updated = [...mappingRows];
-                                                                updated[idx].subject = e.target.value;
-                                                                updated[idx].abbreviation = SUBJECT_ABBR[e.target.value.toUpperCase()] || '—';
-                                                                setMappingRows(updated);
+                                                        value=""
+                                                        onChange={e => {
+                                                            if (e.target.value === '_type_new') setAddingSubjectRowId(row.id);
+                                                            else if (e.target.value) {
+                                                                const r = [...mappingRows]; if (!r[idx].subjects) r[idx].subjects = [];
+                                                                if (!r[idx].subjects.includes(e.target.value)) r[idx].subjects.push(e.target.value);
+                                                                setMappingRows(r);
                                                             }
                                                         }}
-                                                        style={{
-                                                            width: '100%',
-                                                            padding: '0.6rem',
-                                                            background: '#0f172a',
-                                                            color: '#f1f5f9',
-                                                            border: '1px solid #334155',
-                                                            borderRadius: '0.4rem'
-                                                        }}
+                                                        style={{ padding: '0.4rem', background: 'transparent', color: '#94a3b8', border: '1px dashed #475569', borderRadius: '0.4rem', fontSize: '0.8rem' }}
                                                     >
-                                                        <option value="" style={{ color: '#000', background: '#fff' }}>-- select subject --</option>
-                                                        {[...subjects].sort().map(s => (
-                                                            <option key={s} value={s} style={{ color: '#000', background: '#fff' }}>{s}</option>
-                                                        ))}
-                                                        <option disabled style={{ color: '#000', background: '#fff' }}>──────────────</option>
-                                                        <option value="_type_new" style={{ color: '#000', background: '#fff' }}>✏️ Type New Subject</option>
+                                                        <option value="">+ Add Subject</option>
+                                                        {subjects.filter(s => !(row.subjects || []).includes(s)).map(s => <option key={s} value={s} style={{ color: '#000', background: '#fff' }}>{s}</option>)}
+                                                        <option value="_type_new" style={{ color: '#000', background: '#fff' }}>✏️ New...</option>
                                                     </select>
+                                                </div>
+                                                {addingSubjectRowId === row.id && (
+                                                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                                        <input autoFocus value={newSubjectValue} onChange={e => setNewSubjectValue(e.target.value)} style={{ padding: '0.4rem', background: '#1e293b', color: '#fff', border: '1px solid #10b981', borderRadius: '0.4rem', flex: 1 }} />
+                                                        <button onClick={() => {
+                                                            if (newSubjectValue.trim()) {
+                                                                setSubjects(p => Array.from(new Set([...p, newSubjectValue.trim()])).sort());
+                                                                const r = [...mappingRows]; if (!r[idx].subjects) r[idx].subjects = [];
+                                                                r[idx].subjects.push(newSubjectValue.trim()); setMappingRows(r);
+                                                                setNewSubjectValue(''); setAddingSubjectRowId(null);
+                                                            }
+                                                        }} style={{ padding: '0.4rem', background: '#10b981', color: '#fff', border: 'none', borderRadius: '0.4rem' }}>✓</button>
+                                                    </div>
                                                 )}
                                             </td>
-                                            <td style={{ padding: '0.8rem', textAlign: 'center', fontWeight: 'bold', textTransform: 'uppercase', background: '#232b3b', color: '#fff', width: '70px' }}>
-                                                {row.abbreviation || '—'}
-                                            </td>
-                                            <td style={{ padding: '0.8rem', textAlign: 'center' }}>
+                                            <td style={{ padding: '1rem' }}>
                                                 <select
                                                     value={row.level}
-                                                    onChange={(e) => {
-                                                        const updated = [...mappingRows];
-                                                        updated[idx].level = e.target.value;
-                                                        setMappingRows(updated);
-                                                    }}
-                                                    style={{
-                                                        width: '100%',
-                                                        padding: '0.6rem',
-                                                        background: '#0f172a',
-                                                        color: '#f1f5f9',
-                                                        border: '1px solid #334155',
-                                                        borderRadius: '0.4rem'
-                                                    }}
+                                                    onChange={e => { const r = [...mappingRows]; r[idx].level = e.target.value; setMappingRows(r); }}
+                                                    style={{ width: '100%', padding: '0.7rem', background: '#1e293b', color: '#fff', border: '1px solid #334155', borderRadius: '0.5rem' }}
                                                 >
-                                                    {['Main', 'Middle', 'Senior', 'Middle&Main', 'Main&Senior', 'Middle&Senior', 'Middle,Main&Senior'].map(lv => (
-                                                        <option key={lv} value={lv} style={{ color: '#000', background: '#fff' }}>{lv.replace(/&/g, ' & ')}</option>
-                                                    ))}
+                                                    {['Main', 'Middle', 'Senior', 'Middle&Main', 'Main&Senior', 'Middle&Senior', 'Middle,Main&Senior'].map(l => <option key={l} value={l} style={{ color: '#000', background: '#fff' }}>{l.replace(/&/g, ' & ')}</option>)}
                                                 </select>
                                             </td>
-                                            <td style={{ padding: '0.8rem', textAlign: 'center' }}>
-                                                <button
-                                                    onClick={() => {
-                                                        setMappingRows(mappingRows.filter((_, i) => i !== idx));
-                                                    }}
-                                                    style={{
-                                                        padding: '0.4rem 0.8rem',
-                                                        background: '#ef4444',
-                                                        color: 'white',
-                                                        border: 'none',
-                                                        borderRadius: '0.4rem',
-                                                        cursor: 'pointer',
-                                                        fontSize: '0.85rem'
-                                                    }}
-                                                >
-                                                    Delete
-                                                </button>
+                                            <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                                <button onClick={() => setMappingRows(mappingRows.filter((_, i) => i !== idx))} style={{ padding: '0.5rem', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer' }}>Delete</button>
                                             </td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
-
-                        {/* add new row button */}
                         <button
-                            onClick={() => {
-                                setMappingRows([...mappingRows, {
-                                    id: Date.now(),
-                                    teacher: '',
-                                    subject: '',
-                                    level: 'Main'
-                                }]);
-                            }}
-                            style={{
-                                padding: '0.8rem 1.5rem',
-                                background: '#4f46e5',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '0.8rem',
-                                cursor: 'pointer',
-                                marginRight: '1rem',
-                                marginBottom: '1.5rem'
-                            }}
+                            onClick={() => setMappingRows([...mappingRows, { id: Date.now() + Math.random(), teacher: '', subjects: [], level: 'Main' }])}
+                            style={{ padding: '0.8rem 1.5rem', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}
                         >
-                            + Add New Row
+                            + Add New Teacher
                         </button>
-
-                        {/* summary stats */}
-                        <div style={{ color: '#94a3b8', fontSize: '0.95rem', padding: '1rem', background: '#0f172a', borderRadius: '0.8rem' }}>
-                            <div>📊 Teachers: <span style={{ color: '#10b981', fontWeight: 'bold' }}>{teachers.length}</span></div>
-                            <div>📚 Subjects: <span style={{ color: '#10b981', fontWeight: 'bold' }}>{subjects.length}</span></div>
-                            <div>🔗 Mappings: <span style={{ color: '#10b981', fontWeight: 'bold' }}>{mappingRows.length}</span></div>
-                            {uploadedFileName && <div>📄 Last file: {uploadedFileName}</div>}
+                        <div style={{ marginTop: '2rem', padding: '1.5rem', background: '#1e293b', borderRadius: '1rem', border: '1px solid #334155' }}>
+                            <div style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1rem' }}>SUMMARY STATISTICS</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1.5rem' }}>
+                                <div><div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>TEACHERS</div><div style={{ color: '#f1f5f9', fontSize: '1.5rem', fontWeight: 800 }}>{teachers.length}</div></div>
+                                <div><div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>SUBJECTS</div><div style={{ color: '#f1f5f9', fontSize: '1.5rem', fontWeight: 800 }}>{subjects.length}</div></div>
+                                <div><div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>MAPPINGS</div><div style={{ color: '#f1f5f9', fontSize: '1.5rem', fontWeight: 800 }}>{mappingRows.length}</div></div>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -3414,9 +3260,21 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     <span style={{ color: '#f1f5f9' }}>{row.teacher || '(No Teacher)'}</span>
                                                 </td>
                                                 <td style={{ padding: '0.8rem', minWidth: '150px' }}>
-                                                    <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'bold' }}>
-                                                        {row.subject || '---'}
-                                                    </span>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                                                        {(mappingRows.find(m => m.teacher === row.teacher)?.subjects || []).map(s => (
+                                                            <span key={s} style={{
+                                                                fontSize: '0.7rem',
+                                                                background: '#334155',
+                                                                padding: '0.1rem 0.4rem',
+                                                                borderRadius: '0.3rem',
+                                                                color: '#94a3b8',
+                                                                fontWeight: '800',
+                                                                border: '1px solid #475569'
+                                                            }}>
+                                                                {s}
+                                                            </span>
+                                                        ))}
+                                                    </div>
                                                 </td>
                                                 <td style={{ padding: '0.6rem' }}>
                                                     <div style={{
@@ -3545,6 +3403,29 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         height: '34px',
                                                                         boxSizing: 'border-box'
                                                                     }}>
+                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>SUB</span>
+                                                                            <select
+                                                                                value={group.subject || ''}
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'subject', e.target.value)}
+                                                                                style={{
+                                                                                    background: 'transparent',
+                                                                                    border: 'none',
+                                                                                    color: '#111827',
+                                                                                    fontWeight: '800',
+                                                                                    fontSize: '0.8rem',
+                                                                                    cursor: 'pointer',
+                                                                                    outline: 'none',
+                                                                                    padding: 0
+                                                                                }}
+                                                                            >
+                                                                                <option value="">-- sub --</option>
+                                                                                {(mappingRows.find(m => m.teacher === row.teacher)?.subjects || []).map(s => (
+                                                                                    <option key={s} value={s}>{s}</option>
+                                                                                ))}
+                                                                            </select>
+                                                                        </div>
                                                                         <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
                                                                             <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>PPS</span>
                                                                             <select
@@ -5653,16 +5534,17 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         {/* Period cells */}
                                                         {DPT_DAYS.map((day, di) => (
                                                             DPT_PERIODS.map((p, pi) => {
-                                                                let mapping;
+                                                                let isMiddle;
                                                                 if (dptViewType === 'Teachers') {
-                                                                    mapping = mappingRows.find(m => m.teacher === item);
+                                                                    const teacherMapping = mappingRows.find(m => m.teacher === item);
+                                                                    const firstAllotmentCls = teacherMapping?.allotments?.[0]?.classes?.[0] || '';
+                                                                    isMiddle = (teacherMapping?.level || '').includes('Middle') || (parseInt(firstAllotmentCls) < 11);
                                                                 } else {
                                                                     // For classes, check grade level
                                                                     const grade = item.match(/\d+/)?.[0];
-                                                                    mapping = { level: (grade >= 11) ? 'Senior' : 'Middle' };
+                                                                    isMiddle = (grade && parseInt(grade) < 11);
                                                                 }
 
-                                                                const isMiddle = mapping?.level === 'Middle';
                                                                 const isCT = p === 'CT';
                                                                 const isBreak = p === 'S3' || p === 'S7';
                                                                 const isLunch = isMiddle ? p === 'S9' : p === 'S10';
@@ -5708,23 +5590,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 {
                     activeTab === 5 && (() => {
                         const teacherTTDict = generatedTimetable?.teacherTimetables || {};
-                        // Map teacher names to their levels from mappingRows
+
+                        // Comprehensive teacher discovery: include from TT, mappings, and allotments
+                        const allTeacherNames = new Set([
+                            ...Object.keys(teacherTTDict),
+                            ...mappingRows.map(r => r.teacher),
+                            ...allotmentRows.map(r => r.teacher)
+                        ].filter(t => t && t !== 'EMPTY TEMPLATE'));
+
                         const teacherLevelMap = new Map();
+                        // 1. Map levels from mappingRows (Source 1)
                         mappingRows.forEach(r => {
                             if (!r.teacher) return;
-                            if (!teacherLevelMap.has(r.teacher)) {
-                                teacherLevelMap.set(r.teacher, new Set());
-                            }
+                            if (!teacherLevelMap.has(r.teacher)) teacherLevelMap.set(r.teacher, new Set());
                             if (r.level) teacherLevelMap.get(r.teacher).add(r.level);
                         });
+                        // 2. Map levels from allotmentRows (Source 2 - Inference)
+                        allotmentRows.forEach(r => {
+                            if (!r.teacher) return;
+                            if (!teacherLevelMap.has(r.teacher)) teacherLevelMap.set(r.teacher, new Set());
+                            (r.allotments || []).forEach(al => {
+                                (al.classes || []).forEach(cls => {
+                                    const grade = parseInt(cls);
+                                    if (!isNaN(grade)) {
+                                        if (grade < 11) teacherLevelMap.get(r.teacher).add('Middle');
+                                        else teacherLevelMap.get(r.teacher).add('Senior');
+                                    }
+                                });
+                            });
+                        });
 
-                        const categoryTeachers = Array.from(teacherLevelMap.keys())
+                        const categoryTeachers = Array.from(allTeacherNames)
                             .filter(name => {
                                 const levels = teacherLevelMap.get(name);
+                                if (!levels || levels.size === 0) {
+                                    // Default to Senior sub-tab if no level found
+                                    return teacherTTSubTab === 'Senior';
+                                }
                                 if (teacherTTSubTab === 'Middle') {
                                     return Array.from(levels).some(lv => lv && lv.includes('Middle'));
                                 } else {
-                                    // Main or Senior teachers go to Senior sub-tab
                                     return Array.from(levels).some(lv => lv && (lv.includes('Main') || lv.includes('Senior')));
                                 }
                             })
@@ -5808,7 +5713,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 generatedTimetable.teacherTimetables,
                                 t,
                                 '2026-2027',
-                                generatedTimetable.bellTimings
+                                generatedTimetable.bellTimings,
+                                teacherTTSubTab === 'Middle'
                             ));
                             const html = generateFullPrintHTML(cards, 'teacher', '2026-2027', generatedTimetable.bellTimings);
                             const win = window.open('', '_blank');
@@ -5818,8 +5724,21 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                         // Inner component to render a single teacher's TT
                         const TeacherCard = ({ teacher }) => {
+                            const teacherMapping = mappingRows.find(m => m.teacher === teacher);
                             const tTT = (teacher && teacherTTDict?.[teacher]) ? teacherTTDict[teacher] : null;
-                            const isMiddle = teacherTTSubTab === 'Middle';
+
+                            // Use sub-tab as primary indicator
+                            let isMiddle = teacherTTSubTab === 'Middle';
+
+                            // Discover subjects for this teacher
+                            const subjectsHandled = new Set();
+                            (teacherMapping?.subjects || []).forEach(s => subjectsHandled.add(s));
+                            allotmentRows.filter(r => r.teacher === teacher).forEach(r => {
+                                (r.allotments || []).forEach(al => {
+                                    if (al.subject) subjectsHandled.add(al.subject);
+                                });
+                            });
+                            const subjectsList = Array.from(subjectsHandled).sort();
 
                             return (
                                 <div style={{
@@ -5834,6 +5753,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     overflow: 'hidden'
                                 }}>
                                     <div style={{ textAlign: 'center', marginBottom: '8px', borderBottom: '2px solid black', paddingBottom: '4px', minHeight: '30px' }}>
+                                        <div style={{ fontSize: '0.6rem', color: 'black', fontWeight: 600, marginBottom: '2px' }}>
+                                            {subjectsList.length > 0 ? `Subjects: ${subjectsList.join(', ')}` : '\u00A0'}
+                                        </div>
                                         <span style={{ fontSize: '1rem', fontWeight: 900, color: 'black', letterSpacing: '0.05em' }}>
                                             {teacher ? teacher.toUpperCase() : 'EMPTY TEMPLATE'}
                                         </span>
@@ -5878,7 +5800,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 <td key={p} style={{
                                                                     border: '1px solid black',
                                                                     background: '#f1f5f9',
-                                                                    color: '#64748b',
+                                                                    color: 'black',
                                                                     textAlign: 'center',
                                                                     fontSize: '0.6rem',
                                                                     fontWeight: 900
@@ -5907,30 +5829,34 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         }
 
                                                         if (isLunch) {
-                                                            if (di !== 0) return null;
-                                                            return (
-                                                                <td key={p} rowSpan={6} style={{
-                                                                    border: '1px solid black',
-                                                                    background: 'white',
-                                                                    color: 'black',
-                                                                    writingMode: 'vertical-lr',
-                                                                    textAlign: 'center',
-                                                                    fontSize: '0.55rem',
-                                                                    fontWeight: 900,
-                                                                    letterSpacing: '0.2em'
-                                                                }}>
-                                                                    LUNCH
-                                                                </td>
-                                                            );
+                                                            const slot = tTT?.[day]?.[p];
+                                                            const hasPeriod = slot && (typeof slot === 'object' ? slot.className : slot);
+
+                                                            // If there's no period here, show LUNCH. 
+                                                            // If there IS a period, we'll let it render below but we might want a lunch background.
+                                                            if (!hasPeriod) {
+                                                                return (
+                                                                    <td key={p} style={{
+                                                                        border: '1px solid black',
+                                                                        background: '#fef2f2',
+                                                                        color: 'black',
+                                                                        textAlign: 'center',
+                                                                        fontSize: '0.55rem',
+                                                                        fontWeight: 900
+                                                                    }}>
+                                                                        LUNCH
+                                                                    </td>
+                                                                );
+                                                            }
+                                                            // If hasPeriod, fall through to normal rendering but maybe with a light red tint
                                                         }
 
                                                         const slot = tTT?.[day]?.[p];
-                                                        let displayClass = (slot && typeof slot === 'object') ? slot.className : '-';
+                                                        let displayClass = (slot && typeof slot === 'object') ? slot.className : (slot || '-');
                                                         let displaySub = (slot && typeof slot === 'object') ? (slot.subject || '') : '';
 
                                                         if (slot?.isStream) {
                                                             displayClass = slot.groupName ? `${slot.className}-${slot.groupName}` : slot.className;
-                                                            // For streams, the subject is specific to the teacher
                                                             displaySub = getSubAbbr(slot.subject || '');
                                                         } else {
                                                             displaySub = getSubAbbr(displaySub);
@@ -5938,38 +5864,34 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                                         const { num, div } = getFormattedClass(displayClass);
                                                         const suffix = slot?.isTBlock ? ' [T]' : (slot?.isLBlock ? ' [L]' : '');
+                                                        const isCombined = div && div.length <= 3;
 
                                                         return (
                                                             <td key={p} style={{
                                                                 border: '1px solid black',
                                                                 textAlign: 'center',
                                                                 height: '42px',
-                                                                background: 'white',
+                                                                background: isLunch ? '#fff1f2' : 'white',
                                                                 padding: '1px',
                                                                 color: 'black',
                                                                 verticalAlign: 'middle'
                                                             }}>
                                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px' }}>
                                                                     <div style={{ fontSize: '14px', fontWeight: 900, color: 'black', lineHeight: '1.1' }}>
-                                                                        {num}{suffix}
+                                                                        {num}{isCombined ? <span style={{ fontSize: '0.6rem', fontWeight: 800 }}>{div}</span> : ''}{suffix}
                                                                     </div>
-                                                                    {div && (
-                                                                        <div style={{
-                                                                            fontSize: '10px',
-                                                                            fontWeight: 800,
-                                                                            color: 'black',
-                                                                            lineHeight: '1',
-                                                                            maxWidth: '45px',
-                                                                            wordBreak: 'break-all',
-                                                                            textAlign: 'center'
-                                                                        }}>
+                                                                    {div && !isCombined && (
+                                                                        <div style={{ fontSize: '10px', fontWeight: 800, color: 'black', lineHeight: '1', maxWidth: '45px', wordBreak: 'break-all', textAlign: 'center' }}>
                                                                             {div}
                                                                         </div>
                                                                     )}
                                                                     {displaySub && (
-                                                                        <div style={{ fontSize: '0.55rem', fontWeight: 600, color: 'black', lineHeight: '1', marginTop: '1px' }}>
-                                                                            ({displaySub})
+                                                                        <div style={{ fontSize: '10px', fontWeight: 900, color: 'black', lineHeight: '1', marginTop: '1px' }}>
+                                                                            {displaySub}
                                                                         </div>
+                                                                    )}
+                                                                    {isLunch && num === '-' && (
+                                                                        <div style={{ color: 'black', fontSize: '9px', fontWeight: 800 }}>LUNCH</div>
                                                                     )}
                                                                 </div>
                                                             </td>

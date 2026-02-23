@@ -1,10 +1,12 @@
 // Timetable Print Layout Generator
 // 6 timetables per A4 page, print-optimized
 
-export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, academicYear, bellTimings) => {
+export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, academicYear, bellTimings, isMiddle) => {
     const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
     const dayKeys = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const mt = bellTimings?.middleSchool || {};
+
+    // Use appropriate bell timings branch
+    const mt = isMiddle ? (bellTimings?.middleSchool || {}) : (bellTimings?.seniorSchool || {});
 
     const tableHeader = `
         <thead>
@@ -25,32 +27,32 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
             </tr>
             <tr class="time-row">
                 <th>${mt.CT || '8:00-8:35'}</th>
-                <th>${mt.P1 || '8:35-9:15'}</th>
-                <th>${mt.P2 || '9:15-9:55'}</th>
+                <th>${mt.S1 || '8:35-9:15'}</th>
+                <th>${mt.S2 || '9:15-9:55'}</th>
                 <th class="v-break-sub">9:55-10:10</th>
-                <th>${mt.P3 || '10:10-10:50'}</th>
-                <th>${mt.P4 || '10:50-11:30'}</th>
-                <th>${mt.P5 || '11:30-12:10'}</th>
+                <th>${mt.S4 || '10:10-10:50'}</th>
+                <th>${mt.S5 || '10:50-11:30'}</th>
+                <th>${mt.S6 || '11:30-12:10'}</th>
                 <th class="v-break-sub">12:10-12:20</th>
-                <th>${mt.P6 || '12:20-13:00'}</th>
-                <th class="v-break-sub">13:00-13:30</th>
-                <th>${mt.P7 || '13:30-14:05'}</th>
-                <th>${mt.P8 || '14:05-14:55'}</th>
+                <th>${mt.S8 || '12:20-13:00'}</th>
+                <th class="v-break-sub">${isMiddle ? (mt.S9 || '13:00-13:30') : (mt.S10 || '13:30-14:05')}</th>
+                <th>${isMiddle ? (mt.S10 || '13:30-14:05') : (mt.S9 || '13:00-13:30')}</th>
+                <th>${mt.S11 || '14:05-14:55'}</th>
             </tr>
         </thead>
     `;
 
+    // Map subjects for legend
+    const subjectsSet = new Set();
+    Object.values(teacherTimetables[teacherName] || {}).forEach(day => {
+        Object.values(day || {}).forEach(slot => {
+            if (slot?.subject) subjectsSet.add(slot.subject);
+        });
+    });
+    const subjectsList = Array.from(subjectsSet).sort();
+
     const tableBody = dayKeys.map((dayKey, idx) => {
         const schedule = teacherTimetables[teacherName]?.[dayKey] || {};
-
-        let breakCells = '';
-        if (idx === 0) {
-            breakCells = `
-                <td rowspan="6" class="v-break-body">BREAK - I</td>
-                <td rowspan="6" class="v-break-body">BREAK - II</td>
-                <td rowspan="6" class="v-break-body">LUNCH</td>
-            `;
-        }
 
         const getSubAbbr = (sub) => {
             if (!sub) return '';
@@ -108,38 +110,48 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
             const isObj = typeof entry === 'object' && entry !== null;
             const classNameVal = isObj ? entry.className : entry;
             const subjectOrig = isObj ? (entry.subject || '') : '';
+            if (!classNameVal || classNameVal === '-') return '&nbsp;';
+
             const subject = getSubAbbr(subjectOrig);
             const isBlock = isObj && (entry.isBlock || entry.type === 'BLOCK');
             const badge = isBlock ? '<div class="block-badge">BLOCK</div>' : '';
             const groupSuffix = (isObj && entry.isStream && entry.groupName) ? `-${entry.groupName}` : '';
 
             const { num, div } = getFormattedClass(classNameVal + groupSuffix);
+            const isCombined = div && div.length <= 3;
 
             return `
                 ${badge}
-                <div style="font-size: 11pt; font-weight: 900; line-height: 1.1;">${num}</div>
-                ${div ? `<div style="font-size: 8pt; font-weight: 800; line-height: 1; max-width: 10mm; word-break: break-all; margin: 0 auto;">${div}</div>` : ''}
-                ${subject ? `<div style="font-size: 7.5pt; font-weight: 800; line-height: 1;">(${subject})</div>` : ''}
+                <div style="font-size: 11pt; font-weight: 900; line-height: 1.1;">${num}${isCombined ? `<span style="font-size: 7.5pt; font-weight: 800; margin-left: 1px;">${div}</span>` : ''}</div>
+                ${div && !isCombined ? `<div style="font-size: 8pt; font-weight: 800; line-height: 1; max-width: 10mm; word-break: break-all; margin: 0 auto; color: black;">${div}</div>` : ''}
+                ${subject ? `<div style="font-size: 7.5pt; font-weight: 800; line-height: 1; color: black;">(${subject})</div>` : ''}
             `;
         };
 
+        // Slots for the row
         const cells = [
             `<td class="day-cell">${days[idx]}</td>`,
             `<td class="period-cell">${renderTeacherCell('CT')}</td>`,
             `<td class="period-cell">${renderTeacherCell('S1')}</td>`,
             `<td class="period-cell">${renderTeacherCell('S2')}</td>`,
-            // BREAK 1 index would be here
             `<td class="period-cell">${renderTeacherCell('S4')}</td>`,
             `<td class="period-cell">${renderTeacherCell('S5')}</td>`,
             `<td class="period-cell">${renderTeacherCell('S6')}</td>`,
-            // BREAK 2 index would be here
             `<td class="period-cell">${renderTeacherCell('S8')}</td>`,
-            // LUNCH index would be here
-            `<td class="period-cell">${renderTeacherCell('S9')}</td>`, // Adjust based on Middle/Main? 
-            `<td class="period-cell">${renderTeacherCell('S11')}</td>`
+            `<td class="period-cell">${renderTeacherCell(isMiddle ? 'S10' : 'S9')}</td>`, // This is P7
+            `<td class="period-cell">${renderTeacherCell('S11')}</td>`, // This is P8
+            (() => {
+                const lunchSlot = isMiddle ? 'S9' : 'S10';
+                const entry = teacherTimetables[teacherName]?.[dayKey]?.[lunchSlot];
+                const hasPeriod = entry && (typeof entry === 'object' ? entry.className : entry) && entry !== '-';
+                if (hasPeriod) {
+                    return `<td class="period-cell" style="background-color: #fff1f2;">${renderTeacherCell(lunchSlot)}</td>`;
+                }
+                return `<td class="v-break-body" style="background-color: #fef2f2;">LUNCH</td>`;
+            })()
         ];
 
-        // Insert break cells only into the first row
+        // Combine with rowspan breaks (BREAK-I and BREAK-II remain rows spanned as they are fixed)
         if (idx === 0) {
             return `
                 <tr>
@@ -148,7 +160,7 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
                     ${cells[4]}${cells[5]}${cells[6]}
                     <td rowspan="6" class="v-break-body">BREAK - II</td>
                     ${cells[7]}
-                    <td rowspan="6" class="v-break-body">LUNCH</td>
+                    ${cells[10]}
                     ${cells[8]}${cells[9]}
                 </tr>
             `;
@@ -158,6 +170,7 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
                     ${cells[0]}${cells[1]}${cells[2]}${cells[3]}
                     ${cells[4]}${cells[5]}${cells[6]}
                     ${cells[7]}
+                    ${cells[10]}
                     ${cells[8]}${cells[9]}
                 </tr>
             `;
@@ -182,11 +195,20 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
         </colgroup>
     `;
 
+    const legend = subjectsList.length > 0
+        ? `<div style="font-size: 7pt; margin-top: 1mm; border-bottom: 0.5px solid #000; padding-bottom: 1px; color: black;">Subjects: ${subjectsList.join(', ')}</div>`
+        : '';
+
+    // If teacherName is null or placeholder, don't show "Teacher EMPTY TEMPLATE"
+    const displayTeacherName = (teacherName && teacherName !== 'EMPTY TEMPLATE') ? teacherName : '';
+    const teacherTitle = displayTeacherName ? `<div class="teacher-title">Teacher ${displayTeacherName}</div>` : '<div class="teacher-title">&nbsp;</div>';
+
     return `
     <div class="timetable-card">
         <div class="card-header">
             <div class="school-name">THE CHOICE SCHOOL, NADAMA EAST, TRIPUNITHURA, COCHIN</div>
-            <div class="teacher-title">Teacher ${teacherName}</div>
+            ${legend}
+            ${teacherTitle}
         </div>
         <table class="timetable-table">
             ${colGroup}
@@ -194,8 +216,8 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
             <tbody>${tableBody}</tbody>
         </table>
         <div class="card-footer">
-            <span>Academic Year ${academicYear}</span>
-            <span style="font-style: italic; opacity: 0.6;">jkrdomain</span>
+            <span>Academic Year ${academicYear} | ${isMiddle ? 'Middle' : 'Senior'} School</span>
+            <span style="font-style: italic; color: black;">jkrdomain</span>
         </div>
     </div>
     `;
@@ -248,7 +270,7 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
 
             if (cell.isStream) {
                 const subList = (cell.subjects || []).map(s => s.subject).join(',');
-                return `<div style="font-weight: 800; font-size: 8pt; color: #b45309;">${cell.subject}</div><div style="font-size: 5pt; line-height: 1;">${subList}</div>`;
+                return `<div style="font-weight: 800; font-size: 8pt; color: black;">${cell.subject}</div><div style="font-size: 5pt; line-height: 1; color: black;">${subList}</div>`;
             }
 
             const subject = cell.subject;
@@ -325,7 +347,7 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
         </table>
         <div class="card-footer">
             <span>Academic Year ${academicYear}</span>
-            <span style="font-style: italic; opacity: 0.6;">jkrdomain</span>
+            <span style="font-style: italic; color: black;">jkrdomain</span>
         </div>
     </div>
     `;
@@ -439,7 +461,7 @@ export const generatePrintCSS = (bellTimings) => `
         }
         .tr-code {
             font-size: 6pt;
-            color: #444;
+            color: #000;
             display: block;
         }
         .block-badge {
@@ -462,7 +484,7 @@ export const generatePrintCSS = (bellTimings) => `
             justify-content: space-between;
             font-size: 6pt;
             margin-top: 2mm;
-            border-top: 0.5px solid #666;
+            border-top: 1px solid #000;
             padding-top: 1px;
         }
     }
