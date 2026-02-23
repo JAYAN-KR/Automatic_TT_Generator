@@ -5742,6 +5742,32 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
                         const PERIODS = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
 
+                        // Subject Abbreviation Mapping
+                        const getSubAbbr = (sub) => {
+                            if (!sub) return '';
+                            const map = {
+                                'SANSKRIT': 'Skt',
+                                'PHYSICS': 'phy',
+                                'CHEMISTRY': 'Chem',
+                                'MATHEMATICS': 'Mat',
+                                'MATH': 'Mat',
+                                'BIOLOGY': 'Bio',
+                                'ENGLISH': 'Eng',
+                                'MALAYALAM': 'Mal',
+                                'HINDI': 'Hin',
+                                'HISTORY': 'His',
+                                'GEOGRAPHY': 'Geo',
+                                'SOCIAL SCIENCE': 'SS',
+                                'COMPUTER SCIENCE': 'CS',
+                                'PHYSICAL EDUCATION': 'PE',
+                                'ECONOMICS': 'Eco',
+                                'BUSINESS STUDIES': 'BST',
+                                'ACCOUNTANCY': 'Acc'
+                            };
+                            const upper = sub.trim().toUpperCase();
+                            return map[upper] || (sub.length > 4 ? sub.substring(0, 3) : sub);
+                        };
+
                         const handlePrintAll = () => {
                             if (!generatedTimetable) return;
                             const cards = categoryTeachers.map(t => generateTeacherTimetableHTML(
@@ -5871,7 +5897,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         if (slot?.isStream) {
                                                             displayClass = slot.groupName ? `${slot.className}-${slot.groupName}` : slot.className;
                                                             // For streams, the subject is specific to the teacher
-                                                            displaySub = slot.subject || '';
+                                                            displaySub = getSubAbbr(slot.subject || '');
+                                                        } else {
+                                                            displaySub = getSubAbbr(displaySub);
                                                         }
 
                                                         return (
@@ -5883,9 +5911,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 padding: '2px',
                                                                 color: 'black'
                                                             }}>
-                                                                <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'black' }}>
+                                                                <div style={{ fontSize: '1rem', fontWeight: 900, color: 'black', lineHeight: '1.2' }}>
                                                                     {displayClass}{slot?.isTBlock ? ' [T]' : (slot?.isLBlock ? ' [L]' : '')}
                                                                 </div>
+                                                                {displaySub && (
+                                                                    <div style={{ fontSize: '0.6rem', fontWeight: 600, color: 'black', lineHeight: '1' }}>
+                                                                        {displaySub}
+                                                                    </div>
+                                                                )}
                                                             </td>
                                                         );
                                                     })}

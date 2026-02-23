@@ -52,19 +52,48 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
             `;
         }
 
+        const getSubAbbr = (sub) => {
+            if (!sub) return '';
+            const map = {
+                'SANSKRIT': 'Skt',
+                'PHYSICS': 'phy',
+                'CHEMISTRY': 'Chem',
+                'MATHEMATICS': 'Mat',
+                'MATH': 'Mat',
+                'BIOLOGY': 'Bio',
+                'ENGLISH': 'Eng',
+                'MALAYALAM': 'Mal',
+                'HINDI': 'Hin',
+                'HISTORY': 'His',
+                'GEOGRAPHY': 'Geo',
+                'SOCIAL SCIENCE': 'SS',
+                'COMPUTER SCIENCE': 'CS',
+                'PHYSICAL EDUCATION': 'PE',
+                'ECONOMICS': 'Eco',
+                'BUSINESS STUDIES': 'BST',
+                'ACCOUNTANCY': 'Acc'
+            };
+            const upper = sub.trim().toUpperCase();
+            return map[upper] || (sub.length > 4 ? sub.substring(0, 3) : sub);
+        };
+
         const renderTeacherCell = (period) => {
             const entry = schedule[period];
             if (!entry) return '&nbsp;';
 
-            if (entry.isStream) {
-                const groupSuffix = entry.groupName ? `-${entry.groupName}` : '';
-                return `<div style="font-size: 8pt; font-weight: 900;">${entry.className}${groupSuffix}</div><div style="font-size: 5.5pt; color: #444;">${entry.subject || ''}</div>`;
-            }
-
-            const className = typeof entry === 'string' ? entry : entry.className;
-            const isBlock = typeof entry === 'object' && (entry.isBlock || entry.type === 'BLOCK');
+            const isObj = typeof entry === 'object' && entry !== null;
+            const className = isObj ? entry.className : entry;
+            const subjectOrig = isObj ? (entry.subject || '') : '';
+            const subject = getSubAbbr(subjectOrig);
+            const isBlock = isObj && (entry.isBlock || entry.type === 'BLOCK');
             const badge = isBlock ? '<div class="block-badge">BLOCK</div>' : '';
-            return `${badge}${className}`;
+            const groupSuffix = (isObj && entry.isStream && entry.groupName) ? `-${entry.groupName}` : '';
+
+            return `
+                ${badge}
+                <div style="font-size: 9.5pt; font-weight: 900; line-height: 1.1;">${className}${groupSuffix}</div>
+                ${subject ? `<div style="font-size: 7.5pt; font-weight: 800; line-height: 1;">${subject}</div>` : ''}
+            `;
         };
 
         const cells = [
