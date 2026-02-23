@@ -1,14 +1,41 @@
 import { getAbbreviation } from './subjectAbbreviations';
 
 // Timetable Generation Engine
-export const generateTimetable = (mappings, distribution, bellTimings) => {
+export const generateTimetable = (mappings, distribution, bellTimings, streams = []) => {
     console.log('🔄 Starting timetable generation...', {
-        mappingsCount: mappings?.length || 0
+        mappingsCount: mappings?.length || 0,
+        streamsCount: streams?.length || 0
     });
 
     // ============ CONSTANTS ============
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const periods = ['CT', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'];
+    const allPeriods = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+
+    // Level-aware slot logic
+    const getLevel = (className) => {
+        const grade = parseInt(className) || 0;
+        return grade >= 11 ? 'Senior' : 'Middle';
+    };
+
+    const getAvailableSlots = (className) => {
+        const level = getLevel(className);
+        // Middle (6-10): Skip S3, S7 (Breaks), S9 (Lunch). Available: S1,S2,S4,S5,S6,S8,S10,S11
+        // Senior (11-12): Skip S3, S7 (Breaks), S10 (Lunch). Available: S1,S2,S4,S5,S6,S8,S9,S11
+        return level === 'Senior'
+            ? ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S11']
+            : ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S10', 'S11'];
+    };
+
+    const getBlockPairs = (className) => {
+        const slots = getAvailableSlots(className);
+        // Returns pairs of adjacent available slots that don't cross a break/lunch
+        return [
+            [slots[0], slots[1]], // S1-S2
+            [slots[2], slots[3]], // S4-S5
+            [slots[3], slots[4]], // S5-S6
+            [slots[6], slots[7]]  // S10-S11 or S9-S11
+        ];
+    };
 
     const classList = [
         '6A', '6B', '6C', '6D', '6E', '6F', '6G',
@@ -25,8 +52,15 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
     mappings.forEach(m => {
         if (m.teacher) teacherSet.add(m.teacher);
     });
+    // Also include teachers from streams
+    streams.forEach(stream => {
+        stream.subjects?.forEach(s => {
+            if (s.teacher) teacherSet.add(s.teacher);
+        });
+    });
+
     const teacherList = Array.from(teacherSet);
-    console.log(`👩🏫 Found ${teacherList.length} unique teachers`);
+    console.log(`👩‍🏫 Found ${teacherList.length} unique teachers`);
 
     // ============ INITIALIZE DATA STRUCTURES SAFELY ============
     const classTimetables = {};
@@ -35,39 +69,42 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
     // Initialize ALL classes with empty schedules
     classList.forEach(className => {
         classTimetables[className] = {};
+        const level = getLevel(className);
         days.forEach(day => {
-            classTimetables[className][day] = {
-                CT: { subject: '', teacher: '' },
-                P1: { subject: '', teacher: '' },
-                P2: { subject: '', teacher: '' },
-                P3: { subject: '', teacher: '' },
-                P4: { subject: '', teacher: '' },
-                P5: { subject: '', teacher: '' },
-                P6: { subject: '', teacher: '' },
-                P7: { subject: '', teacher: '' },
-                P8: { subject: '', teacher: '' }
-            };
+            classTimetables[className][day] = {};
+            allPeriods.forEach(p => {
+                const isBreak = p === 'S3' || p === 'S7';
+                const isLunch = (level === 'Senior' && p === 'S10') || (level === 'Middle' && p === 'S9');
+                classTimetables[className][day][p] = {
+                    subject: isBreak ? 'BREAK' : (isLunch ? 'LUNCH' : ''),
+                    teacher: '',
+                    isReserved: isBreak || isLunch
+                };
+            });
         });
     });
 
     // Initialize ALL teachers with empty schedules
     teacherList.forEach(teacher => {
-        teacherTimetables[teacher] = {};
+        teacherTimetables[teacher] = { weeklyPeriods: 0 };
         days.forEach(day => {
-            teacherTimetables[teacher][day] = {
-                CT: '', P1: '', P2: '', P3: '', P4: '', P5: '', P6: '', P7: '', P8: '',
-                periodCount: 0
-            };
+            teacherTimetables[teacher][day] = { periodCount: 0 };
+            allPeriods.forEach(p => {
+                const isBreak = p === 'S3' || p === 'S7';
+                // Note: teacher lunch depends on WHICH class they are teaching at that time,
+                // but we can mark the likely lunch slots as 'LUNCH' preliminarily.
+                // However, teachers might teach across levels. For now, we just mark breaks.
+                teacherTimetables[teacher][day][p] = isBreak ? 'BREAK' : '';
+            });
         });
-        teacherTimetables[teacher].weeklyPeriods = 0;
     });
 
     console.log('📊 Initialized:', {
         classes: Object.keys(classTimetables).length,
-        teachers: Object.keys(teacherTimetables).length
+        teachers: Object.keys(teacherList).length
     });
 
-    // ============ PROCESS MAPPINGS ============
+    // ============ PROCESS MAPPINGS & STREAMS ============
     let totalAllocations = 0;
     let skippedMappings = 0;
 
@@ -122,9 +159,28 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
         });
     });
 
-    // Sort tasks: BLOCKS first
-    allTasks.sort((a, b) => (a.type === 'BLOCK' ? -1 : 1));
-    console.log(`📋 Total tasks to place: ${allTasks.length} (${allTasks.filter(t => t.type === 'BLOCK').length} blocks)`);
+    // 3. Process Streams
+    streams.forEach(stream => {
+        const total = Number(stream.periods) || 0;
+        for (let t = 0; t < total; t++) {
+            allTasks.push({
+                type: 'STREAM',
+                name: stream.name,
+                className: stream.className,
+                classes: [stream.className],
+                subjects: stream.subjects,
+                preferredDay: 'Any'
+            });
+        }
+    });
+
+    // Sort tasks: BLOCKS first, then STREAMS (more constraints), then SINGLES
+    allTasks.sort((a, b) => {
+        const priority = { 'BLOCK': 0, 'STREAM': 1, 'SINGLE': 2 };
+        return priority[a.type] - priority[b.type];
+    });
+
+    console.log(`📋 Total tasks to place: ${allTasks.length}`);
 
     // ============ PLACEMENT ENGINE ============
     allTasks.forEach((task, taskIdx) => {
@@ -146,9 +202,9 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
             const day = candidateDays[(dayStart + d) % candidateDays.length];
 
             if (task.type === 'BLOCK') {
-                const pairs = [['P1', 'P2'], ['P3', 'P4'], ['P5', 'P6'], ['P7', 'P8']];
+                const pairs = getBlockPairs(task.className);
                 for (const [p1, p2] of pairs) {
-                    const teacherFree = teacherTimetables[task.teacher][day][p1] === '' && teacherTimetables[task.teacher][day][p2] === '';
+                    const teacherFree = teacherTimetables[task.teacher] && teacherTimetables[task.teacher][day][p1] === '' && teacherTimetables[task.teacher][day][p2] === '';
                     const classesFree = task.classes.every(cn =>
                         classTimetables[cn] && classTimetables[cn][day] &&
                         classTimetables[cn][day][p1].subject === '' &&
@@ -162,12 +218,34 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
                         break;
                     }
                 }
+            } else if (task.type === 'STREAM') {
+                const availableSlots = getAvailableSlots(task.className);
+                const pStart = Math.floor(Math.random() * availableSlots.length);
+                for (let p = 0; p < availableSlots.length; p++) {
+                    const period = availableSlots[(pStart + p) % availableSlots.length];
+
+                    // Check if ALL teachers in the stream are free
+                    const teachersFree = task.subjects.every(s =>
+                        teacherTimetables[s.teacher] &&
+                        teacherTimetables[s.teacher][day][period] === ''
+                    );
+
+                    // Check if the class is free
+                    const classFree = classTimetables[task.className] &&
+                        classTimetables[task.className][day][period].subject === '';
+
+                    if (teachersFree && classFree) {
+                        placeStreamTask(task, day, period);
+                        placed = true;
+                        break;
+                    }
+                }
             } else {
-                const periodList = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'];
-                const pStart = Math.floor(Math.random() * 8);
-                for (let p = 0; p < 8; p++) {
-                    const period = periodList[(pStart + p) % 8];
-                    const teacherFree = teacherTimetables[task.teacher][day][period] === '';
+                const availableSlots = getAvailableSlots(task.className);
+                const pStart = Math.floor(Math.random() * availableSlots.length);
+                for (let p = 0; p < availableSlots.length; p++) {
+                    const period = availableSlots[(pStart + p) % availableSlots.length];
+                    const teacherFree = teacherTimetables[task.teacher] && teacherTimetables[task.teacher][day][period] === '';
                     const classesFree = task.classes.every(cn =>
                         classTimetables[cn] && classTimetables[cn][day] &&
                         classTimetables[cn][day][period].subject === ''
@@ -183,58 +261,49 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
         }
 
         if (!placed) {
-            console.warn(`  🔴 Conflict: No free slot for ${task.teacher} - ${task.subject} (${task.type}) - Forcing placement`);
+            let conflictReason = 'No free slot';
+            if (task.type === 'STREAM') {
+                const dayMap = { 'Mon': 'Monday', 'Tue': 'Tuesday', 'Wed': 'Wednesday', 'Thu': 'Thursday', 'Fri': 'Friday', 'Sat': 'Saturday' };
+                const day = (task.preferredDay && task.preferredDay !== 'Any')
+                    ? (dayMap[task.preferredDay] || task.preferredDay)
+                    : days[taskIdx % days.length];
+
+                // Inspect why it failed for this day specifically (or just generally)
+                const busyTeachers = task.subjects.filter(s =>
+                    teacherTimetables[s.teacher] &&
+                    Object.values(teacherTimetables[s.teacher][day]).some(v => v !== '' && typeof v === 'object')
+                ).map(s => s.teacher);
+
+                if (busyTeachers.length > 0) {
+                    conflictReason = `Teachers busy: ${busyTeachers.join(', ')}`;
+                }
+            }
+
+            console.warn(`  🔴 Conflict: ${conflictReason} for ${task.teacher || task.name} - ${task.subject || 'STREAM'} (${task.type}) - Forcing placement`);
             const dayMap = { 'Mon': 'Monday', 'Tue': 'Tuesday', 'Wed': 'Wednesday', 'Thu': 'Thursday', 'Fri': 'Friday', 'Sat': 'Saturday' };
             const day = (task.preferredDay && task.preferredDay !== 'Any')
                 ? (dayMap[task.preferredDay] || task.preferredDay)
                 : days[taskIdx % days.length];
-            const period = `P${(taskIdx % 8) + 1}`;
-            placeTask(task, day, period, task.type === 'BLOCK');
-            if (task.type === 'BLOCK') {
-                const pIndex = Number(period.substring(1));
-                const nextPeriod = `P${(pIndex % 8) + 1}`;
-                placeTask(task, day, nextPeriod, true);
+
+            const availableSlots = getAvailableSlots(task.className);
+            const period = availableSlots[(taskIdx % availableSlots.length)];
+
+            if (task.type === 'STREAM') {
+                placeStreamTask(task, day, period);
+            } else {
+                placeTask(task, day, period, task.type === 'BLOCK');
+                if (task.type === 'BLOCK') {
+                    const pIndex = Number(period.substring(1));
+                    const nextPeriod = `P${(pIndex % 8) + 1}`;
+                    placeTask(task, day, nextPeriod, true);
+                }
             }
         }
     });
 
     function placeTask(task, day, period, isBlock) {
-        // Update Class Timetables
         task.classes.forEach(cn => {
-            // SAFETY CHECK: Ensure class exists
-            if (!classTimetables[cn]) {
-                console.warn(`  ⚠️ Class ${cn} not found during placement, creating...`);
-                classTimetables[cn] = {};
-                days.forEach(d => {
-                    classTimetables[cn][d] = {
-                        CT: { subject: '', teacher: '' },
-                        P1: { subject: '', teacher: '' },
-                        P2: { subject: '', teacher: '' },
-                        P3: { subject: '', teacher: '' },
-                        P4: { subject: '', teacher: '' },
-                        P5: { subject: '', teacher: '' },
-                        P6: { subject: '', teacher: '' },
-                        P7: { subject: '', teacher: '' },
-                        P8: { subject: '', teacher: '' }
-                    };
-                });
-            }
-            // SAFETY CHECK: Ensure day exists for class
-            if (!classTimetables[cn][day]) {
-                console.warn(`  ⚠️ Class ${cn} missing day ${day} during placement, creating...`);
-                classTimetables[cn][day] = {
-                    CT: { subject: '', teacher: '' },
-                    P1: { subject: '', teacher: '' },
-                    P2: { subject: '', teacher: '' },
-                    P3: { subject: '', teacher: '' },
-                    P4: { subject: '', teacher: '' },
-                    P5: { subject: '', teacher: '' },
-                    P6: { subject: '', teacher: '' },
-                    P7: { subject: '', teacher: '' },
-                    P8: { subject: '', teacher: '' }
-                };
-            }
-
+            if (!classTimetables[cn]) return;
             classTimetables[cn][day][period] = {
                 subject: getAbbreviation(task.subject),
                 teacher: task.teacher,
@@ -243,62 +312,48 @@ export const generateTimetable = (mappings, distribution, bellTimings) => {
             };
         });
 
-        // Update Teacher Timetables
-        // SAFETY CHECK: Ensure teacher exists
-        if (!teacherTimetables[task.teacher]) {
-            console.warn(`  ⚠️ Teacher ${task.teacher} not found during placement, creating...`);
-            teacherTimetables[task.teacher] = {};
-            days.forEach(d => {
-                teacherTimetables[task.teacher][d] = {
-                    CT: '', P1: '', P2: '', P3: '', P4: '', P5: '', P6: '', P7: '', P8: '',
-                    periodCount: 0
-                };
-            });
-            teacherTimetables[task.teacher].weeklyPeriods = 0;
-        }
-        // SAFETY CHECK: Ensure day exists for teacher
-        if (!teacherTimetables[task.teacher][day]) {
-            console.warn(`  ⚠️ Teacher ${task.teacher} missing day ${day} during placement, creating...`);
-            teacherTimetables[task.teacher][day] = {
-                CT: '', P1: '', P2: '', P3: '', P4: '', P5: '', P6: '', P7: '', P8: '',
-                periodCount: 0
-            };
-        }
-
+        if (!teacherTimetables[task.teacher]) return;
         teacherTimetables[task.teacher][day][period] = {
             className: task.classes.join('/'),
+            subject: task.subject,
             isBlock: isBlock
         };
         teacherTimetables[task.teacher][day].periodCount++;
         teacherTimetables[task.teacher].weeklyPeriods++;
-        totalAllocations++; // Increment total allocations here
+        totalAllocations++;
     }
 
-    console.log(`📊 Timetable Generation Completed Globaly`);
+    function placeStreamTask(task, day, period) {
+        // Update Class Timetable
+        if (classTimetables[task.className]) {
+            classTimetables[task.className][day][period] = {
+                subject: getAbbreviation(task.name), // e.g. "2nd Language"
+                isStream: true,
+                streamName: task.name,
+                subjects: task.subjects
+            };
+        }
+
+        // Update each teacher's timetable
+        task.subjects.forEach(s => {
+            if (teacherTimetables[s.teacher]) {
+                teacherTimetables[s.teacher][day][period] = {
+                    className: task.className,
+                    subject: s.subject,
+                    groupName: s.groupName,
+                    isStream: true,
+                    streamName: task.name
+                };
+                teacherTimetables[s.teacher][day].periodCount++;
+                teacherTimetables[s.teacher].weeklyPeriods++;
+                totalAllocations++;
+            }
+        });
+    }
 
     console.log(`📊 Total allocations: ${totalAllocations}`);
-    console.log(`⏭️ Skipped mappings: ${skippedMappings}`);
 
-    // ============ VALIDATION ============
     const errors = [];
-
-    // Check if any teachers have zero allocations
-    teacherList.forEach(teacher => {
-        if (teacherTimetables[teacher]?.weeklyPeriods === 0) {
-            errors.push(`⚠️ Teacher ${teacher} has no periods assigned`);
-        }
-    });
-
-    console.log('✅ Generation complete', {
-        teachers: teacherList.length,
-        allocations: totalAllocations,
-        errors: errors.length
-    });
-
-    if (errors.length > 0) {
-        console.warn('Validation errors:', errors);
-    }
-
     return {
         teacherTimetables,
         classTimetables,

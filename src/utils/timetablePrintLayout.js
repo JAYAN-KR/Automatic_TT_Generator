@@ -55,8 +55,14 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
         const renderTeacherCell = (period) => {
             const entry = schedule[period];
             if (!entry) return '&nbsp;';
+
+            if (entry.isStream) {
+                const groupSuffix = entry.groupName ? `-${entry.groupName}` : '';
+                return `<div style="font-size: 8pt; font-weight: 900;">${entry.className}${groupSuffix}</div><div style="font-size: 5.5pt; color: #444;">${entry.subject || ''}</div>`;
+            }
+
             const className = typeof entry === 'string' ? entry : entry.className;
-            const isBlock = typeof entry === 'object' && entry.isBlock;
+            const isBlock = typeof entry === 'object' && (entry.isBlock || entry.type === 'BLOCK');
             const badge = isBlock ? '<div class="block-badge">BLOCK</div>' : '';
             return `${badge}${className}`;
         };
@@ -182,10 +188,16 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
         const schedule = classTimetables[className]?.[dayKey] || {};
         const renderCell = (period) => {
             const cell = schedule[period];
-            const subject = cell?.subject;
-            const teacher = cell?.teacher;
-            if (!subject) return '&nbsp;';
-            const badge = cell.isBlock ? '<div class="block-badge">BLOCK</div>' : '';
+            if (!cell || !cell.subject) return '&nbsp;';
+
+            if (cell.isStream) {
+                const subList = (cell.subjects || []).map(s => s.subject).join(',');
+                return `<div style="font-weight: 800; font-size: 8pt; color: #b45309;">${cell.subject}</div><div style="font-size: 5pt; line-height: 1;">${subList}</div>`;
+            }
+
+            const subject = cell.subject;
+            const teacher = cell.teacher;
+            const badge = (cell.isBlock || cell.type === 'BLOCK') ? '<div class="block-badge">BLOCK</div>' : '';
             return `${badge}${subject}<br><span class="tr-code">${teacher || ''}</span>`;
         };
 

@@ -44,7 +44,8 @@ export const getAbbreviation = (subject) => {
         'MUSIC': 'MUS',
         'WORK EXPERIENCE': 'WE',
         'CLASS TEACHER TIME': 'CTT',
-        'STEM': 'STEM'
+        'STEM': 'STEM',
+        '2ND LANGUAGE': '2nd Lan'
     };
     return map[subject.toUpperCase()] || subject.substring(0, 3).toUpperCase();
 };

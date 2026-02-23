@@ -156,7 +156,19 @@ const SUBJECT_ABBR = {
     'SWIMMING': 'SWM',
     'MAJOR ARTS': 'MART',
     'MAJOR SPORTS': 'MSPT',
-    'SKILL': 'SKL'
+    '2ND LANGUAGE': '2ndLang',
+    '3RD LANGUAGE': '3rdLang',
+    'ELECTIVE 1': 'Elect1',
+    'ELECTIVE 2': 'Elect2',
+    'ADDITIONAL LANGUAGE': 'AddL',
+    'SKILL': 'skill',
+    'SKILL SUBJECTS': 'skill',
+    'SKILL SUBJECT': 'skill'
+};
+
+const getAbbreviation = (sub) => {
+    if (!sub) return '';
+    return SUBJECT_ABBR[sub.toUpperCase()] || sub.substring(0, 7).toUpperCase();
 };
 
 // --- Sub-components ---
@@ -345,6 +357,7 @@ export default function TimetablePage() {
     const [deletePopup, setDeletePopup] = useState(null);
 
     const [reassignWizard, setReassignWizard] = useState(null); // { step, row, newTeacher, analysis }
+    const [dptViewType, setDptViewType] = useState('Teachers'); // 'Teachers' or 'Classes'
 
     const [allotmentRows, setAllotmentRows] = useState(() => {
         const saved = localStorage.getItem('tt_allotments');
@@ -438,11 +451,14 @@ export default function TimetablePage() {
                 updatedGroup.periods = numVal;
                 // When PPS goes to 0, automatically reset blocks and day
                 if (numVal === 0) {
-                    updatedGroup.blockPeriods = 0;
+                    updatedGroup.tBlock = 0;
+                    updatedGroup.lBlock = 0;
                     updatedGroup.preferredDay = 'Any';
                 }
-            } else if (field === 'blockPeriods') {
-                updatedGroup.blockPeriods = Number(value);
+            } else if (field === 'tBlock') {
+                updatedGroup.tBlock = Number(value);
+            } else if (field === 'lBlock') {
+                updatedGroup.lBlock = Number(value);
             } else if (field === 'preferredDay') {
                 updatedGroup.preferredDay = value;
             }
@@ -460,7 +476,7 @@ export default function TimetablePage() {
             if (r.id !== rowId) return r;
             return {
                 ...r,
-                allotments: [...r.allotments, { id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, preferredDay: 'Any', isMerged: false }]
+                allotments: [...r.allotments, { id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }]
             };
         }));
     };
@@ -472,7 +488,7 @@ export default function TimetablePage() {
             if (r.allotments.length <= 1) {
                 const lastGroup = r.allotments[r.allotments.length - 1];
                 const grade = lastGroup?.classes[0]?.match(/\d+/)?.[0];
-                const newGroup = { id: Date.now() + Math.random(), classes: [grade ? grade + 'A' : '6A'], periods: 0, blockPeriods: 0, preferredDay: 'Any', isMerged: false };
+                const newGroup = { id: Date.now() + Math.random(), classes: [grade ? grade + 'A' : '6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false };
                 return {
                     ...r,
                     allotments: [newGroup],
@@ -594,6 +610,64 @@ export default function TimetablePage() {
         const checked = {};
         classGroups.forEach(({ className }) => { checked[className] = new Set(); });
         setDeletePopup({ row, classGroups, checked, expanded: new Set() });
+    };
+
+    const handleSaveStream = () => {
+        if (!streamForm.name || !streamForm.className || !streamForm.periods || streamForm.subjects.some(s => !s.teacher || !s.subject)) {
+            addToast('Please fill all stream details correctly (Name, Class, Periods, and all Teacher/Subject pairs)', 'error');
+            return;
+        }
+
+        let updated;
+        if (editingStreamId) {
+            updated = subjectStreams.map(s => s.id === editingStreamId ? { ...streamForm, id: editingStreamId } : s);
+        } else {
+            updated = [...subjectStreams, { ...streamForm, id: Date.now() }];
+        }
+
+        setSubjectStreams(updated);
+        saveStreams(updated);
+        setShowStreamModal(false);
+        setEditingStreamId(null);
+        setStreamForm({ name: '', abbreviation: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '', groupName: '' }] });
+        addToast('✅ Stream saved successfully', 'success');
+    };
+
+    const handleDeleteStream = (id) => {
+        if (!confirm('Are you sure you want to delete this stream?')) return;
+        const updated = subjectStreams.filter(s => s.id !== id);
+        setSubjectStreams(updated);
+        saveStreams(updated);
+        addToast('🗑️ Stream deleted', 'success');
+    };
+
+    const handleEditStream = (stream) => {
+        setEditingStreamId(stream.id);
+        setStreamForm(stream);
+        setShowStreamModal(true);
+    };
+
+    const addSubjectToStream = () => {
+        setStreamForm(prev => ({
+            ...prev,
+            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '' }]
+        }));
+    };
+
+    const removeSubjectFromStream = (idx) => {
+        if (streamForm.subjects.length <= 1) return;
+        setStreamForm(prev => ({
+            ...prev,
+            subjects: prev.subjects.filter((_, i) => i !== idx)
+        }));
+    };
+
+    const updateStreamSubject = (idx, field, value) => {
+        setStreamForm(prev => {
+            const newSubjects = [...prev.subjects];
+            newSubjects[idx] = { ...newSubjects[idx], [field]: value };
+            return { ...prev, subjects: newSubjects };
+        });
     };
 
     const handleSmartReassign = (row) => {
@@ -858,7 +932,7 @@ export default function TimetablePage() {
                         id: `${p.teacher}||${p.subject}`,
                         teacher: p.teacher,
                         subject: p.subject,
-                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
+                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
                         total: 0
                     }));
                     setAllotmentRows(resetRows);
@@ -867,15 +941,52 @@ export default function TimetablePage() {
                         id: Date.now(),
                         teacher: '',
                         subject: '',
-                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, isMerged: false }],
+                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
                         total: 0
                     }]);
                 }
-                addToast('🧹 All data cleared permanently', 'info');
+                addToast('🧹 All data cleared', 'success');
             } catch (e) {
+                console.error('Clear failed:', e);
                 addToast('❌ Clear failed', 'error');
             }
         }
+    };
+
+    const saveStreams = async (streams) => {
+        const dataToSave = streams || subjectStreams;
+        try {
+            localStorage.setItem('tt_streams', JSON.stringify(dataToSave));
+            const docRef = doc(db, 'streams', academicYear);
+            await setDoc(docRef, {
+                streams: dataToSave,
+                lastUpdated: new Date().toISOString(),
+                academicYear
+            });
+            console.log('🚀 Streams saved to Cloud');
+        } catch (e) {
+            console.error('❌ Streams save failed', e);
+        }
+    };
+
+    const loadStreams = async () => {
+        try {
+            const docRef = doc(db, 'streams', academicYear);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.streams) {
+                    setSubjectStreams(data.streams);
+                    localStorage.setItem('tt_streams', JSON.stringify(data.streams));
+                    return true;
+                }
+            }
+            const local = localStorage.getItem('tt_streams');
+            if (local) setSubjectStreams(JSON.parse(local));
+        } catch (e) {
+            console.error('❌ Streams load failed', e);
+        }
+        return false;
     };
 
     // ── Cloud Save / Load for Teachers & Subjects tab ────────────────────────
@@ -963,6 +1074,8 @@ export default function TimetablePage() {
     useEffect(() => {
         // Load allotments (Classes Alloted tab)
         loadAllotments();
+        // Load Streams
+        loadStreams();
         // Load Teachers & Subjects from cloud
         loadDptData();
 
@@ -1117,8 +1230,18 @@ export default function TimetablePage() {
         window.addEventListener('mouseup', onGlobalMouseUp);
         return () => window.removeEventListener('mouseup', onGlobalMouseUp);
     }, []);
-    const [editingSubjectName, setEditingSubjectName] = useState(null);
-    const [subjectRenameValue, setSubjectRenameValue] = useState('');
+    // Tab 1: Subject Streams (Parallel Classes) State
+    const [subjectStreams, setSubjectStreams] = useState([]);
+    const [showStreamModal, setShowStreamModal] = useState(false);
+    const [editingStreamId, setEditingStreamId] = useState(null);
+    const [streamForm, setStreamForm] = useState({
+        name: '',
+        abbreviation: '',
+        className: '6A',
+        periods: 4,
+        subjects: [{ teacher: '', subject: '', groupName: '' }]
+    });
+
     // toast messages
     const [toasts, setToasts] = useState([]);
     const addToast = (msg, type = 'success') => {
@@ -1631,6 +1754,190 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
     };
 
 
+    const handleCreateStreamSpecific = async (stream, baseTT = null) => {
+        if (!stream.name || !stream.className || !stream.subjects || stream.subjects.length === 0) {
+            addToast('Stream details incomplete', 'warning');
+            return null;
+        }
+
+        console.log('🟢 [STREAM CREATE] Clicked for:', stream.name, stream.className);
+
+        let currentTT = baseTT || generatedTimetable;
+        if (!currentTT) {
+            const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const initPeriods = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+            const cTimetables = {};
+            const tTimetables = {};
+
+            CLASS_OPTIONS.forEach(cn => {
+                cTimetables[cn] = {};
+                days.forEach(d => {
+                    cTimetables[cn][d] = {};
+                    initPeriods.forEach(p => { cTimetables[cn][d][p] = { subject: '', teacher: '' }; });
+                });
+            });
+
+            const allTeachers = [...new Set(allotmentRows.map(r => r.teacher).filter(Boolean))];
+            allTeachers.forEach(t => {
+                tTimetables[t] = {};
+                days.forEach(d => {
+                    tTimetables[t][d] = { S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
+                });
+                tTimetables[t].weeklyPeriods = 0;
+            });
+
+            currentTT = { classTimetables: cTimetables, teacherTimetables: tTimetables, academicYear, bellTimings };
+        }
+
+        setCreationStatus({
+            teacher: 'STREAM', subject: stream.name,
+            messages: [
+                `═══════════════════════════════════════`,
+                `CREATING STREAM: ${stream.name} (${stream.className})`,
+                `═══════════════════════════════════════`
+            ],
+            progress: 0, completedCount: completedCreations.size + 1, isError: false
+        });
+
+        const addMessage = (msg) => setCreationStatus(prev => ({
+            ...prev, messages: [...(prev?.messages || []), msg]
+        }));
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+        try {
+            const tt = JSON.parse(JSON.stringify(currentTT));
+            const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const PRDS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+
+            // Level determination
+            const isMiddle = parseInt(stream.className) < 11;
+            const AVAILABLE_SLOTS = isMiddle
+                ? ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S10', 'S11']
+                : ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S11'];
+
+            const tFree = (teacher, d, p) => {
+                if (!tt.teacherTimetables[teacher]) {
+                    tt.teacherTimetables[teacher] = { weeklyPeriods: 0 };
+                    DAYS.forEach(day => {
+                        tt.teacherTimetables[teacher][day] = { S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
+                    });
+                }
+                const sl = tt.teacherTimetables[teacher][d][p];
+                return sl === '' || sl === undefined || sl === null;
+            };
+
+            const streamFree = (d, p) => {
+                const classFree = (tt.classTimetables[stream.className]?.[d]?.[p]?.subject ?? '') === '';
+                const teachersFree = stream.subjects.every(s => tFree(s.teacher, d, p));
+                return classFree && teachersFree;
+            };
+
+            const periodsToPlace = Number(stream.periods) || 0;
+            let placed = 0;
+            const placements = [];
+
+            addMessage(`→ Placing ${periodsToPlace} periods for stream ${stream.name}`);
+
+            // Diagonal walk for distribution
+            // Exclude Saturday for streams as requested
+            const PRIORITY_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+
+            // Start from a random day to ensure rotation
+            const rotationOffset = Math.floor(Math.random() * PRIORITY_DAYS.length);
+            const ROTATED_DAYS = [
+                ...PRIORITY_DAYS.slice(rotationOffset),
+                ...PRIORITY_DAYS.slice(0, rotationOffset)
+            ];
+
+            // Count already-placed STREAM periods in TT globally
+            let existingStreamCount = 0;
+            for (const cn of Object.keys(tt.classTimetables)) {
+                for (const d of DAYS) {
+                    for (const p of PRDS) {
+                        if (tt.classTimetables[cn][d][p]?.isStream) existingStreamCount++;
+                    }
+                }
+            }
+
+            const D_LEN = ROTATED_DAYS.length;
+            const P_LEN = AVAILABLE_SLOTS.length;
+
+            for (let i = 0; i < stream.periods; i++) {
+                let pick = null;
+                // Walk DIAGONALLY (incrementing both day and period)
+                for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
+                    const walkIdx = existingStreamCount + i + attempt;
+                    const d = ROTATED_DAYS[walkIdx % D_LEN];
+                    const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
+
+                    if (placements.some(placement => placement.day === d)) continue;
+
+                    if (streamFree(d, p)) {
+                        pick = { d, p };
+                        break;
+                    }
+                }
+
+                if (!pick) {
+                    // Fallback: ignore same-day constraint but keep diagonal walk
+                    for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
+                        const walkIdx = existingStreamCount + i + attempt;
+                        const d = ROTATED_DAYS[walkIdx % D_LEN];
+                        const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
+                        if (streamFree(d, p)) {
+                            pick = { d, p };
+                            break;
+                        }
+                    }
+                }
+
+                if (pick) {
+                    const abbr = stream.abbreviation || getAbbreviation(stream.name);
+                    tt.classTimetables[stream.className][pick.d][pick.p] = {
+                        subject: abbr,
+                        isStream: true,
+                        streamName: stream.name,
+                        subjects: stream.subjects
+                    };
+
+                    stream.subjects.forEach(s => {
+                        tt.teacherTimetables[s.teacher][pick.d][pick.p] = {
+                            className: stream.className,
+                            subject: s.subject,
+                            groupName: s.groupName,
+                            isStream: true,
+                            streamName: stream.name
+                        };
+                        tt.teacherTimetables[s.teacher][pick.d].periodCount++;
+                        tt.teacherTimetables[s.teacher].weeklyPeriods++;
+                    });
+
+                    placements.push(pick);
+                    placed++;
+                    addMessage(`✅ Placed ${placed}/${periodsToPlace}: ${pick.d} ${pick.p}`);
+                    await sleep(100);
+                } else {
+                    addMessage(`❌ Failed to find slot for period ${i + 1}`);
+                    setCreationStatus(prev => ({ ...prev, isError: true }));
+                    return null;
+                }
+            }
+
+            if (placed === periodsToPlace) {
+                setGeneratedTimetable(tt);
+                setCompletedCreations(prev => new Set([...prev, stream.id]));
+                setCreationStatus(null);
+                return tt;
+            }
+            return null;
+
+        } catch (err) {
+            console.error(err);
+            addMessage(`❌ ERROR: ${err.message}`);
+            return null;
+        }
+    };
+
     const handleCreateSpecific = async (row, baseTT = null) => {
         if (!row.teacher || !row.subject) {
             addToast('Teacher and Subject must be selected', 'warning');
@@ -1691,10 +1998,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const tasks = [];
             row.allotments.forEach(group => {
                 const total = Number(group.periods) || 0;
-                const blocks = Number(group.blockPeriods) || 0;
-                const singles = Math.max(0, total - blocks * 2);
+                const tb = Number(group.tBlock) || 0;
+                const lb = Number(group.lBlock) || 0;
+
+                // Blocks are pairs of 2
+                const tBlocksCount = Math.floor(tb / 2);
+                const lBlocksCount = Math.floor(lb / 2);
+                const singles = Math.max(0, total - (tBlocksCount * 2) - (lBlocksCount * 2));
+
                 const pDay = group.preferredDay || 'Any';
-                for (let i = 0; i < blocks; i++)  tasks.push({ type: 'BLOCK', teacher, subject, classes: group.classes, preferredDay: pDay });
+
+                for (let i = 0; i < tBlocksCount; i++) tasks.push({ type: 'TBLOCK', teacher, subject, classes: group.classes, preferredDay: pDay });
+                for (let i = 0; i < lBlocksCount; i++) tasks.push({ type: 'LBLOCK', teacher, subject, classes: group.classes, preferredDay: 'Any' }); // Lab blocks usually flexible
                 for (let i = 0; i < singles; i++) tasks.push({ type: 'SINGLE', teacher, subject, classes: group.classes, preferredDay: pDay });
             });
 
@@ -1704,9 +2019,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 return;
             }
 
-            const blockTasks = tasks.filter(t => t.type === 'BLOCK');
+            const tBlockTasks = tasks.filter(t => t.type === 'TBLOCK');
+            const lBlockTasks = tasks.filter(t => t.type === 'LBLOCK');
             const singleTasks = tasks.filter(t => t.type === 'SINGLE');
-            addMessage(`→ ${tasks.length} period(s) total — ${blockTasks.length} block-pair(s), ${singleTasks.length} single(s)`);
+
+            addMessage(`→ ${tasks.length} total periods:`);
+            if (tBlockTasks.length > 0) addMessage(`   • ${tBlockTasks.length} Theory Block(s) [T]`);
+            if (lBlockTasks.length > 0) addMessage(`   • ${lBlockTasks.length} Lab Block(s) [L]`);
+            if (singleTasks.length > 0) addMessage(`   • ${singleTasks.length} Single Period(s)`);
             await sleep(300);
 
             // ── Constants ───────────────────────────────────────────────────────
@@ -1799,24 +2119,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const placements = [];
 
             // ════════════════════════════════════════════════════════════════════
-            // PHASE 1 — BLOCK PERIODS
-            //   First 30%  → rotating preferred pair  (P1-2 → P3-4 → P7-8 → P4-5)
-            //                across Mon → Wed → Fri → Tue → Thu
-            //   Remaining  → first available pair on any day
+            // PHASE 1A — THEORY BLOCKS
+            //   Prioritize placing these first, often on preferred days.
             // ════════════════════════════════════════════════════════════════════
-            if (blockTasks.length > 0) {
-                const blockPriorityCount = Math.ceil(blockTasks.length * 0.30);
-
-                // Rotating preferred pairs for priority placement
-                const BLOCK_PREFERRED_ROTATION = VALID_BLOCK_PAIRS;
-
-                // All allowed pairs (break-aware), used as fallback
+            if (tBlockTasks.length > 0) {
                 const ALL_BLOCK_PAIRS = VALID_BLOCK_PAIRS;
-
                 const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
 
-                // Count how many block PAIRS are already placed in the whole TT
-                // so the preferred-pair rotation continues across multiple CREATE calls.
                 let existingBlockPeriods = 0;
                 for (const tName of Object.keys(tt.teacherTimetables)) {
                     for (const d of DAYS) {
@@ -1827,153 +2136,161 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         }
                     }
                 }
-                // Each block pair occupies 2 period slots
                 const startingBlockIndex = Math.floor(existingBlockPeriods / 2);
-                const rotLabels = VALID_BLOCK_PAIRS.map(pair => `${pair[0].replace('S', '')}-${pair[1].replace('S', '')}`);
-                console.log(`[BLOCK] Already-placed block pairs in TT: ${startingBlockIndex} → pair rotation starts at index ${startingBlockIndex % VALID_BLOCK_PAIRS.length}`);
-                addMessage(`   Global block index starts at ${startingBlockIndex} (pair rotation: ${rotLabels[startingBlockIndex % VALID_BLOCK_PAIRS.length]})`);
 
-                // Find the NEXT preferred day for 'Any' blocks:
-                // Scan which priority days already have block periods (any teacher).
-                // Take the HIGHEST position index among those days, then +1 = next preferred.
-                let highestUsedDayIdx = -1;
-                for (let di = 0; di < PRIORITY_DAYS_B.length; di++) {
-                    const dayName = PRIORITY_DAYS_B[di];
-                    let hasBlock = false;
-                    for (const tName of Object.keys(tt.teacherTimetables)) {
-                        if (!tt.teacherTimetables[tName]?.[dayName]) continue;
-                        for (const p of PRDS) {
-                            const sl = tt.teacherTimetables[tName][dayName][p];
-                            if (sl && typeof sl === 'object' && sl.isBlock) { hasBlock = true; break; }
-                        }
-                        if (hasBlock) break;
-                    }
-                    if (hasBlock) highestUsedDayIdx = di;
-                }
-                // nextBlockDayStart = position right after the last used block day
-                const nextBlockDayStart = (highestUsedDayIdx + 1) % 5;
-                console.log(`[BLOCK] Highest block day idx in TT: ${highestUsedDayIdx} (${highestUsedDayIdx >= 0 ? PRIORITY_DAYS_B[highestUsedDayIdx] : 'none'}) → next preferred: ${PRIORITY_DAYS_B[nextBlockDayStart]}`);
-                addMessage(`   Next preferred block day: ${PRIORITY_DAYS_B[nextBlockDayStart]}`);
-
-                addMessage(`\n🔍 Phase 1: Placing ${blockTasks.length} block period-pair(s)...`);
-                addMessage(`   Priority: ${blockPriorityCount} block(s) → preferred pair order | rest → first available`);
+                addMessage(`\n🔍 Phase 1A: Placing ${tBlockTasks.length} Theory Block(s)...`);
                 await sleep(200);
 
-                for (let bi = 0; bi < blockTasks.length; bi++) {
-                    const task = blockTasks[bi];
-                    const usePriority = bi < blockPriorityCount;
-
-                    // Preferred pair rotates GLOBALLY across all CREATE calls
+                for (let bi = 0; bi < tBlockTasks.length; bi++) {
+                    const task = tBlockTasks[bi];
                     const globalBlockIdx = startingBlockIndex + bi;
-                    const preferredPair = BLOCK_PREFERRED_ROTATION[globalBlockIdx % 4];
+                    const preferredPair = ALL_BLOCK_PAIRS[globalBlockIdx % ALL_BLOCK_PAIRS.length];
 
-                    // Day list: for 'Any', use next-after-highest-used-day in sequence
-                    // bi=0 → nextBlockDayStart, bi=1 → nextBlockDayStart+1, etc.
                     const baseDays = (task.preferredDay && task.preferredDay !== 'Any')
                         ? [DMAP[task.preferredDay] || task.preferredDay]
-                        : (() => {
-                            const prefDay = PRIORITY_DAYS_B[(nextBlockDayStart + bi) % 5];
-                            return [prefDay, ...PRIORITY_DAYS_B.filter(d => d !== prefDay)];
-                        })();
-
-                    addMessage(`→ Block ${globalBlockIdx + 1} (global): ${usePriority ? `preferred pair P${preferredPair[0].replace('P', '')}-P${preferredPair[1].replace('P', '')}` : 'first available pair'}`);
+                        : PRIORITY_DAYS_B;
 
                     let best = null;
-
-                    if (usePriority) {
-                        // Step 1: Try the PREFERRED pair on priority days
-                        // (skip days that already have a block for these classes)
-                        const [pp1, pp2] = preferredPair;
-                        for (const d of baseDays) {
-                            if (dayAlreadyHasBlock(d, task.classes)) {
-                                addMessage(`  → ${SHORT[d]} P${pp1.replace('P', '')}-P${pp2.replace('P', '')}: SKIP (day already has a block) ✗`);
-                                continue;
-                            }
-                            const ok = slotFree(d, pp1, task.classes) && slotFree(d, pp2, task.classes);
-                            const status = ok ? 'FREE ✓' : 'BUSY ✗';
-                            addMessage(`  → ${SHORT[d]} P${pp1.replace('P', '')}-P${pp2.replace('P', '')}: ${status}`);
-                            await sleep(60);
-                            if (ok) { best = { d, p1: pp1, p2: pp2 }; break; }
+                    // Step 1: Try preferred pair on available days
+                    for (const d of baseDays) {
+                        if (dayAlreadyHasBlock(d, task.classes)) continue;
+                        if (slotFree(d, preferredPair[0], task.classes) && slotFree(d, preferredPair[1], task.classes)) {
+                            best = { d, p1: preferredPair[0], p2: preferredPair[1] };
+                            break;
                         }
-
-                        // Step 2: If preferred pair not available, try other pairs on same day order
-                        // (still respecting the no-two-blocks-per-day rule)
-                        if (!best) {
-                            addMessage(`  → Preferred pair busy — trying fallback pairs...`);
-                            for (const d of baseDays) {
-                                if (dayAlreadyHasBlock(d, task.classes)) continue; // skip, already has block
-                                for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
-                                    if (fp1 === pp1 && fp2 === pp2) continue; // already tried
-                                    if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
-                                        addMessage(`  → Fallback: ${SHORT[d]} P${fp1.replace('P', '')}-P${fp2.replace('P', '')} FREE ✓`);
-                                        best = { d, p1: fp1, p2: fp2 };
-                                        break;
-                                    }
-                                }
-                                if (best) break;
-                            }
-                        }
-                    } else {
-                        // After 30%: first available pair — still no two blocks per day
-                        const allDays = baseDays.length > 0 ? baseDays : PRIORITY_DAYS_B;
-                        outer_b:
-                        for (const d of allDays) {
-                            if (dayAlreadyHasBlock(d, task.classes)) continue; // skip
+                    }
+                    // Step 2: Fallback to any pair on any day
+                    if (!best) {
+                        outer_fallback:
+                        for (const d of PRIORITY_DAYS_B) {
+                            if (dayAlreadyHasBlock(d, task.classes)) continue;
                             for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
                                 if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
                                     best = { d, p1: fp1, p2: fp2 };
-                                    break outer_b;
+                                    break outer_fallback;
                                 }
                             }
                         }
-                        if (best) addMessage(`  → First available: ${SHORT[best.d]} P${best.p1.replace('P', '')}-P${best.p2.replace('P', '')}`);
                     }
 
                     if (!best) {
-                        addMessage('✗ No free consecutive block slot found!');
+                        addMessage(`✗ No free slot for Theory Block ${bi + 1}!`);
                         setCreationStatus(prev => ({ ...prev, isError: true }));
                         return;
                     }
 
-                    // Commit block
+                    // Commit Theory Block
                     task.classes.forEach(cn => {
-                        tt.classTimetables[cn][best.d][best.p1] = { subject, teacher, isBlock: true };
-                        tt.classTimetables[cn][best.d][best.p2] = { subject, teacher, isBlock: true };
+                        tt.classTimetables[cn][best.d][best.p1] = { subject, teacher, isBlock: true, isTBlock: true };
+                        tt.classTimetables[cn][best.d][best.p2] = { subject, teacher, isBlock: true, isTBlock: true };
                     });
-                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), isBlock: true };
-                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), isBlock: true };
+                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject, isBlock: true, isTBlock: true };
+                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject, isBlock: true, isTBlock: true };
                     tt.teacherTimetables[teacher][best.d].periodCount += 2;
                     tt.teacherTimetables[teacher].weeklyPeriods += 2;
 
-                    placements.push({ day: best.d, period: `${best.p1}-${best.p2}`, type: 'BLOCK' });
-                    addMessage(`✅ Block placed: ${SHORT[best.d]} Periods ${best.p1.replace('P', '')}–${best.p2.replace('P', '')}`);
+                    placements.push({ day: best.d, period: `${best.p1}-${best.p2}`, type: 'TBLOCK' });
+                    addMessage(`✅ Theory Block placed: ${SHORT[best.d]} P${best.p1.replace('S', '')}-P${best.p2.replace('S', '')}`);
+                    placedCount++; // One task completed
+                    await sleep(150);
+                }
+            }
+
+            // ════════════════════════════════════════════════════════════════════
+            // PHASE 1B — LAB BLOCKS
+            //   Must be on different days than Theory blocks if possible.
+            // ════════════════════════════════════════════════════════════════════
+            if (lBlockTasks.length > 0) {
+                const ALL_BLOCK_PAIRS = VALID_BLOCK_PAIRS;
+                const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+
+                addMessage(`\n🔍 Phase 1B: Placing ${lBlockTasks.length} Lab Block(s)...`);
+                await sleep(200);
+
+                for (let bi = 0; bi < lBlockTasks.length; bi++) {
+                    const task = lBlockTasks[bi];
+                    let best = null;
+
+                    // Try to find a day that doesn't have ANY periods for this subject yet (Theory or Lab)
+                    const subjectOnDay = (d) =>
+                        PRDS.some(p =>
+                            task.classes.some(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject === subject))
+                        );
+
+                    outer_l:
+                    for (const d of PRIORITY_DAYS_B) {
+                        if (dayAlreadyHasBlock(d, task.classes)) continue;
+                        if (subjectOnDay(d)) continue; // Prefer days with nothing for this subject
+
+                        for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
+                            if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
+                                best = { d, p1: fp1, p2: fp2 };
+                                break outer_l;
+                            }
+                        }
+                    }
+
+                    // Fallback: relax the subject-on-day constraint, but keep the no-two-blocks constraint
+                    if (!best) {
+                        outer_l_fallback:
+                        for (const d of PRIORITY_DAYS_B) {
+                            if (dayAlreadyHasBlock(d, task.classes)) continue;
+                            for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
+                                if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
+                                    best = { d, p1: fp1, p2: fp2 };
+                                    break outer_l_fallback;
+                                }
+                            }
+                        }
+                    }
+
+                    // Fallback 2: absolute last resort — relax both constraints
+                    if (!best) {
+                        outer_l_final:
+                        for (const d of PRIORITY_DAYS_B) {
+                            for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
+                                if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
+                                    best = { d, p1: fp1, p2: fp2 };
+                                    break outer_l_final;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!best) {
+                        addMessage(`✗ No free slot for Lab Block ${bi + 1}!`);
+                        setCreationStatus(prev => ({ ...prev, isError: true }));
+                        return;
+                    }
+
+                    // Commit Lab Block
+                    task.classes.forEach(cn => {
+                        tt.classTimetables[cn][best.d][best.p1] = { subject, teacher, isBlock: true, isLBlock: true };
+                        tt.classTimetables[cn][best.d][best.p2] = { subject, teacher, isBlock: true, isLBlock: true };
+                    });
+                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject, isBlock: true, isLBlock: true };
+                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject, isBlock: true, isLBlock: true };
+                    tt.teacherTimetables[teacher][best.d].periodCount += 2;
+                    tt.teacherTimetables[teacher].weeklyPeriods += 2;
+
+                    placements.push({ day: best.d, period: `${best.p1}-${best.p2}`, type: 'LBLOCK' });
+                    addMessage(`✅ Lab Block placed: ${SHORT[best.d]} P${best.p1.replace('S', '')}-P${best.p2.replace('S', '')}`);
                     placedCount++;
-                    await sleep(200);
+                    await sleep(150);
                 }
             }
 
             // ════════════════════════════════════════════════════════════════════
             // PHASE 2 — SINGLE PERIODS
-            //   First 30%  → structured priority: odd periods then even,
-            //                days Mon→Wed→Fri→Tue→Thu
-            //   Remaining  → first available slot
             // ════════════════════════════════════════════════════════════════════
             if (singleTasks.length > 0) {
-                const priorityCount = Math.ceil(singleTasks.length * 0.30);
-                const freeCount = singleTasks.length - priorityCount;
                 addMessage(`\n🔍 Phase 2: Placing ${singleTasks.length} single period(s)...`);
-                addMessage(`   Strategy: first ${priorityCount} → priority order (odd periods, Mon/Wed/Fri first) | next ${freeCount} → first available`);
                 await sleep(200);
 
-                // Priority order for the structured 30% — DIAGONAL WALK:
-                //   Each slot i uses PRIORITY_DAYS[i%5] and PRIORITY_PRDS[i%8]
-                //   So slot 0=Mon-P1, 1=Wed-P3, 2=Fri-P5, 3=Tue-P7, 4=Thu-P2,
-                //      slot 5=Mon-P4, 6=Wed-P6, 7=Fri-P8, 8=Tue-P1, 9=Thu-P3 ...
                 const PRIORITY_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
                 const PRIORITY_PRDS = AVAILABLE_SLOTS;
                 const TOTAL_PRIORITY_SLOTS = PRIORITY_DAYS.length * PRIORITY_PRDS.length;
 
-                // Build diagonal-walk ordered list
                 const orderedSlots = [];
                 for (let oi = 0; oi < TOTAL_PRIORITY_SLOTS; oi++)
                     orderedSlots.push({
@@ -1981,115 +2298,69 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         p: PRIORITY_PRDS[oi % PRIORITY_PRDS.length]
                     });
 
-                // Count already-placed SINGLE (non-block) periods in TT globally
-                // so the diagonal walk continues from where previous CREATE left off
                 let existingSingles = 0;
                 for (const tName of Object.keys(tt.teacherTimetables)) {
                     for (const d of DAYS) {
                         if (!tt.teacherTimetables[tName]?.[d]) continue;
                         for (const p of PRDS) {
                             const sl = tt.teacherTimetables[tName][d][p];
-                            if (sl && typeof sl === 'object' && sl.className && !sl.isBlock)
-                                existingSingles++;
+                            if (sl && typeof sl === 'object' && sl.className && !sl.isBlock) existingSingles++;
                         }
                     }
                 }
-                // currentSlotIdx advances as we place each priority single
                 let currentSlotIdx = existingSingles % TOTAL_PRIORITY_SLOTS;
-                console.log(`[SINGLE] Global singles already placed: ${existingSingles} → walk starts at orderedSlots[${currentSlotIdx}] = ${PRIORITY_DAYS[currentSlotIdx % PRIORITY_DAYS.length]}-${PRIORITY_PRDS[currentSlotIdx % PRIORITY_PRDS.length]}`);
-
-                // Show available slots overview
-                addMessage('→ Available slots across the week:');
-                const ref0 = singleTasks[0];
-                for (const day of PRIORITY_DAYS) {
-                    const free = PRDS.filter(p => AVAILABLE_SLOTS.includes(p) && slotFree(day, p, ref0.classes));
-                    if (free.length > 0)
-                        addMessage(`   ${SHORT[day]}: S${free.map(p => p.replace('S', '')).join(', S')} free`);
-                }
-                await sleep(300);
 
                 for (let i = 0; i < singleTasks.length; i++) {
                     const task = singleTasks[i];
-                    const usePriority = i < priorityCount;
                     const taskDays = (task.preferredDay && task.preferredDay !== 'Any')
                         ? PRIORITY_DAYS.filter(d => d === (DMAP[task.preferredDay] || task.preferredDay))
                         : PRIORITY_DAYS;
 
                     let pick = null;
 
-                    // Skip a day if this subject is already present there (block or single)
-                    // — prevents 3+ periods of the same subject on one day
-                    const subjectOnDay = (d) =>
-                        PRDS.some(p =>
-                            task.classes.some(cn => {
-                                const slot = tt.classTimetables[cn]?.[d]?.[p];
-                                return slot && slot.subject === subject;
-                            })
-                        );
+                    // Logic for subject on day:
+                    // If subject already has 2+ periods on this day, skip it
+                    const subjectCountOnDay = (d) =>
+                        PRDS.reduce((count, p) =>
+                            count + (task.classes.some(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject === subject)) ? 1 : 0)
+                            , 0);
 
-                    if (usePriority) {
-                        // Walk the diagonal ordered list starting from currentSlotIdx
-                        // Try up to 40 slots (full week) to find a free one
-                        for (let attempt = 0; attempt < 40; attempt++) {
-                            const slotIdx = (currentSlotIdx + attempt) % 40;
+                    // Strategy: diagonal walk, but try to find a day with 0 periods of this subject first
+                    for (let attempt = 0; attempt < 100; attempt++) {
+                        const slotIdx = (currentSlotIdx + attempt) % orderedSlots.length;
+                        const { d, p } = orderedSlots[slotIdx];
+                        if (taskDays.length > 0 && !taskDays.includes(d)) continue;
+                        if (subjectCountOnDay(d) >= 1) continue; // First pass: prefer fresh days
+                        if (slotFree(d, p, task.classes)) {
+                            pick = { d, p, slotIdx };
+                            break;
+                        }
+                    }
+
+                    // Fallback: allow 1 period already existing (total 2 on day)
+                    if (!pick) {
+                        for (let attempt = 0; attempt < 100; attempt++) {
+                            const slotIdx = (currentSlotIdx + attempt) % orderedSlots.length;
                             const { d, p } = orderedSlots[slotIdx];
-                            // If preferredDay set, only consider that day
                             if (taskDays.length > 0 && !taskDays.includes(d)) continue;
-                            // Skip if subject already appears on this day
-                            if (subjectOnDay(d)) continue;
+                            if (subjectCountOnDay(d) >= 2) continue;
                             if (slotFree(d, p, task.classes)) {
-                                pick = { d, p };
-                                // Advance global walk pointer past this slot
-                                currentSlotIdx = (slotIdx + 1) % 40;
+                                pick = { d, p, slotIdx };
                                 break;
                             }
                         }
-                        if (pick)
-                            addMessage(`→ ${SHORT[pick.d]} P${pick.p.replace('P', '')} selected (priority ${i + 1}/${priorityCount}: diagonal walk)`);
-                    } else {
-                        // After priority phase: CONTINUE the diagonal walk (same orderedSlots)
-                        // This prevents multiple singles piling up consecutively on the same day
-                        for (let attempt = 0; attempt < 40; attempt++) {
-                            const slotIdx = (currentSlotIdx + attempt) % 40;
+                    }
+
+                    // Absolute fallback: any free slot
+                    if (!pick) {
+                        for (let attempt = 0; attempt < 100; attempt++) {
+                            const slotIdx = (currentSlotIdx + attempt) % orderedSlots.length;
                             const { d, p } = orderedSlots[slotIdx];
-                            if (taskDays.length > 0 && !taskDays.includes(d)) continue;
-                            // Skip if subject already appears on this day
-                            if (subjectOnDay(d)) continue;
                             if (slotFree(d, p, task.classes)) {
-                                pick = { d, p };
-                                currentSlotIdx = (slotIdx + 1) % 40;
+                                pick = { d, p, slotIdx };
                                 break;
                             }
                         }
-                        // Hard fallback: try diagonal IGNORING the subject-clash rule
-                        // (last resort when all non-clashing days are full)
-                        if (!pick) {
-                            for (let attempt = 0; attempt < 40; attempt++) {
-                                const slotIdx = (currentSlotIdx + attempt) % 40;
-                                const { d, p } = orderedSlots[slotIdx];
-                                if (taskDays.length > 0 && !taskDays.includes(d)) continue;
-                                if (slotFree(d, p, task.classes)) {
-                                    pick = { d, p };
-                                    currentSlotIdx = (slotIdx + 1) % 40;
-                                    break;
-                                }
-                            }
-                        }
-                        // Absolute last resort: first free slot anywhere
-                        if (!pick) {
-                            const fallbackDays = taskDays.length > 0 ? taskDays : PRIORITY_DAYS;
-                            outer_s:
-                            for (const d of fallbackDays) {
-                                for (const p of PRDS) {
-                                    if (slotFree(d, p, task.classes)) {
-                                        pick = { d, p };
-                                        break outer_s;
-                                    }
-                                }
-                            }
-                        }
-                        if (pick)
-                            addMessage(`→ ${SHORT[pick.d]} P${pick.p.replace('P', '')} selected (distributed, slot ${i + 1})`);
                     }
 
                     if (!pick) {
@@ -2102,13 +2373,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     task.classes.forEach(cn => {
                         tt.classTimetables[cn][pick.d][pick.p] = { subject, teacher, isBlock: false };
                     });
-                    tt.teacherTimetables[teacher][pick.d][pick.p] = { className: task.classes.join('/'), isBlock: false };
+                    tt.teacherTimetables[teacher][pick.d][pick.p] = { className: task.classes.join('/'), subject, isBlock: false };
                     tt.teacherTimetables[teacher][pick.d].periodCount += 1;
                     tt.teacherTimetables[teacher].weeklyPeriods += 1;
 
                     placements.push({ day: pick.d, period: pick.p, type: 'SINGLE' });
+                    currentSlotIdx = (pick.slotIdx + 1) % orderedSlots.length;
                     placedCount++;
-                    await sleep(120);
+                    await sleep(80);
                 }
 
                 addMessage(`\n✅ All ${singleTasks.length} single(s) placed successfully!`);
@@ -2153,28 +2425,49 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             return allClasses.some(c => c.startsWith(criteria));
         });
 
-        if (rowsToProcess.length === 0) {
-            addToast(`No pending teachers found for ${label}`, 'info');
+        const streamsToProcess = subjectStreams.filter(st => {
+            if (completedCreations.has(st.id)) return false;
+            if (criteria === 'FULL') return true;
+            if (criteria === 'MID') return /^[678]/.test(st.className);
+            if (criteria === 'MAIN') return /^(9|10|11|12)/.test(st.className);
+            return st.className.startsWith(criteria);
+        });
+
+        if (rowsToProcess.length === 0 && streamsToProcess.length === 0) {
+            addToast(`No pending items found for ${label}`, 'info');
             return;
         }
 
         const confirmText = criteria === 'FULL'
-            ? '🚀 GENERATE ENTIRE TIMETABLE?\nThis will process ALL non-created teacher allotments sequentially.'
-            : `🚀 Generate all ${rowsToProcess.length} pending teachers for ${label}?`;
+            ? '🚀 GENERATE ENTIRE TIMETABLE?\nThis will process ALL non-created allotments and streams.'
+            : `🚀 Generate ${rowsToProcess.length} teachers and ${streamsToProcess.length} streams for ${label}?`;
 
         if (!confirm(confirmText)) return;
 
         addToast(`Starting batch generation for ${label}...`, 'info');
 
         let currentTT = generatedTimetable;
-        for (let i = 0; i < rowsToProcess.length; i++) {
-            const row = rowsToProcess[i];
-            currentTT = await handleCreateSpecific(row, currentTT);
+
+        // Process streams first (they are harder to place)
+        for (let i = 0; i < streamsToProcess.length; i++) {
+            currentTT = await handleCreateStreamSpecific(streamsToProcess[i], currentTT);
             if (!currentTT) {
-                addToast(`Batch stopped at ${row.teacher} due to an error.`, 'error');
+                addToast(`Batch stopped at stream ${streamsToProcess[i].name} due to an error.`, 'error');
                 break;
             }
         }
+
+        if (currentTT) {
+            for (let i = 0; i < rowsToProcess.length; i++) {
+                const row = rowsToProcess[i];
+                currentTT = await handleCreateSpecific(row, currentTT);
+                if (!currentTT) {
+                    addToast(`Batch stopped at ${row.teacher} due to an error.`, 'error');
+                    break;
+                }
+            }
+        }
+
         addToast(`✅ Batch generation for ${label} completed!`, 'success');
     };
 
@@ -2190,6 +2483,19 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         setIsGenerating(true);
 
         try {
+            // Validation for Subject Streams
+            for (const stream of subjectStreams) {
+                if (!stream.subjects || stream.subjects.length < 2) {
+                    addToast(`⚠️ Stream '${stream.name}' should have at least 2 groups.`, 'warning');
+                }
+                const incomplete = stream.subjects.some(s => !s.subject || !s.teacher);
+                if (incomplete) {
+                    setIsGenerating(false);
+                    addToast(`❌ Stream '${stream.name}' has incomplete groups (missing subject/teacher).`, 'error');
+                    return;
+                }
+            }
+
             // Convert new allotmentRows format to legacy format for the generator
             const legacyMappings = [];
             const legacyDistribution = { __merged: {}, __blocks: {}, __days: {} };
@@ -2247,7 +2553,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const timetable = generateTimetable(
                 legacyMappings,
                 legacyDistribution,
-                bellTimings
+                bellTimings,
+                subjectStreams
             );
 
             console.log('Generation result:', timetable);
@@ -2803,6 +3110,115 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                         {/* Status ribbon is now a fixed bottom ribbon — see below */}
                         <h2 style={{ color: '#f1f5f9', marginBottom: '1rem' }}>Classes Alloted</h2>
+
+                        {/* Parallel Subject Streams Section */}
+                        <div style={{
+                            marginBottom: '2rem',
+                            padding: '1.5rem',
+                            background: 'linear-gradient(145deg, #1e293b, #0f172a)',
+                            borderRadius: '1.2rem',
+                            border: '1px solid #334155',
+                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2)'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    <div style={{ padding: '0.6rem', background: 'rgba(129, 140, 248, 0.1)', borderRadius: '0.75rem' }}>
+                                        <span style={{ fontSize: '1.5rem' }}>🔗</span>
+                                    </div>
+                                    <div>
+                                        <h3 style={{ margin: 0, color: '#f1f5f9', fontSize: '1.1rem', fontWeight: 800 }}>Parallel Subject Streams</h3>
+                                        <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.8rem' }}>Multiple teachers teaching different groups of the same class</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setEditingStreamId(null);
+                                        setStreamForm({ name: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '', groupName: '' }] });
+                                        setShowStreamModal(true);
+                                    }}
+                                    style={{
+                                        padding: '0.6rem 1.2rem',
+                                        background: '#4f46e5',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '0.75rem',
+                                        cursor: 'pointer',
+                                        fontWeight: '700',
+                                        fontSize: '0.85rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseOver={e => e.currentTarget.style.background = '#6366f1'}
+                                    onMouseOut={e => e.currentTarget.style.background = '#4f46e5'}
+                                >
+                                    ＋ Add New Parallel Stream
+                                </button>
+                            </div>
+
+                            {subjectStreams.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b', border: '2px dashed #334155', borderRadius: '0.75rem' }}>
+                                    No parallel streams defined yet. Use streams for subjects like "2nd Language" or "Electives".
+                                </div>
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                                    {subjectStreams.map(stream => (
+                                        <div key={stream.id} style={{
+                                            background: '#1e293b',
+                                            borderRadius: '0.8rem',
+                                            padding: '1rem',
+                                            border: '1px solid #475569',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '0.75rem'
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                <div>
+                                                    <div style={{ fontWeight: 900, color: '#f1f5f9' }}>{stream.name}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 700 }}>{stream.className} • {stream.periods} Periods/Week</div>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                                    <button
+                                                        onClick={() => handleCreateStreamSpecific(stream)}
+                                                        disabled={completedCreations.has(stream.id)}
+                                                        style={{
+                                                            padding: '0.3rem 0.6rem',
+                                                            background: completedCreations.has(stream.id) ? '#10b981' : '#3b82f6',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            borderRadius: '0.4rem',
+                                                            fontSize: '0.7rem',
+                                                            fontWeight: 'bold',
+                                                            cursor: completedCreations.has(stream.id) ? 'not-allowed' : 'pointer'
+                                                        }}
+                                                    >
+                                                        {completedCreations.has(stream.id) ? '✅ CREATED' : 'CREATE'}
+                                                    </button>
+                                                    <button onClick={() => handleEditStream(stream)} style={{ padding: '0.3rem', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1rem' }} title="Edit">✏️</button>
+                                                    <button onClick={() => handleDeleteStream(stream.id)} style={{ padding: '0.3rem', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1rem' }} title="Delete">🗑️</button>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                                {stream.subjects.map((s, idx) => (
+                                                    <div key={idx} style={{
+                                                        padding: '0.25rem 0.5rem',
+                                                        background: 'rgba(79, 70, 229, 0.15)',
+                                                        border: '1px solid rgba(129, 140, 248, 0.3)',
+                                                        borderRadius: '0.4rem',
+                                                        fontSize: '0.7rem'
+                                                    }}>
+                                                        <span style={{ color: '#fff', fontWeight: 700 }}>{s.subject}</span>
+                                                        <span style={{ color: '#94a3b8', margin: '0 0.3rem' }}>-</span>
+                                                        <span style={{ color: '#c084fc', fontWeight: 600 }}>{s.teacher}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
                             <button
                                 onClick={() => saveAllotments()}
@@ -3087,14 +3503,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     </div>
                                                                     <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', height: '1.4rem' }}></div>
                                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                                                        <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 'bold' }}>BLOCKS</span>
+                                                                        <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 'bold' }}>T.BLK</span>
                                                                         <select
-                                                                            value={group.blockPeriods || 0}
-                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'blockPeriods', e.target.value)}
-                                                                            title="Number of block (double) periods per week"
+                                                                            value={group.tBlock || 0}
+                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
+                                                                            title="Theory Block (consecutive periods)"
                                                                             style={{
                                                                                 background: 'transparent',
-                                                                                color: (group.blockPeriods > 0) ? '#fbbf24' : '#94a3b8',
+                                                                                color: (group.tBlock > 0) ? '#fbbf24' : '#94a3b8',
                                                                                 border: 'none',
                                                                                 fontSize: '0.8rem',
                                                                                 fontWeight: '800',
@@ -3103,10 +3519,41 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 textAlign: 'center'
                                                                             }}
                                                                         >
-                                                                            {[0, 1, 2, 3, 4, 5].map(n => (
-                                                                                <option key={n} value={n} style={{ background: '#0f172a', color: '#fff' }}>{n}</option>
-                                                                            ))}
+                                                                            <option value={0} style={{ background: '#0f172a' }}>0</option>
+                                                                            <option value={2} style={{ background: '#0f172a' }}>2 (1blk)</option>
+                                                                            <option value={4} style={{ background: '#0f172a' }}>4 (2blk)</option>
                                                                         </select>
+                                                                    </div>
+                                                                    <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', height: '1.4rem' }}></div>
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                                        <span style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 'bold' }}>L.BLK</span>
+                                                                        <select
+                                                                            value={group.lBlock || 0}
+                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'lBlock', e.target.value)}
+                                                                            title="Lab Block (consecutive periods)"
+                                                                            style={{
+                                                                                background: 'transparent',
+                                                                                color: (group.lBlock > 0) ? '#10b981' : '#94a3b8',
+                                                                                border: 'none',
+                                                                                fontSize: '0.8rem',
+                                                                                fontWeight: '800',
+                                                                                cursor: 'pointer',
+                                                                                outline: 'none',
+                                                                                textAlign: 'center'
+                                                                            }}
+                                                                        >
+                                                                            <option value={0} style={{ background: '#0f172a' }}>0</option>
+                                                                            <option value={2} style={{ background: '#0f172a' }}>2 (1blk)</option>
+                                                                            <option value={4} style={{ background: '#0f172a' }}>4 (2blk)</option>
+                                                                            <option value={6} style={{ background: '#0f172a' }}>6 (3blk)</option>
+                                                                        </select>
+                                                                    </div>
+                                                                    <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', height: '1.4rem' }}></div>
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '40px' }}>
+                                                                        <span style={{ fontSize: '0.6rem', color: '#94a3b8', fontWeight: '500' }}>REM</span>
+                                                                        <span style={{ fontSize: '0.8rem', fontWeight: '900', color: '#e2e8f0' }}>
+                                                                            {Math.max(0, (group.periods || 0) - (group.tBlock || 0) - (group.lBlock || 0))}
+                                                                        </span>
                                                                     </div>
                                                                     <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', height: '1.4rem' }}></div>
                                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -3193,7 +3640,22 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     </div>
                                                 </td>
                                                 <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 'bold' }}>
-                                                    {row.total}
+                                                    {(() => {
+                                                        const streamPeriods = (subjectStreams || []).reduce((acc, st) => {
+                                                            if (st.subjects.some(s => s.teacher === row.teacher)) return acc + (Number(st.periods) || 0);
+                                                            return acc;
+                                                        }, 0);
+                                                        return (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                                                <span style={{ color: '#fff' }}>{row.total + streamPeriods}</span>
+                                                                {streamPeriods > 0 && (
+                                                                    <span style={{ fontSize: '0.65rem', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', padding: '1px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                                                                        incl. {streamPeriods} [S]
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td style={{ padding: '0.6rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                     <button
@@ -3896,12 +4358,23 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         const change = timetableChanges.diffs.find(d => d.class === cls && d.day === dayKey && d.period === periodKey);
                                         const isChanged = !!change;
 
-                                        // Teacher Filter Logic
-                                        if (highlightTeacher && cell.teacher !== highlightTeacher) {
-                                            // Optional: semi-fade out non-filtered cells? 
-                                            // The spec says "Filter by specific teacher to see only their changes"
-                                            // This could mean highlighting only their changed cells or showing only their data.
-                                            // Let's stick to highlighting.
+                                        if (cell.isStream) {
+                                            return (
+                                                <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
+                                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
+                                                    height: '100%', width: '100%', minHeight: '40px'
+                                                }}>
+                                                    <span style={{ fontWeight: 800, fontSize: '0.85em', color: '#fbbf24', lineHeight: 1.1, textAlign: 'center' }}>{cell.subject}</span>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', justifyContent: 'center', maxWidth: '100%' }}>
+                                                        {(cell.subjects || []).map((s, idx) => (
+                                                            <span key={idx} style={{ fontSize: '0.55em', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                                                                {s.subject}{idx < (cell.subjects.length - 1) ? ',' : ''}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                    {isChanged && <div className="tt-change-badge" />}
+                                                </div>
+                                            );
                                         }
 
                                         const sub = cell.subject.toUpperCase();
@@ -3914,7 +4387,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
                                                 height: '100%', width: '100%', minHeight: '40px'
                                             }}>
-                                                <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>{abbr}</span>
+                                                <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>
+                                                    {abbr}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}
+                                                </span>
                                                 {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1 }}>{teacherFirst}</span>}
 
                                                 {isChanged && (
@@ -4919,32 +5394,97 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         return (
                             <div style={{ animation: 'fadeIn 0.3s ease-out', textAlign: 'center', padding: '5rem 2rem' }}>
                                 <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🕒</div>
-                                <h2 style={{ color: '#f1f5f9', fontSize: '1.8rem', fontWeight: 800, marginBottom: '0.75rem' }}>DPT — Teacher Availability</h2>
+                                <h2 style={{ color: '#f1f5f9', fontSize: '1.8rem', fontWeight: 800, marginBottom: '0.75rem' }}>DPT — Availability & Engagement</h2>
                                 <p style={{ color: '#64748b', fontSize: '1rem' }}>Generate a timetable first to see the DPT view.</p>
                             </div>
                         );
                     }
 
                     const teacherNames = Object.keys(generatedTimetable.teacherTimetables || {}).sort();
+                    const classNames = Object.keys(generatedTimetable.classTimetables || {}).sort((a, b) => {
+                        const numA = parseInt(a) || 0;
+                        const numB = parseInt(b) || 0;
+                        if (numA !== numB) return numA - numB;
+                        return a.localeCompare(b);
+                    });
+
                     // For each teacher/day/period → get className or null
-                    const getClassName = (teacher, day, period) => {
+                    const getTeacherEngagement = (teacher, day, period) => {
                         const slot = generatedTimetable.teacherTimetables?.[teacher]?.[day]?.[period];
                         if (!slot || !slot.className) return null;
-                        return slot.className; // may be "6A" or "6A/6B" for merged
+                        let tag = '';
+                        if (slot.isStream) tag = ' [S]';
+                        else if (slot.isTBlock) tag = ' [T]';
+                        else if (slot.isLBlock) tag = ' [L]';
+                        return slot.className + tag;
                     };
 
-                    // Count busy periods per teacher (all 11 slots)
-                    const busyCount = (teacher) => DPT_DAYS.reduce((acc, day) =>
-                        acc + DPT_PERIODS.filter(p => getClassName(teacher, day, p)).length, 0);
+                    const getClassEngagement = (clsName, day, period) => {
+                        const slot = generatedTimetable.classTimetables?.[clsName]?.[day]?.[period];
+                        if (!slot || !slot.subject) return null;
+                        const label = slot.isStream ? (slot.streamName || slot.subject) : slot.subject;
+                        let tag = '';
+                        if (slot.isStream) tag = ' [S]';
+                        else if (slot.isTBlock) tag = ' [T]';
+                        else if (slot.isLBlock) tag = ' [L]';
+                        const labelAbbr = getAbbreviation(label);
+                        return labelAbbr + tag;
+                    };
+
+                    const getTooltip = (item, day, period, type) => {
+                        if (type === 'Teachers') {
+                            const slot = generatedTimetable.teacherTimetables?.[item]?.[day]?.[period];
+                            if (!slot) return `${item} FREE (${day} ${period})`;
+                            if (slot.isStream) {
+                                return `[STREAM] ${item} teaching ${slot.subject} for Group: ${slot.groupName || 'N/A'} in Class ${slot.className}`;
+                            }
+                            return `${item} teaching ${slot.subject} in Class ${slot.className}`;
+                        } else {
+                            const slot = generatedTimetable.classTimetables?.[item]?.[day]?.[period];
+                            if (!slot) return `${item} FREE (${day} ${period})`;
+                            if (slot.isStream) {
+                                let details = (slot.subjects || []).map(s => `${s.groupName || s.subject}: ${s.teacher}`).join('\n');
+                                return `${slot.streamName || slot.subject} Period\n${details}`;
+                            }
+                            return `${slot.subject} by ${slot.teacher}`;
+                        }
+                    };
+
+                    // Count busy periods with breakdown
+                    const getBusyDetails = (item, type) => {
+                        let normal = 0;
+                        let stream = 0;
+                        DPT_DAYS.forEach(day => {
+                            DPT_PERIODS.forEach(p => {
+                                if (type === 'Teachers') {
+                                    const slot = generatedTimetable.teacherTimetables?.[item]?.[day]?.[p];
+                                    if (slot && slot.className) {
+                                        if (slot.isStream) stream++;
+                                        else normal++;
+                                    }
+                                } else {
+                                    const slot = generatedTimetable.classTimetables?.[item]?.[day]?.[p];
+                                    if (slot && slot.subject) {
+                                        if (slot.isStream) stream++;
+                                        else normal++;
+                                    }
+                                }
+                            });
+                        });
+                        return { total: normal + stream, normal, stream };
+                    };
+
+                    const rowItems = dptViewType === 'Teachers' ? teacherNames : classNames;
 
                     const cellBase = {
-                        width: '40px', minWidth: '40px', height: '38px',
+                        width: '42px', minWidth: '42px', height: '38px',
                         textAlign: 'center', verticalAlign: 'middle',
-                        fontSize: '0.65rem', fontWeight: 700,
+                        fontSize: '0.62rem', fontWeight: 700,
                         border: '1px solid #1e293b',
                         borderRadius: '4px',
                         padding: '2px',
-                        transition: 'background 0.15s'
+                        transition: 'background 0.15s',
+                        cursor: 'help'
                     };
 
                     return (
@@ -4952,29 +5492,53 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             {/* Header */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                                 <div>
-                                    <h2 style={{ color: '#f1f5f9', fontSize: '1.4rem', fontWeight: 900, margin: 0 }}>🕒 DPT — Teacher Availability</h2>
+                                    <h2 style={{ color: '#f1f5f9', fontSize: '1.4rem', fontWeight: 900, margin: 0 }}>🕒 DPT — {dptViewType} View</h2>
                                     <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
-                                        Each cell shows the class being taught. Empty = FREE period.
+                                        {dptViewType === 'Teachers' ? 'Showing class engagement per teacher.' : 'Showing subject engagement per class.'}
                                     </p>
                                 </div>
-                                {/* Legend */}
-                                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: '#94a3b8' }}>
-                                        <span style={{ display: 'inline-block', width: 18, height: 18, background: 'rgba(79,70,229,0.25)', border: '1px solid #4f46e5', borderRadius: 3 }}></span>
-                                        Busy
-                                    </span>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: '#94a3b8' }}>
-                                        <span style={{ display: 'inline-block', width: 18, height: 18, background: '#0f172a', border: '1px solid #1e293b', borderRadius: 3 }}></span>
-                                        Free
-                                    </span>
+
+                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                    {/* View Toggle */}
+                                    <div style={{ background: '#1e293b', padding: '0.3rem', borderRadius: '0.75rem', display: 'flex', gap: '0.3rem', border: '1px solid #334155' }}>
+                                        {['Teachers', 'Classes'].map(type => (
+                                            <button
+                                                key={type}
+                                                onClick={() => setDptViewType(type)}
+                                                style={{
+                                                    padding: '0.4rem 1rem',
+                                                    background: dptViewType === type ? 'linear-gradient(135deg, #4f46e5, #4338ca)' : 'transparent',
+                                                    border: 'none',
+                                                    borderRadius: '0.5rem',
+                                                    color: dptViewType === type ? 'white' : '#94a3b8',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 800,
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >{type}</button>
+                                        ))}
+                                    </div>
+
+                                    {/* Legend */}
+                                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: '#94a3b8' }}>
+                                            <span style={{ display: 'inline-block', width: 14, height: 14, background: 'rgba(79,70,229,0.25)', border: '1px solid #4f46e5', borderRadius: 3 }}></span>
+                                            Busy
+                                        </span>
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: '#94a3b8' }}>
+                                            <span style={{ display: 'inline-block', width: 14, height: 14, background: '#0f172a', border: '1px solid #1e293b', borderRadius: 3 }}></span>
+                                            Free
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
 
                             {/* Table */}
-                            <div style={{ overflowX: 'auto', borderRadius: '0.75rem', border: '1px solid #334155' }}>
+                            <div style={{ overflowX: 'auto', borderRadius: '0.75rem', border: '1px solid #334155', maxHeight: '70vh' }}>
                                 <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', tableLayout: 'auto' }}>
-                                    <thead>
-                                        {/* Row 1: Teacher Name + Day group headers */}
+                                    <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                                        {/* Row 1: Item Name + Day group headers */}
                                         <tr>
                                             <th rowSpan={2} style={{
                                                 position: 'sticky', left: 0, zIndex: 3,
@@ -4985,7 +5549,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 borderRight: '2px solid #334155', borderBottom: '2px solid #334155',
                                                 minWidth: '160px', whiteSpace: 'nowrap'
                                             }}>
-                                                Teacher
+                                                {dptViewType === 'Teachers' ? 'Teacher' : 'Class'}
                                             </th>
                                             <th rowSpan={2} style={{
                                                 background: '#0f172a', color: '#64748b',
@@ -5017,7 +5581,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         padding: '0.3rem 0', textAlign: 'center',
                                                         borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
                                                         borderBottom: '2px solid #334155',
-                                                        width: '40px', minWidth: '40px'
+                                                        width: '42px', minWidth: '42px'
                                                     }}>
                                                         {p}
                                                     </th>
@@ -5026,51 +5590,67 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {teacherNames.map((teacher, ti) => {
-                                            const busy = busyCount(teacher);
+                                        {rowItems.map((item, ti) => {
+                                            const details = getBusyDetails(item, dptViewType);
                                             return (
-                                                <tr key={teacher} style={{ background: ti % 2 === 0 ? '#0f172a' : '#111827' }}>
-                                                    {/* Teacher name — sticky */}
+                                                <tr key={item} style={{ borderBottom: '1px solid #1e293b' }}>
+                                                    {/* Item name — sticky */}
                                                     <td style={{
                                                         position: 'sticky', left: 0, zIndex: 2,
-                                                        background: ti % 2 === 0 ? '#0f172a' : '#111827',
-                                                        color: '#e2e8f0', fontSize: '0.78rem', fontWeight: 600,
-                                                        padding: '0.35rem 0.75rem',
-                                                        borderRight: '2px solid #334155',
+                                                        background: ti % 2 === 0 ? '#111827' : '#0f172a',
+                                                        color: '#f1f5f9', fontSize: '0.72rem', fontWeight: 700,
+                                                        padding: '0.5rem 1rem', borderRight: '2px solid #334155',
                                                         whiteSpace: 'nowrap'
                                                     }}>
-                                                        {teacher}
+                                                        {item}
                                                     </td>
                                                     {/* Busy count */}
                                                     <td style={{
-                                                        textAlign: 'center', padding: '0.35rem 0.5rem',
-                                                        borderRight: '1px solid #334155',
-                                                        fontSize: '0.72rem', fontWeight: 800,
-                                                        color: busy > 0 ? '#818cf8' : '#475569'
+                                                        background: ti % 2 === 0 ? '#111827' : '#0f172a',
+                                                        color: '#94a3b8', fontSize: '0.75rem', fontWeight: 900,
+                                                        textAlign: 'center', borderRight: '1px solid #334155'
                                                     }}>
-                                                        {busy > 0 ? busy : '—'}
+                                                        {details.total > 0 ? (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                                                <span style={{ color: '#fff' }}>{details.total}</span>
+                                                                {details.stream > 0 && (
+                                                                    <span style={{ fontSize: '0.6rem', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', padding: '1px 4px', borderRadius: '4px' }}>
+                                                                        incl. {details.stream} [S]
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        ) : '—'}
                                                     </td>
                                                     {/* Period cells */}
                                                     {DPT_DAYS.map((day, di) => (
                                                         DPT_PERIODS.map((p, pi) => {
-                                                            const mapping = mappingRows.find(m => m.teacher === teacher);
-                                                            const isMiddle = mapping?.level?.includes('Middle');
+                                                            let mapping;
+                                                            if (dptViewType === 'Teachers') {
+                                                                mapping = mappingRows.find(m => m.teacher === item);
+                                                            } else {
+                                                                // For classes, check grade level
+                                                                const grade = item.match(/\d+/)?.[0];
+                                                                mapping = { level: (grade >= 11) ? 'Senior' : 'Middle' };
+                                                            }
+
+                                                            const isMiddle = mapping?.level === 'Middle';
                                                             const isBreak = p === 'S3' || p === 'S7';
                                                             const isLunch = isMiddle ? p === 'S9' : p === 'S10';
 
-                                                            const cn = getClassName(teacher, day, p);
-                                                            const content = isBreak ? 'BREAK' : (isLunch ? 'LUNCH' : (cn || ''));
+                                                            const eng = dptViewType === 'Teachers' ? getTeacherEngagement(item, day, p) : getClassEngagement(item, day, p);
+                                                            const content = isBreak ? 'BREAK' : (isLunch ? 'LUNCH' : (eng || ''));
                                                             const isReserved = isBreak || isLunch;
 
                                                             return (
-                                                                <td key={`${day}-${p}`} title={cn ? `${teacher} → ${cn} (${day} ${p})` : (isReserved ? `${content}` : `${teacher} FREE (${day} ${p})`)}
+                                                                <td key={`${day}-${p}`} title={getTooltip(item, day, p, dptViewType)}
                                                                     style={{
                                                                         ...cellBase,
                                                                         borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
-                                                                        background: cn ? 'rgba(79,70,229,0.22)' : (isBreak ? 'rgba(251,191,36,0.03)' : (isLunch ? 'rgba(56,189,248,0.03)' : '#0f172a')),
-                                                                        color: cn ? '#a5b4fc' : (isBreak ? 'rgba(251,191,36,0.2)' : (isLunch ? 'rgba(56,189,248,0.2)' : '#1e293b')),
-                                                                        fontSize: isReserved ? '0.5rem' : '0.65rem',
-                                                                        opacity: isReserved ? 0.6 : 1
+                                                                        background: eng ? 'rgba(79,70,229,0.22)' : (isBreak ? 'rgba(251,191,36,0.03)' : (isLunch ? 'rgba(56,189,248,0.03)' : '#0f172a')),
+                                                                        color: eng ? '#a5b4fc' : (isBreak ? 'rgba(251,191,36,0.2)' : (isLunch ? 'rgba(56,189,248,0.2)' : '#1e293b')),
+                                                                        fontSize: isReserved ? '0.5rem' : '0.62rem',
+                                                                        opacity: isReserved ? 0.6 : 1,
+                                                                        position: 'relative'
                                                                     }}
                                                                 >
                                                                     {content}
@@ -5087,7 +5667,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                             {/* Summary footer */}
                             <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#475569', textAlign: 'right' }}>
-                                {teacherNames.length} teachers · {DPT_DAYS.length} days · {DPT_PERIODS.length} periods/day
+                                {rowItems.length} {dptViewType} · {DPT_DAYS.length} days · {DPT_PERIODS.length} periods/day
                             </div>
                         </div>
                     );
@@ -5204,8 +5784,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     }
 
                                                     const slot = tTT?.[day]?.[p];
-                                                    const displayClass = (slot && typeof slot === 'object') ? slot.className : '-';
-                                                    const displaySub = (slot && typeof slot === 'object') ? slot.subject : '';
+                                                    let displayClass = (slot && typeof slot === 'object') ? slot.className : '-';
+                                                    let displaySub = (slot && typeof slot === 'object') ? (slot.subject || '') : '';
+
+                                                    if (slot?.isStream) {
+                                                        displayClass = slot.groupName ? `${slot.className}-${slot.groupName}` : slot.className;
+                                                        // For streams, the subject is specific to the teacher
+                                                        displaySub = slot.subject || '';
+                                                    }
 
                                                     return (
                                                         <td key={p} style={{
@@ -5216,7 +5802,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             padding: '2px',
                                                             color: 'black'
                                                         }}>
-                                                            <div style={{ fontSize: '0.75rem', fontWeight: 900, color: 'black' }}>{displayClass}</div>
+                                                            <div style={{ fontSize: '0.75rem', fontWeight: 900, color: 'black' }}>
+                                                                {displayClass}{slot?.isTBlock ? ' [T]' : (slot?.isLBlock ? ' [L]' : '')}
+                                                            </div>
                                                             <div style={{ fontSize: '0.5rem', color: 'black', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displaySub}</div>
                                                         </td>
                                                     );
@@ -5582,46 +6170,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     )
                 }
 
-                {/* Dropdown */}
-                {
-                    dropdownConfig && (
-                        <GradeDropdown
-                            anchorRect={dropdownConfig.rect}
-                            onClose={() => setDropdownConfig(null)}
-                            onSelect={(grade) => handleSetGrade(dropdownConfig.mappingId, dropdownConfig.slotIndex, grade)}
-                        />
-                    )
-                }
+
 
             </div >
-
-            {
-                dropdownConfig && (
-                    <div onClick={() => setDropdownConfig(null)} style={{ position: 'fixed', inset: 0, zIndex: 999 }}></div>
-                )
-            }
-
-            <style>{`
-                @keyframes slideDown {
-                    from { opacity: 0; transform: translateY(-20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                @keyframes fadeIn {
-                    from { opacity: 0; transform: translateY(10px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                body {
-                    margin: 0;
-                    padding: 0;
-                    background: #0f172a;
-                }
-                * {
-                    box-sizing: border-box;
-                }
-            `}</style>
-            <footer style={{ marginTop: '3rem', textAlign: 'center', opacity: 0.5, fontSize: '0.9rem', color: '#94a3b8', fontWeight: '600' }}>
-                created by @jayankrtripunithura 2026
-            </footer>
 
             {/* ─────────── Fixed bottom status ribbon ─────────── */}
             {creationStatus && (
@@ -5698,13 +6249,297 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 </div>
             )}
 
+            {/* Subject Stream Modal (Parallel Classes) */}
+            {showStreamModal && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(2, 6, 23, 0.85)',
+                    backdropFilter: 'blur(12px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 2000,
+                    animation: 'fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                }}>
+                    <div style={{
+                        background: '#1e293b',
+                        borderRadius: '1.5rem',
+                        width: '95%',
+                        maxWidth: '850px',
+                        maxHeight: '90vh',
+                        overflow: 'hidden',
+                        padding: '2.5rem',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        position: 'relative'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                            <div>
+                                <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 900, color: '#f1f5f9', letterSpacing: '-0.02em' }}>
+                                    {editingStreamId ? 'Edit Parallel Stream' : 'Create New Parallel Stream'}
+                                </h2>
+                                <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '0.25rem' }}>Configure subjects that run simultaneously for the same class</p>
+                            </div>
+                            <button
+                                onClick={() => setShowStreamModal(false)}
+                                style={{
+                                    background: '#334155',
+                                    border: 'none',
+                                    color: '#94a3b8',
+                                    width: '32px',
+                                    height: '32px',
+                                    borderRadius: '50%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => { e.target.style.background = '#475569'; e.target.style.color = '#f1f5f9'; }}
+                                onMouseLeave={(e) => { e.target.style.background = '#334155'; e.target.style.color = '#94a3b8'; }}
+                            >✕</button>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: '1.25rem', marginBottom: '2.5rem', background: 'rgba(15, 23, 42, 0.3)', padding: '1.5rem', borderRadius: '1rem', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Stream Identifier</label>
+                                <input
+                                    type="text"
+                                    value={streamForm.name}
+                                    onChange={e => setStreamForm({ ...streamForm, name: e.target.value.toUpperCase() })}
+                                    placeholder="e.g. 2ND LANGUAGE"
+                                    style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Abbreviation</label>
+                                <input
+                                    type="text"
+                                    value={streamForm.abbreviation}
+                                    onChange={e => setStreamForm({ ...streamForm, abbreviation: e.target.value })}
+                                    placeholder="e.g. 2ndLang"
+                                    maxLength={8}
+                                    style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: '#10b981', fontSize: '0.95rem', fontWeight: 700 }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Target Class</label>
+                                <select
+                                    value={streamForm.className}
+                                    onChange={e => setStreamForm({ ...streamForm, className: e.target.value })}
+                                    style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
+                                >
+                                    {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Weekly Load</label>
+                                <select
+                                    value={streamForm.periods}
+                                    onChange={e => setStreamForm({ ...streamForm, periods: Number(e.target.value) })}
+                                    style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
+                                >
+                                    {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n} value={n}>{n} Periods</option>)}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style={{ flex: 1, overflowY: 'auto', marginBottom: '2rem', paddingRight: '0.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                                <label style={{ color: '#818cf8', fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Parallel Group Assignments</label>
+                                <button
+                                    onClick={addSubjectToStream}
+                                    style={{
+                                        padding: '0.5rem 1rem',
+                                        background: 'rgba(79, 70, 229, 0.1)',
+                                        border: '1px solid #4f46e5',
+                                        borderRadius: '0.5rem',
+                                        color: '#818cf8',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                        fontSize: '0.75rem',
+                                        transition: 'all 0.2s',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.4rem'
+                                    }}
+                                    onMouseEnter={(e) => { e.target.style.background = 'rgba(79, 70, 229, 0.2)'; }}
+                                    onMouseLeave={(e) => { e.target.style.background = 'rgba(79, 70, 229, 0.1)'; }}
+                                ><span>＋</span> Add New Group</button>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                {streamForm.subjects.map((sub, idx) => (
+                                    <div key={idx} style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr 1fr 1fr 40px',
+                                        gap: '0.75rem',
+                                        alignItems: 'center',
+                                        background: 'rgba(30, 41, 59, 0.5)',
+                                        padding: '0.75rem',
+                                        borderRadius: '0.85rem',
+                                        border: '1px solid rgba(255, 255, 255, 0.03)'
+                                    }}>
+                                        <div>
+                                            <select
+                                                value={sub.subject}
+                                                onChange={e => updateStreamSubject(idx, 'subject', e.target.value)}
+                                                style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
+                                            >
+                                                <option value="">-- select subject --</option>
+                                                {[...subjects].sort().map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <select
+                                                value={sub.teacher}
+                                                onChange={e => updateStreamSubject(idx, 'teacher', e.target.value)}
+                                                style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
+                                            >
+                                                <option value="">-- select teacher --</option>
+                                                {teachers.filter(t => !sub.subject || mappingRows.some(m => m.teacher === t && m.subject === sub.subject)).sort().map(t => <option key={t} value={t}>{t}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <input
+                                                type="text"
+                                                value={sub.groupName}
+                                                onChange={e => updateStreamSubject(idx, 'groupName', e.target.value)}
+                                                placeholder="Group Name (e.g. Hindi)"
+                                                style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={() => removeSubjectFromStream(idx)}
+                                            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.1rem' }}
+                                            onMouseEnter={(e) => { e.target.style.color = '#ef4444'; }}
+                                            onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; }}
+                                        >✕</button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', borderTop: '1px solid #334155', paddingTop: '1.75rem', marginTop: 'auto' }}>
+                            <button
+                                onClick={() => setShowStreamModal(false)}
+                                style={{ padding: '0.85rem 1.75rem', background: 'transparent', border: '1px solid #475569', borderRadius: '0.85rem', color: '#94a3b8', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s' }}
+                                onMouseEnter={(e) => { e.target.style.color = '#f1f5f9'; e.target.style.borderColor = '#94a3b8'; }}
+                                onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; e.target.style.borderColor = '#475569'; }}
+                            >Cancel</button>
+                            <button
+                                onClick={handleSaveStream}
+                                style={{
+                                    padding: '0.85rem 2rem',
+                                    background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
+                                    border: 'none',
+                                    borderRadius: '0.85rem',
+                                    color: 'white',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.4)',
+                                    transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => { e.target.style.transform = 'translateY(-2px)'; e.target.style.boxShadow = '0 6px 15px rgba(79, 70, 229, 0.5)'; }}
+                                onMouseLeave={(e) => { e.target.style.transform = 'translateY(0)'; e.target.style.boxShadow = '0 4px 12px rgba(79, 70, 229, 0.4)'; }}
+                            >
+                                {editingStreamId ? 'Update Stream' : 'Deploy Stream'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Dropdown */}
+            {
+                dropdownConfig && (
+                    <GradeDropdown
+                        anchorRect={dropdownConfig.rect}
+                        onClose={() => setDropdownConfig(null)}
+                        onSelect={(grade) => handleSetGrade(dropdownConfig.mappingId, dropdownConfig.slotIndex, grade)}
+                    />
+                )
+            }
+
+            {/* Dropdown overlay */}
+            {
+                dropdownConfig && (
+                    <div onClick={() => setDropdownConfig(null)} style={{ position: 'fixed', inset: 0, zIndex: 999 }}></div>
+                )
+            }
+
             <style>{`
+                @keyframes slideDown {
+                    from { opacity: 0; transform: translateY(-20px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
                 @keyframes slideUp {
                     from { transform: translateY(100%); opacity: 0; }
                     to   { transform: translateY(0);    opacity: 1; }
                 }
+                body {
+                    margin: 0;
+                    padding: 0;
+                    background: #0f172a;
+                }
+                * {
+                    box-sizing: border-box;
+                }
+                .tt-cell-changed {
+                    animation: pulseOrange 2s infinite;
+                    position: relative;
+                    border: 1px solid #f97316 !important;
+                    background: rgba(249, 115, 22, 0.1) !important;
+                }
+                .tt-change-badge {
+                    position: absolute;
+                    top: -4px;
+                    right: -4px;
+                    width: 8px;
+                    height: 8px;
+                    background: #f97316;
+                    border-radius: 50%;
+                    box-shadow: 0 0 4px rgba(0,0,0,0.3);
+                }
+                .tt-tooltip {
+                    position: absolute;
+                    bottom: 100%;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: #0f172a;
+                    color: white;
+                    padding: 0.5rem 0.75rem;
+                    border-radius: 0.5rem;
+                    font-size: 0.75rem;
+                    white-space: nowrap;
+                    z-index: 100;
+                    opacity: 0;
+                    visibility: hidden;
+                    transition: all 0.2s;
+                    border: 1px solid #334155;
+                    pointer-events: none;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                    margin-bottom: 8px;
+                }
+                .tt-cell-parent:hover .tt-tooltip {
+                    opacity: 1;
+                    visibility: visible;
+                    transform: translateX(-50%) translateY(-4px);
+                }
             `}</style>
-
-        </div >
+            <footer style={{ marginTop: '3rem', textAlign: 'center', opacity: 0.5, fontSize: '0.9rem', color: '#94a3b8', fontWeight: '600' }}>
+                created by @jayankrtripunithura 2026
+            </footer>
+        </div>
     );
 }
