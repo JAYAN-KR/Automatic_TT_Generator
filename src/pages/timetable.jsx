@@ -349,6 +349,17 @@ export default function TimetablePage() {
     // -- Classes Alloted (new Tab 1) State --
     const [selectedGroups, setSelectedGroups] = useState([]); // Array of { rowId, groupIndex }
     const [mergePopup, setMergePopup] = useState(null); // { rowId, groupIndices, grade, rect }
+    const [expandedGroup, setExpandedGroup] = useState(null); // { rowId, groupIndex }
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (expandedGroup && !e.target.closest('.group-expansion-container')) {
+                setExpandedGroup(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [expandedGroup]);
 
     // --- Interactive Builder State ---
     const [creationStatus, setCreationStatus] = useState(null); // { teacher, subject, messages: [], progress: 0, completedCount: 0, isError: false }
@@ -400,7 +411,7 @@ export default function TimetablePage() {
             id: Date.now(),
             teacher: '',
             subject: '',
-            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, preferredDay: 'Any', isMerged: false }],
+            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
             total: 0
         }];
     });
@@ -422,7 +433,7 @@ export default function TimetablePage() {
             id: Date.now(),
             teacher: '',
             subject: '',
-            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, preferredDay: 'Any', isMerged: false }],
+            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
             total: 0
         }]);
     };
@@ -517,7 +528,8 @@ export default function TimetablePage() {
                 id: Date.now() + Math.random(),
                 classes: [c],
                 periods: group.periods,
-                blockPeriods: 0,
+                tBlock: 0,
+                lBlock: 0,
                 preferredDay: group.preferredDay || 'Any',
                 isMerged: false
             }));
@@ -547,7 +559,8 @@ export default function TimetablePage() {
                 id: Date.now() + Math.random(),
                 classes: [...new Set(mergedClasses)], // Dedupe just in case
                 periods: numPeriods,
-                blockPeriods: 0,
+                tBlock: 0,
+                lBlock: 0,
                 preferredDay: 'Any',
                 isMerged: true
             };
@@ -3267,6 +3280,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             >
                                 🧹 Clear Saved
                             </button>
+
                         </div>
 
                         {/* Batch Generation Control Row */}
@@ -3310,7 +3324,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         <th style={{
                                             padding: '0.75rem',
                                             textAlign: 'left',
-                                            width: '200px',
+                                            width: '240px',
                                             position: 'sticky',
                                             left: 0,
                                             background: '#1e293b',
@@ -3318,297 +3332,250 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             boxShadow: '4px 0 4px rgba(0,0,0,0.3)',
                                             borderRight: '1px solid #334155'
                                         }}>Teacher Name</th>
-                                        <th style={{ padding: '0.75rem', textAlign: 'left', width: '200px' }}>Subject</th>
+                                        <th style={{ padding: '0.75rem', textAlign: 'left', width: '180px' }}>Subject</th>
                                         <th style={{ padding: '0.75rem', textAlign: 'left' }}>Class Allotments</th>
-                                        <th style={{ padding: '0.75rem', textAlign: 'center', width: '100px' }}>Total</th>
-                                        <th style={{ padding: '0.75rem', textAlign: 'center', width: '120px' }}>Action</th>
-                                        <th style={{ padding: '0.75rem', width: '50px' }}></th>
+                                        <th style={{ padding: '0.75rem', textAlign: 'center', width: '90px' }}>Total</th>
+                                        <th style={{ padding: '0.75rem', textAlign: 'center', width: '150px' }}>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {allotmentRows.map(row => {
-                                        // Use mappingRows state (not localStorage) so newly added
-                                        // teachers appear immediately after saving in Tab 1
-                                        const teacherSubjects = [...new Set(
-                                            mappingRows
-                                                .filter(r => r.teacher === row.teacher && r.subject)
-                                                .map(r => r.subject)
-                                        )].sort();
+                                        const streamPeriods = (subjectStreams || []).reduce((acc, st) => {
+                                            if (st.subjects.some(s => s.teacher === row.teacher)) return acc + (Number(st.periods) || 0);
+                                            return acc;
+                                        }, 0);
+                                        const grandTotal = (row.total || 0) + streamPeriods;
 
                                         return (
-                                            <tr key={row.id} style={{ borderBottom: '1px solid #334155' }}>
-                                                <td style={{
-                                                    padding: '0.6rem',
-                                                    color: '#f1f5f9',
-                                                    fontWeight: '600',
-                                                    textAlign: 'left',
-                                                    position: 'sticky',
-                                                    left: 0,
-                                                    background: '#1e293b', // Match row background color
-                                                    zIndex: 10,
-                                                    boxShadow: '4px 0 4px rgba(0,0,0,0.3)',
-                                                    borderRight: '1px solid #334155'
-                                                }}>
-                                                    {row.teacher}
+                                            <tr key={row.id} style={{
+                                                borderBottom: '1px solid #334155',
+                                                transition: 'background 0.2s'
+                                            }}>
+                                                <td
+                                                    style={{
+                                                        padding: '0.8rem',
+                                                        color: '#f1f5f9',
+                                                        fontWeight: '700',
+                                                        textAlign: 'left',
+                                                        position: 'sticky',
+                                                        left: 0,
+                                                        background: '#1e293b',
+                                                        zIndex: 10,
+                                                        boxShadow: '4px 0 4px rgba(0,0,0,0.3)',
+                                                        borderRight: '1px solid #334155',
+                                                        userSelect: 'none'
+                                                    }}>
+                                                    <span style={{ color: '#f1f5f9' }}>{row.teacher || '(No Teacher)'}</span>
                                                 </td>
-                                                <td style={{ padding: '0.6rem', minWidth: '170px' }}>
-                                                    <select
-                                                        value={row.subject}
-                                                        onChange={e => updateAllotmentField(row.id, 'subject', e.target.value)}
-                                                        style={{
-                                                            width: '100%',
-                                                            padding: '0.5rem',
-                                                            background: '#0f172a',
-                                                            color: '#f1f5f9',
-                                                            border: '1px solid #334155',
-                                                            borderRadius: '0.4rem'
-                                                        }}
-                                                    >
-                                                        <option value="">-- Select Subject --</option>
-                                                        {teacherSubjects.map(s => <option key={s} value={s}>{s}</option>)}
-                                                    </select>
+                                                <td style={{ padding: '0.8rem', minWidth: '150px' }}>
+                                                    <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'bold' }}>
+                                                        {row.subject || '---'}
+                                                    </span>
                                                 </td>
                                                 <td style={{ padding: '0.6rem' }}>
                                                     <div style={{
                                                         display: 'flex',
                                                         gap: '0.6rem',
-                                                        flexWrap: 'nowrap',
+                                                        flexWrap: 'wrap',
                                                         alignItems: 'center',
-                                                        overflowX: 'auto',
-                                                        paddingBottom: '0.4rem',
-                                                        maxWidth: '800px'
+                                                        maxWidth: '1000px'
                                                     }}>
-                                                        {row.allotments.map((group, gIdx) => {
+                                                        {(row.allotments || []).map((group, gIdx) => {
                                                             const isSelected = selectedGroups.some(s => s.rowId === row.id && s.groupIndex === gIdx);
+                                                            const isGrpExpanded = expandedGroup?.rowId === row.id && expandedGroup?.groupIndex === gIdx;
+                                                            const grade = group.classes[0]?.match(/\d+/)?.[0];
+
                                                             return (
                                                                 <div
                                                                     key={group.id}
+                                                                    className="group-expansion-container"
                                                                     style={{
                                                                         display: 'flex',
-                                                                        gap: '0.4rem',
-                                                                        background: group.isMerged ? 'linear-gradient(135deg, #312e81, #4338ca)' : '#0f172a',
-                                                                        border: isSelected ? '2px solid #fbbf24' : (group.isMerged ? '2px solid #6366f1' : '1px solid #334155'),
-                                                                        padding: '0.4rem 0.6rem',
-                                                                        borderRadius: '0.6rem',
                                                                         alignItems: 'center',
-                                                                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                                                        boxShadow: isSelected ? '0 0 10px rgba(251, 191, 36, 0.4)' : (group.isMerged ? '0 4px 6px -1px rgba(0, 0, 0, 0.2)' : 'none'),
-                                                                        cursor: 'default',
-                                                                        flexShrink: 0
+                                                                        background: 'transparent',
+                                                                        borderRadius: '0.6rem',
+                                                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                                                                     }}
                                                                 >
-                                                                    {group.isMerged ? (
-                                                                        <div
-                                                                            title="Merged Group • Ctrl+Click to select • Right-click to unmerge"
-                                                                            onClick={(e) => {
-                                                                                const isSel = selectedGroups.some(s => s.rowId === row.id && s.groupIndex === gIdx);
-                                                                                if (e.ctrlKey) {
-                                                                                    if (isSel) setSelectedGroups(prev => prev.filter(s => !(s.rowId === row.id && s.groupIndex === gIdx)));
-                                                                                    else setSelectedGroups(prev => [...prev, { rowId: row.id, groupIndex: gIdx }]);
-                                                                                }
-                                                                            }}
-                                                                            style={{
-                                                                                padding: '0.4rem 0.6rem',
-                                                                                background: 'rgba(255,255,255,0.1)',
-                                                                                borderRadius: '0.4rem',
-                                                                                fontSize: '0.85rem',
-                                                                                fontWeight: '900',
-                                                                                color: '#fff',
-                                                                                cursor: 'pointer',
-                                                                                letterSpacing: '0.05em',
-                                                                                display: 'flex',
-                                                                                alignItems: 'center',
-                                                                                gap: '0.4rem'
-                                                                            }}
-                                                                        >
-                                                                            {formatClasses(group.classes)}
-                                                                            <span
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    if (confirm(`Unmerge classes ${group.classes.join(', ')}?`)) {
-                                                                                        unmergeGroup(row.id, gIdx);
-                                                                                    }
-                                                                                }}
-                                                                                title="Unmerge"
-                                                                                style={{
-                                                                                    background: 'rgba(255,255,255,0.2)',
-                                                                                    borderRadius: '50%',
-                                                                                    width: '16px',
-                                                                                    height: '16px',
-                                                                                    display: 'flex',
-                                                                                    alignItems: 'center',
-                                                                                    justifyContent: 'center',
-                                                                                    fontSize: '10px'
-                                                                                }}
-                                                                            >🔗</span>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <select
-                                                                            value={group.classes[0]}
-                                                                            title="Ctrl+Click to select for merging"
-                                                                            onMouseDown={(e) => {
-                                                                                if (e.ctrlKey) {
-                                                                                    e.preventDefault();
-                                                                                    const grade = group.classes[0].match(/\d+/)?.[0];
-                                                                                    setSelectedGroups(prev => {
-                                                                                        const exists = prev.some(s => s.rowId === row.id && s.groupIndex === gIdx);
-                                                                                        if (exists) return prev.filter(s => !(s.rowId === row.id && s.groupIndex === gIdx));
-                                                                                        if (prev.length > 0) {
-                                                                                            const first = allotmentRows.find(r => r.id === prev[0].rowId);
-                                                                                            const firstGroup = first.allotments[prev[0].groupIndex];
-                                                                                            const firstGrade = firstGroup.classes[0].match(/\d+/)?.[0];
-                                                                                            if (prev[0].rowId !== row.id || firstGrade !== grade) return [{ rowId: row.id, groupIndex: gIdx }];
+                                                                    {/* Group boxes rendering as before but without row expansion check */}
+                                                                    <div
+                                                                        onClick={(e) => {
+                                                                            if (e.ctrlKey) {
+                                                                                const exists = selectedGroups.some(s => s.rowId === row.id && s.groupIndex === gIdx);
+                                                                                if (exists) setSelectedGroups(prev => prev.filter(s => !(s.rowId === row.id && s.groupIndex === gIdx)));
+                                                                                else {
+                                                                                    if (selectedGroups.length > 0) {
+                                                                                        const first = allotmentRows.find(r => r.id === selectedGroups[0].rowId);
+                                                                                        const firstGroup = first?.allotments[selectedGroups[0].groupIndex];
+                                                                                        const firstGrade = firstGroup?.classes[0]?.match(/\d+/)?.[0];
+                                                                                        if (selectedGroups[0].rowId !== row.id || firstGrade !== grade) {
+                                                                                            setSelectedGroups([{ rowId: row.id, groupIndex: gIdx }]);
+                                                                                        } else {
+                                                                                            setSelectedGroups(prev => [...prev, { rowId: row.id, groupIndex: gIdx }]);
                                                                                         }
-                                                                                        return [...prev, { rowId: row.id, groupIndex: gIdx }];
-                                                                                    });
+                                                                                    } else {
+                                                                                        setSelectedGroups([{ rowId: row.id, groupIndex: gIdx }]);
+                                                                                    }
                                                                                 }
-                                                                            }}
-                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'class', e.target.value)}
-                                                                            style={{
-                                                                                padding: '0.4rem',
-                                                                                background: 'transparent',
-                                                                                color: '#f1f5f9',
-                                                                                border: 'none',
-                                                                                fontSize: '0.85rem',
-                                                                                fontWeight: '700',
-                                                                                cursor: 'pointer',
-                                                                                borderRadius: '0.3rem'
-                                                                            }}
-                                                                        >
-                                                                            {CLASS_OPTIONS.map(c => <option key={c} value={c} style={{ background: '#0f172a' }}>{c}</option>)}
-                                                                        </select>
-                                                                    )}
-                                                                    <div style={{ width: '1.5px', background: 'rgba(255,255,255,0.1)', height: '1.4rem', margin: '0 0.1rem' }}></div>
-                                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                                                        <span style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' }}>PPS</span>
-                                                                        <select
-                                                                            value={group.periods || 0}
-                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'periods', e.target.value)}
-                                                                            title="Periods per week"
-                                                                            style={{
-                                                                                background: 'transparent',
-                                                                                color: (group.periods > 0) ? '#fff' : '#94a3b8',
-                                                                                border: 'none',
-                                                                                fontSize: '0.8rem',
-                                                                                fontWeight: '800',
-                                                                                cursor: 'pointer',
-                                                                                outline: 'none',
-                                                                                textAlign: 'center'
-                                                                            }}
-                                                                        >
-                                                                            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                                                                                <option key={n} value={n} style={{ background: '#0f172a', color: '#fff' }}>{n}</option>
-                                                                            ))}
-                                                                        </select>
-                                                                    </div>
-                                                                    <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', height: '1.4rem' }}></div>
-                                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                                                        <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 'bold' }}>T.BLK</span>
-                                                                        <select
-                                                                            value={group.tBlock || 0}
-                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
-                                                                            title="Theory Block (consecutive periods)"
-                                                                            style={{
-                                                                                background: 'transparent',
-                                                                                color: (group.tBlock > 0) ? '#fbbf24' : '#94a3b8',
-                                                                                border: 'none',
-                                                                                fontSize: '0.8rem',
-                                                                                fontWeight: '800',
-                                                                                cursor: 'pointer',
-                                                                                outline: 'none',
-                                                                                textAlign: 'center'
-                                                                            }}
-                                                                        >
-                                                                            <option value={0} style={{ background: '#0f172a' }}>0</option>
-                                                                            <option value={2} style={{ background: '#0f172a' }}>2 (1blk)</option>
-                                                                            <option value={4} style={{ background: '#0f172a' }}>4 (2blk)</option>
-                                                                        </select>
-                                                                    </div>
-                                                                    <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', height: '1.4rem' }}></div>
-                                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                                                        <span style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 'bold' }}>L.BLK</span>
-                                                                        <select
-                                                                            value={group.lBlock || 0}
-                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'lBlock', e.target.value)}
-                                                                            title="Lab Block (consecutive periods)"
-                                                                            style={{
-                                                                                background: 'transparent',
-                                                                                color: (group.lBlock > 0) ? '#10b981' : '#94a3b8',
-                                                                                border: 'none',
-                                                                                fontSize: '0.8rem',
-                                                                                fontWeight: '800',
-                                                                                cursor: 'pointer',
-                                                                                outline: 'none',
-                                                                                textAlign: 'center'
-                                                                            }}
-                                                                        >
-                                                                            <option value={0} style={{ background: '#0f172a' }}>0</option>
-                                                                            <option value={2} style={{ background: '#0f172a' }}>2 (1blk)</option>
-                                                                            <option value={4} style={{ background: '#0f172a' }}>4 (2blk)</option>
-                                                                            <option value={6} style={{ background: '#0f172a' }}>6 (3blk)</option>
-                                                                        </select>
-                                                                    </div>
-                                                                    <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', height: '1.4rem' }}></div>
-                                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '40px' }}>
-                                                                        <span style={{ fontSize: '0.6rem', color: '#94a3b8', fontWeight: '500' }}>REM</span>
-                                                                        <span style={{ fontSize: '0.8rem', fontWeight: '900', color: '#e2e8f0' }}>
-                                                                            {Math.max(0, (group.periods || 0) - (group.tBlock || 0) - (group.lBlock || 0))}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', height: '1.4rem' }}></div>
-                                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                                                        <span style={{ fontSize: '0.65rem', color: '#38bdf8', fontWeight: 'bold' }}>DAY</span>
-                                                                        <select
-                                                                            value={group.preferredDay || 'Any'}
-                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'preferredDay', e.target.value)}
-                                                                            title="Fix subject to a specific day"
-                                                                            style={{
-                                                                                background: 'transparent',
-                                                                                color: (group.preferredDay && group.preferredDay !== 'Any') ? '#38bdf8' : '#94a3b8',
-                                                                                border: 'none',
-                                                                                fontSize: '0.8rem',
-                                                                                fontWeight: '800',
-                                                                                cursor: 'pointer',
-                                                                                outline: 'none',
-                                                                                textAlign: 'center'
-                                                                            }}
-                                                                        >
-                                                                            {['Any', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => (
-                                                                                <option key={d} value={d} style={{ background: '#0f172a', color: '#fff' }}>{d}</option>
-                                                                            ))}
-                                                                        </select>
-                                                                    </div>
-                                                                    <button
-                                                                        title="Delete allotment"
-                                                                        onClick={() => deleteAllotmentGroup(row.id, gIdx)}
+                                                                            } else {
+                                                                                setExpandedGroup(isGrpExpanded ? null : { rowId: row.id, groupIndex: gIdx });
+                                                                            }
+                                                                        }}
+                                                                        onContextMenu={(e) => {
+                                                                            if (group.isMerged) {
+                                                                                e.preventDefault();
+                                                                                if (confirm(`Unmerge classes ${group.classes.join(', ')}?`)) {
+                                                                                    unmergeGroup(row.id, gIdx);
+                                                                                }
+                                                                            }
+                                                                        }}
                                                                         style={{
-                                                                            background: 'transparent',
-                                                                            border: 'none',
-                                                                            color: '#f87171',
+                                                                            padding: '0.4rem 0.8rem',
+                                                                            background: isSelected ? '#fbbf24' : (group.isMerged ? 'linear-gradient(135deg, #4f46e5, #4338ca)' : '#f8fafc'),
+                                                                            color: isSelected ? '#000' : (group.isMerged ? '#fff' : '#1e293b'),
+                                                                            borderRadius: '0.5rem',
+                                                                            fontSize: '0.85rem',
+                                                                            fontWeight: '900',
                                                                             cursor: 'pointer',
-                                                                            fontSize: '0.9rem',
-                                                                            padding: '0 0.3rem',
                                                                             display: 'flex',
                                                                             alignItems: 'center',
-                                                                            justifyContent: 'center',
-                                                                            transition: 'transform 0.1s'
+                                                                            gap: '0.6rem',
+                                                                            border: isGrpExpanded ? '2px solid #38bdf8' : '1px solid #e2e8f0',
+                                                                            boxShadow: isGrpExpanded ? '0 0 12px rgba(56, 189, 248, 0.25)' : '0 1px 2px rgba(0,0,0,0.05)',
+                                                                            zIndex: 2,
+                                                                            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                                            height: '34px',
+                                                                            boxSizing: 'border-box'
                                                                         }}
-                                                                        onMouseOver={e => e.currentTarget.style.transform = 'scale(1.2)'}
-                                                                        onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
-                                                                    >✕</button>
+                                                                    >
+                                                                        {group.isMerged && <span title="Merged Group" style={{ fontSize: '0.8rem' }}>🔗</span>}
+
+                                                                        {(!group.isMerged && isGrpExpanded) ? (
+                                                                            <select
+                                                                                value={group.classes[0]}
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'class', e.target.value)}
+                                                                                style={{
+                                                                                    background: 'transparent',
+                                                                                    border: 'none',
+                                                                                    color: '#1e293b',
+                                                                                    fontWeight: '900',
+                                                                                    fontSize: '0.85rem',
+                                                                                    cursor: 'pointer',
+                                                                                    outline: 'none',
+                                                                                    padding: 0
+                                                                                }}
+                                                                            >
+                                                                                {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                                                                            </select>
+                                                                        ) : (
+                                                                            <span style={{ letterSpacing: '0.02em' }}>{formatClasses(group.classes)}</span>
+                                                                        )}
+
+                                                                        <span style={{
+                                                                            fontSize: '0.7rem',
+                                                                            opacity: 0.6,
+                                                                            transform: isGrpExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                                                            display: 'inline-block',
+                                                                            transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                                            color: (isSelected || group.isMerged) ? 'inherit' : '#64748b'
+                                                                        }}>{isGrpExpanded ? '▼' : '▶'}</span>
+                                                                    </div>
+
+                                                                    <div style={{
+                                                                        display: 'flex',
+                                                                        overflow: 'hidden',
+                                                                        maxWidth: isGrpExpanded ? '700px' : '0px',
+                                                                        opacity: isGrpExpanded ? 1 : 0,
+                                                                        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                                        background: '#ffffff',
+                                                                        color: '#1e293b',
+                                                                        borderRadius: '0.5rem',
+                                                                        marginLeft: isGrpExpanded ? '0.6rem' : '0px',
+                                                                        whiteSpace: 'nowrap',
+                                                                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                                                                        border: isGrpExpanded ? '1px solid #cbd5e1' : 'none',
+                                                                        alignItems: 'center',
+                                                                        height: '34px',
+                                                                        boxSizing: 'border-box'
+                                                                    }}>
+                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>PPS</span>
+                                                                            <select
+                                                                                value={group.periods || 0}
+                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'periods', e.target.value)}
+                                                                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
+                                                                            >
+                                                                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                                                                            </select>
+                                                                        </div>
+                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b' }}>T</span>
+                                                                            <select
+                                                                                value={group.tBlock || 0}
+                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
+                                                                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
+                                                                            >
+                                                                                <option value={0}>0</option>
+                                                                                <option value={2}>2</option>
+                                                                                <option value={4}>4</option>
+                                                                            </select>
+                                                                        </div>
+                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#10b981' }}>L</span>
+                                                                            <select
+                                                                                value={group.lBlock || 0}
+                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'lBlock', e.target.value)}
+                                                                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
+                                                                            >
+                                                                                {[0, 2, 4, 6].map(n => <option key={n} value={n}>{n}</option>)}
+                                                                            </select>
+                                                                        </div>
+                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>REM</span>
+                                                                            <span style={{ fontWeight: 900, fontSize: '0.85rem', color: '#64748b' }}>{Math.max(0, (group.periods || 0) - (group.tBlock || 0) - (group.lBlock || 0))}</span>
+                                                                        </div>
+                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#3b82f6' }}>DAY</span>
+                                                                            <select
+                                                                                value={group.preferredDay || 'Any'}
+                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'preferredDay', e.target.value)}
+                                                                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
+                                                                            >
+                                                                                {['Any', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => <option key={d} value={d}>{d}</option>)}
+                                                                            </select>
+                                                                        </div>
+                                                                        <div
+                                                                            onClick={(e) => { e.stopPropagation(); deleteAllotmentGroup(row.id, gIdx); }}
+                                                                            style={{
+                                                                                padding: '0 1rem',
+                                                                                color: '#ef4444',
+                                                                                cursor: 'pointer',
+                                                                                fontWeight: 'bold',
+                                                                                height: '100%',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                transition: 'background 0.2s'
+                                                                            }}
+                                                                            onMouseOver={e => e.currentTarget.style.background = '#fef2f2'}
+                                                                            onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                                                            title="Delete Allotment"
+                                                                        >✕</div>
+                                                                    </div>
                                                                 </div>
                                                             );
                                                         })}
                                                         <button
                                                             onClick={(e) => {
+                                                                e.stopPropagation();
                                                                 if (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) {
                                                                     const rect = e.target.getBoundingClientRect();
                                                                     const firstGroup = row.allotments[selectedGroups[0].groupIndex];
-                                                                    const grade = firstGroup.classes[0].match(/\d+/)?.[0];
+                                                                    const g = firstGroup.classes[0].match(/\d+/)?.[0];
                                                                     setMergePopup({
                                                                         rowId: row.id,
                                                                         groupIndices: selectedGroups.map(s => s.groupIndex),
-                                                                        grade,
+                                                                        grade: g,
                                                                         rect
                                                                     });
                                                                 } else {
@@ -3616,23 +3583,19 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 }
                                                             }}
                                                             style={{
-                                                                padding: '0.6rem 1rem',
+                                                                padding: '0.4rem 1rem',
                                                                 background: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#fbbf24' : '#1e293b',
                                                                 color: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#000' : '#818cf8',
                                                                 border: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? 'none' : '1px dashed #4f46e5',
-                                                                borderRadius: '0.6rem',
+                                                                borderRadius: '0.5rem',
                                                                 cursor: 'pointer',
-                                                                fontSize: '0.85rem',
+                                                                fontSize: '0.8rem',
                                                                 fontWeight: '800',
                                                                 transition: 'all 0.2s',
-                                                                flexShrink: 0,
-                                                                whiteSpace: 'nowrap'
-                                                            }}
-                                                            onMouseOver={e => {
-                                                                e.currentTarget.style.background = (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#f59e0b' : 'rgba(79,70,229,0.1)';
-                                                            }}
-                                                            onMouseOut={e => {
-                                                                e.currentTarget.style.background = (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#fbbf24' : '#1e293b';
+                                                                whiteSpace: 'nowrap',
+                                                                height: '34px',
+                                                                boxSizing: 'border-box',
+                                                                marginLeft: '0.2rem'
                                                             }}
                                                         >
                                                             {(selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '🔗 Merge Selected' : '＋ Add Group'}
@@ -3640,85 +3603,78 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     </div>
                                                 </td>
                                                 <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 'bold' }}>
-                                                    {(() => {
-                                                        const streamPeriods = (subjectStreams || []).reduce((acc, st) => {
-                                                            if (st.subjects.some(s => s.teacher === row.teacher)) return acc + (Number(st.periods) || 0);
-                                                            return acc;
-                                                        }, 0);
-                                                        return (
-                                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                                                                <span style={{ color: '#fff' }}>{row.total + streamPeriods}</span>
-                                                                {streamPeriods > 0 && (
-                                                                    <span style={{ fontSize: '0.65rem', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', padding: '1px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
-                                                                        incl. {streamPeriods} [S]
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })()}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                                        <span style={{ color: '#fff' }}>{grandTotal}</span>
+                                                        {streamPeriods > 0 && (
+                                                            <span style={{ fontSize: '0.65rem', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', padding: '1px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                                                                incl. {streamPeriods} [S]
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td style={{ padding: '0.6rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                                    <button
-                                                        onClick={() => handleCreateSpecific(row)}
-                                                        disabled={creationStatus || completedCreations.has(row.id)}
-                                                        style={{
-                                                            padding: '0.5rem 1rem',
-                                                            background: completedCreations.has(row.id) ? '#10b981' : (creationStatus ? '#475569' : '#3b82f6'),
-                                                            color: 'white',
-                                                            border: 'none',
-                                                            borderRadius: '0.5rem',
-                                                            fontSize: '0.75rem',
-                                                            fontWeight: '800',
-                                                            cursor: (creationStatus || completedCreations.has(row.id)) ? 'not-allowed' : 'pointer',
-                                                            transition: 'all 0.2s',
-                                                            boxShadow: completedCreations.has(row.id) ? '0 0 10px rgba(16,185,129,0.3)' : 'none'
-                                                        }}
-                                                    >
-                                                        {completedCreations.has(row.id) ? '✅ CREATED' : 'CREATE'}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleSmartReassign(row)}
-                                                        title="Smartly reassign this teacher's classes to another teacher"
-                                                        style={{
-                                                            marginLeft: '0.4rem',
-                                                            padding: '0.5rem 0.8rem',
-                                                            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                                                            color: 'white',
-                                                            border: 'none',
-                                                            borderRadius: '0.5rem',
-                                                            fontSize: '0.75rem',
-                                                            fontWeight: '800',
-                                                            cursor: 'pointer',
-                                                            transition: 'all 0.2s'
-                                                        }}
-                                                        onMouseOver={e => e.currentTarget.style.transform = 'translateY(-1px)'}
-                                                        onMouseOut={e => e.currentTarget.style.transform = 'none'}
-                                                    >
-                                                        🪄 REASSIGN
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDeleteClick(row)}
-                                                        title="Delete scheduled periods for this teacher"
-                                                        style={{
-                                                            marginLeft: '0.4rem',
-                                                            padding: '0.5rem 0.8rem',
-                                                            background: '#991b1b',
-                                                            color: 'white',
-                                                            border: 'none',
-                                                            borderRadius: '0.5rem',
-                                                            fontSize: '0.75rem',
-                                                            fontWeight: '800',
-                                                            cursor: 'pointer',
-                                                            transition: 'all 0.2s'
-                                                        }}
-                                                        onMouseOver={e => e.currentTarget.style.background = '#dc2626'}
-                                                        onMouseOut={e => e.currentTarget.style.background = '#991b1b'}
-                                                    >
-                                                        🗑️ DELETE
-                                                    </button>
-                                                </td>
-                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>
-                                                    <button onClick={() => deleteAllotmentRow(row.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>🗑️</button>
+                                                    <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                                                        <button
+                                                            onClick={() => handleCreateSpecific(row)}
+                                                            disabled={creationStatus || completedCreations.has(row.id)}
+                                                            style={{
+                                                                padding: '0.5rem 1rem',
+                                                                background: completedCreations.has(row.id) ? '#10b981' : (creationStatus ? '#475569' : '#3b82f6'),
+                                                                color: 'white',
+                                                                border: 'none',
+                                                                borderRadius: '0.5rem',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: '800',
+                                                                cursor: (creationStatus || completedCreations.has(row.id)) ? 'not-allowed' : 'pointer',
+                                                                transition: 'all 0.2s',
+                                                                boxShadow: completedCreations.has(row.id) ? '0 0 10px rgba(16,185,129,0.3)' : 'none'
+                                                            }}
+                                                        >
+                                                            {completedCreations.has(row.id) ? '✅' : 'CREATE'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleSmartReassign(row)}
+                                                            title="Smart Reassign"
+                                                            style={{
+                                                                padding: '0.5rem 0.8rem',
+                                                                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                                                color: 'white',
+                                                                border: 'none',
+                                                                borderRadius: '0.5rem',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: '800',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                        >🪄</button>
+                                                        <button
+                                                            onClick={() => handleDeleteClick(row)}
+                                                            title="Delete Periods"
+                                                            style={{
+                                                                padding: '0.5rem 0.8rem',
+                                                                background: '#450a0a',
+                                                                color: '#f87171',
+                                                                border: '1px solid #7f1d1d',
+                                                                borderRadius: '0.5rem',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: '800',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                        >🗑️</button>
+                                                        <button
+                                                            onClick={() => { if (confirm('Delete this whole row?')) deleteAllotmentRow(row.id); }}
+                                                            title="Delete Row"
+                                                            style={{
+                                                                padding: '0.5rem 0.8rem',
+                                                                background: '#7f1d1d',
+                                                                color: '#fff',
+                                                                border: 'none',
+                                                                borderRadius: '0.5rem',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: '800',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                        >✕</button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -3728,462 +3684,468 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         </div>
 
                         {/* Merge Popup */}
-                        {mergePopup && (
-                            <div style={{
-                                position: 'fixed',
-                                top: 0, left: 0, right: 0, bottom: 0,
-                                background: 'rgba(0,0,0,0.7)',
-                                display: 'flex', justifyContent: 'center', alignItems: 'center',
-                                zIndex: 3000,
-                                backdropFilter: 'blur(4px)',
-                                animation: 'fadeIn 0.2s ease-out'
-                            }}>
+                        {
+                            mergePopup && (
                                 <div style={{
-                                    background: '#1e293b',
-                                    padding: '2rem',
-                                    borderRadius: '1.25rem',
-                                    border: '1px solid #4f46e5',
-                                    width: '350px',
-                                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-                                    position: 'relative'
+                                    position: 'fixed',
+                                    top: 0, left: 0, right: 0, bottom: 0,
+                                    background: 'rgba(0,0,0,0.7)',
+                                    display: 'flex', justifyContent: 'center', alignItems: 'center',
+                                    zIndex: 3000,
+                                    backdropFilter: 'blur(4px)',
+                                    animation: 'fadeIn 0.2s ease-out'
                                 }}>
-                                    <h3 style={{ margin: '0 0 0.5rem 0', color: '#fff', fontSize: '1.4rem' }}>🔗 Merge Classes</h3>
-                                    <p style={{ fontSize: '0.95rem', color: '#94a3b8', marginBottom: '1.5rem', lineHeight: '1.5' }}>
-                                        Combining <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{mergePopup.groupIndices.length}</span> allocations for <span style={{ color: '#fff' }}>Grade {mergePopup.grade}</span>.
-                                    </p>
+                                    <div style={{
+                                        background: '#1e293b',
+                                        padding: '2rem',
+                                        borderRadius: '1.25rem',
+                                        border: '1px solid #4f46e5',
+                                        width: '350px',
+                                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                                        position: 'relative'
+                                    }}>
+                                        <h3 style={{ margin: '0 0 0.5rem 0', color: '#fff', fontSize: '1.4rem' }}>🔗 Merge Classes</h3>
+                                        <p style={{ fontSize: '0.95rem', color: '#94a3b8', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+                                            Combining <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{mergePopup.groupIndices.length}</span> allocations for <span style={{ color: '#fff' }}>Grade {mergePopup.grade}</span>.
+                                        </p>
 
-                                    <div style={{ marginBottom: '2rem', background: '#0f172a', padding: '1rem', borderRadius: '0.8rem', border: '1px solid #334155' }}>
-                                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#818cf8', fontWeight: 'bold', marginBottom: '0.6rem', textTransform: 'uppercase' }}>Weekly Periods</label>
-                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.8rem' }}>
-                                            <input
-                                                autoFocus
-                                                type="number"
-                                                defaultValue="5"
-                                                id="merge_periods_input"
-                                                style={{
-                                                    fontSize: '1.5rem',
-                                                    fontWeight: 'bold',
-                                                    width: '80px',
-                                                    padding: '0.5rem',
-                                                    background: 'transparent',
-                                                    color: '#fbbf24',
-                                                    border: 'none',
-                                                    borderBottom: '2px solid #4f46e5',
-                                                    outline: 'none',
-                                                    textAlign: 'center'
-                                                }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        handleMergeConfirm(e.target.value);
-                                                    }
-                                                }}
-                                            />
-                                            <span style={{ color: '#475569', fontSize: '0.9rem' }}>periods shared per week</span>
+                                        <div style={{ marginBottom: '2rem', background: '#0f172a', padding: '1rem', borderRadius: '0.8rem', border: '1px solid #334155' }}>
+                                            <label style={{ display: 'block', fontSize: '0.8rem', color: '#818cf8', fontWeight: 'bold', marginBottom: '0.6rem', textTransform: 'uppercase' }}>Weekly Periods</label>
+                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.8rem' }}>
+                                                <input
+                                                    autoFocus
+                                                    type="number"
+                                                    defaultValue="5"
+                                                    id="merge_periods_input"
+                                                    style={{
+                                                        fontSize: '1.5rem',
+                                                        fontWeight: 'bold',
+                                                        width: '80px',
+                                                        padding: '0.5rem',
+                                                        background: 'transparent',
+                                                        color: '#fbbf24',
+                                                        border: 'none',
+                                                        borderBottom: '2px solid #4f46e5',
+                                                        outline: 'none',
+                                                        textAlign: 'center'
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            handleMergeConfirm(e.target.value);
+                                                        }
+                                                    }}
+                                                />
+                                                <span style={{ color: '#475569', fontSize: '0.9rem' }}>periods shared per week</span>
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    <div style={{ display: 'flex', gap: '0.8rem', justifyContent: 'flex-end' }}>
-                                        <button
-                                            onClick={() => setMergePopup(null)}
-                                            style={{
-                                                padding: '0.7rem 1.2rem',
-                                                background: 'transparent',
-                                                border: '1px solid #475569',
-                                                borderRadius: '0.6rem',
-                                                color: '#94a3b8',
-                                                cursor: 'pointer',
-                                                fontWeight: '600'
-                                            }}
-                                        >Cancel</button>
-                                        <button
-                                            onClick={() => {
-                                                const val = document.getElementById('merge_periods_input').value;
-                                                handleMergeConfirm(val);
-                                            }}
-                                            style={{
-                                                padding: '0.7rem 1.5rem',
-                                                background: '#4f46e5',
-                                                border: 'none',
-                                                borderRadius: '0.6rem',
-                                                color: '#fff',
-                                                cursor: 'pointer',
-                                                fontWeight: '700',
-                                                boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.4)'
-                                            }}
-                                        >Confirm Merge</button>
+                                        <div style={{ display: 'flex', gap: '0.8rem', justifyContent: 'flex-end' }}>
+                                            <button
+                                                onClick={() => setMergePopup(null)}
+                                                style={{
+                                                    padding: '0.7rem 1.2rem',
+                                                    background: 'transparent',
+                                                    border: '1px solid #475569',
+                                                    borderRadius: '0.6rem',
+                                                    color: '#94a3b8',
+                                                    cursor: 'pointer',
+                                                    fontWeight: '600'
+                                                }}
+                                            >Cancel</button>
+                                            <button
+                                                onClick={() => {
+                                                    const val = document.getElementById('merge_periods_input').value;
+                                                    handleMergeConfirm(val);
+                                                }}
+                                                style={{
+                                                    padding: '0.7rem 1.5rem',
+                                                    background: '#4f46e5',
+                                                    border: 'none',
+                                                    borderRadius: '0.6rem',
+                                                    color: '#fff',
+                                                    cursor: 'pointer',
+                                                    fontWeight: '700',
+                                                    boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.4)'
+                                                }}
+                                            >Confirm Merge</button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            )
+                        }
 
                         {/* ── DELETE TIMETABLE POPUP ── */}
-                        {reassignWizard && (() => {
-                            const { step, row, newTeacher, analysis } = reassignWizard;
-                            const teachersList = [...new Set(allotmentRows.map(r => r.teacher))].filter(Boolean).filter(t => t !== row.teacher);
+                        {
+                            reassignWizard && (() => {
+                                const { step, row, newTeacher, analysis } = reassignWizard;
+                                const teachersList = [...new Set(allotmentRows.map(r => r.teacher))].filter(Boolean).filter(t => t !== row.teacher);
 
-                            return (
-                                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', animation: 'fadeIn 0.2s ease-out' }}>
-                                    <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '1.5rem', width: '100%', maxWidth: '800px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
-                                        {/* Header */}
-                                        <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(to right, #1e293b, #0f172a)' }}>
-                                            <div>
-                                                <h3 style={{ margin: 0, color: 'white', fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                                                    <span style={{ fontSize: '1.5rem' }}>🪄</span> Smart Teacher Reassignment
-                                                </h3>
-                                                <p style={{ margin: '0.25rem 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
-                                                    Moving {row.subject} from <b>{row.teacher}</b> to another teacher
-                                                </p>
+                                return (
+                                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', animation: 'fadeIn 0.2s ease-out' }}>
+                                        <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '1.5rem', width: '100%', maxWidth: '800px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+                                            {/* Header */}
+                                            <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(to right, #1e293b, #0f172a)' }}>
+                                                <div>
+                                                    <h3 style={{ margin: 0, color: 'white', fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                                        <span style={{ fontSize: '1.5rem' }}>🪄</span> Smart Teacher Reassignment
+                                                    </h3>
+                                                    <p style={{ margin: '0.25rem 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                        Moving {row.subject} from <b>{row.teacher}</b> to another teacher
+                                                    </p>
+                                                </div>
+                                                <button onClick={() => setReassignWizard(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer', transition: 'color 0.2s' }} onMouseOver={e => e.target.style.color = 'white'} onMouseOut={e => e.target.style.color = '#94a3b8'}>&times;</button>
                                             </div>
-                                            <button onClick={() => setReassignWizard(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer', transition: 'color 0.2s' }} onMouseOver={e => e.target.style.color = 'white'} onMouseOut={e => e.target.style.color = '#94a3b8'}>&times;</button>
-                                        </div>
 
-                                        {/* Steps Indicator */}
-                                        <div style={{ display: 'flex', padding: '1rem 2rem', background: '#0f172a', gap: '1rem', borderBottom: '1px solid #334155' }}>
-                                            {[1, 2, 3].map(s => (
-                                                <div key={s} style={{ flex: 1, height: '4px', background: s <= step ? '#f59e0b' : '#334155', borderRadius: '2px', transition: 'background 0.3s' }} />
-                                            ))}
-                                        </div>
+                                            {/* Steps Indicator */}
+                                            <div style={{ display: 'flex', padding: '1rem 2rem', background: '#0f172a', gap: '1rem', borderBottom: '1px solid #334155' }}>
+                                                {[1, 2, 3].map(s => (
+                                                    <div key={s} style={{ flex: 1, height: '4px', background: s <= step ? '#f59e0b' : '#334155', borderRadius: '2px', transition: 'background 0.3s' }} />
+                                                ))}
+                                            </div>
 
-                                        <div style={{ padding: '2rem', overflowY: 'auto', flex: 1 }}>
-                                            {step === 1 && (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                                                    <div style={{ background: '#0f172a', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #334155' }}>
-                                                        <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.9rem', marginBottom: '0.8rem', fontWeight: 600 }}>1. SELECT TARGET TEACHER</label>
-                                                        <select
-                                                            value={newTeacher || ''}
-                                                            onChange={(e) => {
-                                                                const val = e.target.value;
-                                                                const impact = analyzeReassignmentImpact(row, val);
-                                                                setReassignWizard(prev => ({ ...prev, newTeacher: val, analysis: impact }));
-                                                            }}
-                                                            style={{ width: '100%', padding: '1rem', background: '#1e293b', border: '2px solid #334155', borderRadius: '0.8rem', color: 'white', fontSize: '1rem', cursor: 'pointer' }}
-                                                        >
-                                                            <option value="">-- Choose Target Teacher --</option>
-                                                            {teachersList.sort().map(t => <option key={t} value={t}>{t}</option>)}
-                                                        </select>
-                                                    </div>
+                                            <div style={{ padding: '2rem', overflowY: 'auto', flex: 1 }}>
+                                                {step === 1 && (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                                        <div style={{ background: '#0f172a', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #334155' }}>
+                                                            <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.9rem', marginBottom: '0.8rem', fontWeight: 600 }}>1. SELECT TARGET TEACHER</label>
+                                                            <select
+                                                                value={newTeacher || ''}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    const impact = analyzeReassignmentImpact(row, val);
+                                                                    setReassignWizard(prev => ({ ...prev, newTeacher: val, analysis: impact }));
+                                                                }}
+                                                                style={{ width: '100%', padding: '1rem', background: '#1e293b', border: '2px solid #334155', borderRadius: '0.8rem', color: 'white', fontSize: '1rem', cursor: 'pointer' }}
+                                                            >
+                                                                <option value="">-- Choose Target Teacher --</option>
+                                                                {teachersList.sort().map(t => <option key={t} value={t}>{t}</option>)}
+                                                            </select>
+                                                        </div>
 
-                                                    {analysis && (
-                                                        <div style={{ animation: 'fadeInScale 0.3s ease-out' }}>
-                                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-                                                                <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
-                                                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Affects Slots</div>
-                                                                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#f59e0b' }}>{analysis.assignments.length}</div>
-                                                                </div>
-                                                                <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
-                                                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Direct Clashes</div>
-                                                                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: analysis.clashes.length > 0 ? '#ef4444' : '#10b981' }}>{analysis.clashes.length}</div>
-                                                                </div>
-                                                                <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
-                                                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>New Workload</div>
-                                                                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: 'white' }}>{analysis.currentWorkload + analysis.assignments.length}</div>
-                                                                </div>
-                                                            </div>
-
-                                                            {analysis.clashes.length > 0 ? (
-                                                                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
-                                                                    <h4 style={{ margin: '0 0 0.8rem 0', color: '#ef4444', fontSize: '0.95rem' }}>⚠️ Availability Conflicts Detected</h4>
-                                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                                                        {analysis.clashes.map((c, ci) => (
-                                                                            <span key={ci} style={{ fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.2)', padding: '0.3rem 0.6rem', borderRadius: '0.4rem', color: '#fecaca' }}>
-                                                                                {c.day} {c.period} ({c.className})
-                                                                            </span>
-                                                                        ))}
+                                                        {analysis && (
+                                                            <div style={{ animation: 'fadeInScale 0.3s ease-out' }}>
+                                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+                                                                    <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
+                                                                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Affects Slots</div>
+                                                                        <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#f59e0b' }}>{analysis.assignments.length}</div>
+                                                                    </div>
+                                                                    <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
+                                                                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Direct Clashes</div>
+                                                                        <div style={{ fontSize: '1.5rem', fontWeight: 900, color: analysis.clashes.length > 0 ? '#ef4444' : '#10b981' }}>{analysis.clashes.length}</div>
+                                                                    </div>
+                                                                    <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
+                                                                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>New Workload</div>
+                                                                        <div style={{ fontSize: '1.5rem', fontWeight: 900, color: 'white' }}>{analysis.currentWorkload + analysis.assignments.length}</div>
                                                                     </div>
                                                                 </div>
-                                                            ) : (
-                                                                <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
-                                                                    <h4 style={{ margin: 0, color: '#10b981', fontSize: '0.95rem' }}>✅ Target teacher is fully available for all slots!</h4>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
 
-                                            {step === 2 && (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                                    <label style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600 }}>2. CHOOSE REASSIGNMENT STRATEGY</label>
+                                                                {analysis.clashes.length > 0 ? (
+                                                                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
+                                                                        <h4 style={{ margin: '0 0 0.8rem 0', color: '#ef4444', fontSize: '0.95rem' }}>⚠️ Availability Conflicts Detected</h4>
+                                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                                                            {analysis.clashes.map((c, ci) => (
+                                                                                <span key={ci} style={{ fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.2)', padding: '0.3rem 0.6rem', borderRadius: '0.4rem', color: '#fecaca' }}>
+                                                                                    {c.day} {c.period} ({c.className})
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
+                                                                        <h4 style={{ margin: 0, color: '#10b981', fontSize: '0.95rem' }}>✅ Target teacher is fully available for all slots!</h4>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
 
-                                                    {/* Option 1: Direct Swap */}
-                                                    <button
-                                                        onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'DIRECT' }))}
-                                                        disabled={analysis.clashes.length > 0}
-                                                        style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: analysis.clashes.length > 0 ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: analysis.clashes.length > 0 ? 0.5 : 1 }}
-                                                        onMouseOver={e => !analysis.clashes.length && (e.currentTarget.style.borderColor = '#f59e0b')}
-                                                        onMouseOut={e => e.currentTarget.style.borderColor = '#334155'}
-                                                    >
-                                                        <div style={{ fontSize: '2rem' }}>⚡</div>
-                                                        <div>
-                                                            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#10b981' }}>Option 1: Direct Swap</div>
-                                                            <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Immediate transfer of all slots. Zero changes to other classes.</div>
-                                                        </div>
-                                                    </button>
+                                                {step === 2 && (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                                        <label style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600 }}>2. CHOOSE REASSIGNMENT STRATEGY</label>
 
-                                                    {/* Option 4: Partial Regeneration */}
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                                                        {/* Option 1: Direct Swap */}
                                                         <button
-                                                            onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'PARTIAL' }))}
-                                                            style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1.5rem', background: '#0f172a', border: '1px solid #4f46e5', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                            onMouseOver={e => (e.currentTarget.style.boxShadow = '0 0 15px rgba(79, 70, 229, 0.3)')}
-                                                            onMouseOut={e => (e.currentTarget.style.boxShadow = 'none')}
+                                                            onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'DIRECT' }))}
+                                                            disabled={analysis.clashes.length > 0}
+                                                            style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: analysis.clashes.length > 0 ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: analysis.clashes.length > 0 ? 0.5 : 1 }}
+                                                            onMouseOver={e => !analysis.clashes.length && (e.currentTarget.style.borderColor = '#f59e0b')}
+                                                            onMouseOut={e => e.currentTarget.style.borderColor = '#334155'}
                                                         >
-                                                            <div style={{ fontSize: '2rem' }}>🪄</div>
-                                                            <div style={{ flex: 1 }}>
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                    <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#818cf8' }}>Option 2: Smart Re-reg (Best Choice)</div>
-                                                                    <span style={{ fontSize: '0.7rem', background: '#4f46e5', padding: '0.2rem 0.5rem', borderRadius: '1rem' }}>RECOMMENDED</span>
-                                                                </div>
-                                                                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>AI resolves conflicts by regenerating affected periods only. Preserves most schedules.</div>
+                                                            <div style={{ fontSize: '2rem' }}>⚡</div>
+                                                            <div>
+                                                                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#10b981' }}>Option 1: Direct Swap</div>
+                                                                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Immediate transfer of all slots. Zero changes to other classes.</div>
                                                             </div>
                                                         </button>
 
-                                                        {reassignWizard.strategy === 'PARTIAL' && (
-                                                            <div style={{ marginLeft: '4.5rem', display: 'flex', gap: '1rem', animation: 'slideDown 0.2s ease-out' }}>
-                                                                <label style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                                                                    <input type="radio" name="scope" checked={reassignWizard.scope === 'MINIMAL'} onChange={() => setReassignWizard(prev => ({ ...prev, scope: 'MINIMAL' }))} /> Minimal (Swapped only)
-                                                                </label>
-                                                                <label style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                                                                    <input type="radio" name="scope" checked={reassignWizard.scope === 'GRADE'} onChange={() => setReassignWizard(prev => ({ ...prev, scope: 'GRADE' }))} /> Grade-level (Full grade)
-                                                                </label>
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                        {/* Option 4: Partial Regeneration */}
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                                                            <button
+                                                                onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'PARTIAL' }))}
+                                                                style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1.5rem', background: '#0f172a', border: '1px solid #4f46e5', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                                onMouseOver={e => (e.currentTarget.style.boxShadow = '0 0 15px rgba(79, 70, 229, 0.3)')}
+                                                                onMouseOut={e => (e.currentTarget.style.boxShadow = 'none')}
+                                                            >
+                                                                <div style={{ fontSize: '2rem' }}>🪄</div>
+                                                                <div style={{ flex: 1 }}>
+                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                        <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#818cf8' }}>Option 2: Smart Re-reg (Best Choice)</div>
+                                                                        <span style={{ fontSize: '0.7rem', background: '#4f46e5', padding: '0.2rem 0.5rem', borderRadius: '1rem' }}>RECOMMENDED</span>
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>AI resolves conflicts by regenerating affected periods only. Preserves most schedules.</div>
+                                                                </div>
+                                                            </button>
 
-                                                    {/* Option 5: Full Regeneration */}
-                                                    <button
-                                                        onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'FULL' }))}
-                                                        style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1rem 1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s', opacity: 0.8 }}
-                                                        onMouseOver={e => (e.currentTarget.style.borderColor = '#ef4444')}
-                                                        onMouseOut={e => e.currentTarget.style.borderColor = '#334155'}
-                                                    >
-                                                        <div style={{ fontSize: '1.5rem' }}>🔄</div>
-                                                        <div>
-                                                            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#ef4444' }}>Option 3: Full Re-generation</div>
-                                                            <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Rebuild entire timetable from scratch. Guaranteed conflict-free.</div>
-                                                        </div>
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            {step === 3 && (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                                                    <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', padding: '1.5rem', borderRadius: '1rem', textAlign: 'center' }}>
-                                                        <h4 style={{ margin: '0 0 0.5rem 0', color: '#f59e0b', fontSize: '1.1rem' }}>Ready to Apply Changes</h4>
-                                                        <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.9rem' }}>
-                                                            Strategy: <b style={{ color: 'white' }}>{reassignWizard.strategy === 'DIRECT' ? 'Direct Swap' : (reassignWizard.strategy === 'PARTIAL' ? 'Smart Re-reg' : 'Full Re-reg')}</b>
-                                                        </p>
-                                                    </div>
-
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '0.9rem' }}>
-                                                            <span>New Teacher:</span>
-                                                            <b style={{ color: 'white' }}>{newTeacher}</b>
-                                                        </div>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '0.9rem' }}>
-                                                            <span>Affected Classes:</span>
-                                                            <b style={{ color: 'white' }}>{[...new Set(analysis.assignments.map(a => a.className))].join(', ')}</b>
-                                                        </div>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '0.9rem' }}>
-                                                            <span>Total Modifications:</span>
-                                                            <b style={{ color: '#f59e0b' }}>{analysis.assignments.length} slots</b>
-                                                        </div>
-                                                    </div>
-
-                                                    <div style={{ background: '#0f172a', padding: '1rem', borderRadius: '0.8rem', border: '1px solid #334155' }}>
-                                                        <h5 style={{ margin: '0 0 0.5rem 0', color: '#64748b', fontSize: '0.8rem', textTransform: 'uppercase' }}>Preview of First 3 Changes</h5>
-                                                        {analysis.assignments.slice(0, 3).map((a, ai) => (
-                                                            <div key={ai} style={{ display: 'flex', gap: '0.5rem', fontSize: '0.85rem', marginBottom: '0.3rem', color: '#cbd5e1' }}>
-                                                                <span style={{ color: '#f59e0b' }}>•</span> {a.day} {a.period} in {a.className}: {row.teacher} ➔ <b>{newTeacher}</b>
-                                                            </div>
-                                                        ))}
-                                                        {analysis.assignments.length > 3 && <div style={{ fontSize: '0.8rem', color: '#475569', textAlign: 'center', marginTop: '0.5rem' }}>+ {analysis.assignments.length - 3} more changes</div>}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Footer */}
-                                        <div style={{ padding: '1.25rem 2rem', borderTop: '1px solid #334155', background: '#0f172a', display: 'flex', justifyContent: 'space-between' }}>
-                                            <button
-                                                onClick={() => step > 1 ? setReassignWizard(prev => ({ ...prev, step: prev.step - 1 })) : setReassignWizard(null)}
-                                                style={{ padding: '0.8rem 1.5rem', background: 'transparent', border: '1px solid #334155', borderRadius: '0.8rem', color: '#94a3b8', cursor: 'pointer', fontWeight: 700 }}
-                                            >
-                                                {step === 1 ? 'Cancel' : 'Back'}
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    if (step < 3) {
-                                                        setReassignWizard(prev => ({ ...prev, step: prev.step + 1 }));
-                                                    } else {
-                                                        // Execute based on strategy
-                                                        executeSmartReassign();
-                                                    }
-                                                }}
-                                                disabled={step === 1 && !newTeacher}
-                                                style={{
-                                                    padding: '0.8rem 2rem',
-                                                    background: (step === 1 && !newTeacher) ? '#334155' : 'linear-gradient(135deg, #4f46e5, #4338ca)',
-                                                    border: 'none',
-                                                    borderRadius: '0.8rem',
-                                                    color: 'white',
-                                                    cursor: (step === 1 && !newTeacher) ? 'not-allowed' : 'pointer',
-                                                    fontWeight: 800,
-                                                    boxShadow: '0 10px 15px -3px rgba(79, 70, 229, 0.4)'
-                                                }}
-                                            >
-                                                {step === 3 ? 'Confirm & Apply' : 'Continue Analysis'}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })()}
-
-                        {deletePopup && (() => {
-                            const { row, classGroups, checked, expanded } = deletePopup;
-                            const selCount = (cn) => checked[cn]?.size || 0;
-                            const totalSel = classGroups.reduce((s, { className }) => s + selCount(className), 0);
-
-                            const togglePeriod = (cn, key) => setDeletePopup(prev => {
-                                const nxt = { ...prev, checked: { ...prev.checked } };
-                                const set = new Set(nxt.checked[cn]);
-                                if (set.has(key)) set.delete(key); else set.add(key);
-                                nxt.checked[cn] = set;
-                                return nxt;
-                            });
-                            const toggleClass = (cn, periods) => setDeletePopup(prev => {
-                                const nxt = { ...prev, checked: { ...prev.checked } };
-                                const allKeys = periods.map(p => `${p.day}|${p.periodKey}`);
-                                const allChecked = allKeys.every(k => nxt.checked[cn]?.has(k));
-                                nxt.checked[cn] = allChecked ? new Set() : new Set(allKeys);
-                                return nxt;
-                            });
-                            const toggleExpand = (cn) => setDeletePopup(prev => {
-                                const exp = new Set(prev.expanded);
-                                if (exp.has(cn)) exp.delete(cn); else exp.add(cn);
-                                return { ...prev, expanded: exp };
-                            });
-                            const selectAll = () => setDeletePopup(prev => ({
-                                ...prev, checked: Object.fromEntries(
-                                    prev.classGroups.map(({ className, periods }) =>
-                                        [className, new Set(periods.map(p => `${p.day}|${p.periodKey}`))])
-                                )
-                            }));
-                            const deselectAll = () => setDeletePopup(prev => ({
-                                ...prev, checked: Object.fromEntries(prev.classGroups.map(({ className }) => [className, new Set()]))
-                            }));
-
-                            return (
-                                <div onClick={() => setDeletePopup(null)} style={{
-                                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                                    background: 'rgba(0,0,0,0.75)', display: 'flex',
-                                    justifyContent: 'center', alignItems: 'center',
-                                    zIndex: 4000, backdropFilter: 'blur(5px)',
-                                    animation: 'fadeIn 0.2s ease-out'
-                                }}>
-                                    <div onClick={e => e.stopPropagation()} style={{
-                                        background: '#0f172a', border: '1px solid #dc2626',
-                                        borderRadius: '1.25rem', width: '560px', maxWidth: '95vw',
-                                        maxHeight: '85vh', display: 'flex', flexDirection: 'column',
-                                        boxShadow: '0 25px 50px -12px rgba(220,38,38,0.35)', overflow: 'hidden'
-                                    }}>
-                                        {/* Header */}
-                                        <div style={{ padding: '1.25rem 1.5rem', background: '#1e293b', borderBottom: '1px solid #334155', flexShrink: 0 }}>
-                                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#f87171', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Delete Timetable</div>
-                                            <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f1f5f9' }}>{row.teacher}</div>
-                                            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.1rem' }}>{row.subject}</div>
-                                        </div>
-                                        {/* Bulk actions bar */}
-                                        <div style={{ padding: '0.6rem 1.5rem', background: '#1e293b', borderBottom: '1px solid #0f172a', display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}>
-                                            <span style={{ fontSize: '0.78rem', color: '#64748b', flexGrow: 1 }}>Select periods to remove:</span>
-                                            <button onClick={selectAll} style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Select All</button>
-                                            <button onClick={deselectAll} style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Deselect All</button>
-                                        </div>
-                                        {/* Classes list */}
-                                        <div style={{ overflowY: 'auto', flexGrow: 1, padding: '0.75rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                                            {classGroups.map(({ className, periods }) => {
-                                                const allKeys = periods.map(p => `${p.day}|${p.periodKey}`);
-                                                const sel = checked[className];
-                                                const allChecked = allKeys.length > 0 && allKeys.every(k => sel?.has(k));
-                                                const anyChecked = allKeys.some(k => sel?.has(k));
-                                                const isExpanded = expanded.has(className);
-                                                return (
-                                                    <div key={className}>
-                                                        <div style={{
-                                                            display: 'flex', alignItems: 'center', gap: '0.6rem',
-                                                            padding: '0.55rem 0.8rem',
-                                                            background: anyChecked ? 'rgba(220,38,38,0.1)' : '#1e293b',
-                                                            borderRadius: '0.55rem',
-                                                            border: `1px solid ${anyChecked ? 'rgba(220,38,38,0.5)' : '#334155'}`,
-                                                            transition: 'all 0.15s'
-                                                        }}>
-                                                            <input type="checkbox" checked={allChecked}
-                                                                ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
-                                                                onChange={() => toggleClass(className, periods)}
-                                                                style={{ width: 16, height: 16, accentColor: '#dc2626', cursor: 'pointer', flexShrink: 0 }} />
-                                                            <span onClick={() => toggleClass(className, periods)}
-                                                                style={{ fontWeight: 700, color: '#f1f5f9', fontSize: '0.92rem', flexGrow: 1, cursor: 'pointer' }}>{className}</span>
-                                                            <span style={{ fontSize: '0.73rem', color: '#64748b' }}>{periods.length} period{periods.length !== 1 ? 's' : ''}</span>
-                                                            {anyChecked && !allChecked && (
-                                                                <span style={{ fontSize: '0.68rem', color: '#f87171', background: 'rgba(220,38,38,0.18)', padding: '0.12rem 0.4rem', borderRadius: '0.3rem' }}>{sel.size} sel</span>
+                                                            {reassignWizard.strategy === 'PARTIAL' && (
+                                                                <div style={{ marginLeft: '4.5rem', display: 'flex', gap: '1rem', animation: 'slideDown 0.2s ease-out' }}>
+                                                                    <label style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                                                                        <input type="radio" name="scope" checked={reassignWizard.scope === 'MINIMAL'} onChange={() => setReassignWizard(prev => ({ ...prev, scope: 'MINIMAL' }))} /> Minimal (Swapped only)
+                                                                    </label>
+                                                                    <label style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                                                                        <input type="radio" name="scope" checked={reassignWizard.scope === 'GRADE'} onChange={() => setReassignWizard(prev => ({ ...prev, scope: 'GRADE' }))} /> Grade-level (Full grade)
+                                                                    </label>
+                                                                </div>
                                                             )}
-                                                            <button onClick={() => toggleExpand(className)}
-                                                                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.75rem', padding: '0 0.15rem', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>&#9660;</button>
                                                         </div>
-                                                        {isExpanded && (
-                                                            <div style={{ marginLeft: '1.8rem', marginTop: '0.2rem', display: 'flex', flexDirection: 'column', gap: '0.18rem' }}>
-                                                                {periods.map(({ day, periodKey, time }) => {
-                                                                    const key = `${day}|${periodKey}`;
-                                                                    const isCk = sel?.has(key);
-                                                                    return (
-                                                                        <label key={key} style={{
-                                                                            display: 'flex', alignItems: 'center', gap: '0.45rem',
-                                                                            padding: '0.32rem 0.55rem',
-                                                                            background: isCk ? 'rgba(220,38,38,0.07)' : 'transparent',
-                                                                            borderRadius: '0.35rem', cursor: 'pointer',
-                                                                            border: `1px solid ${isCk ? 'rgba(220,38,38,0.25)' : 'transparent'}`,
-                                                                            transition: 'all 0.1s'
-                                                                        }}>
-                                                                            <input type="checkbox" checked={!!isCk} onChange={() => togglePeriod(className, key)}
-                                                                                style={{ width: 13, height: 13, accentColor: '#dc2626', cursor: 'pointer', flexShrink: 0 }} />
-                                                                            <span style={{ fontSize: '0.8rem', color: isCk ? '#fca5a5' : '#94a3b8' }}>
-                                                                                <span style={{ fontWeight: 600, color: isCk ? '#f87171' : '#cbd5e1' }}>{DAY_LABELS[day] || day}</span>
-                                                                                {' '}{periodKey} <span style={{ color: '#475569', fontSize: '0.72rem' }}>({time})</span>
-                                                                            </span>
-                                                                        </label>
-                                                                    );
-                                                                })}
+
+                                                        {/* Option 5: Full Regeneration */}
+                                                        <button
+                                                            onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'FULL' }))}
+                                                            style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1rem 1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s', opacity: 0.8 }}
+                                                            onMouseOver={e => (e.currentTarget.style.borderColor = '#ef4444')}
+                                                            onMouseOut={e => e.currentTarget.style.borderColor = '#334155'}
+                                                        >
+                                                            <div style={{ fontSize: '1.5rem' }}>🔄</div>
+                                                            <div>
+                                                                <div style={{ fontWeight: 700, fontSize: '1rem', color: '#ef4444' }}>Option 3: Full Re-generation</div>
+                                                                <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Rebuild entire timetable from scratch. Guaranteed conflict-free.</div>
                                                             </div>
-                                                        )}
+                                                        </button>
                                                     </div>
-                                                );
-                                            })}
-                                        </div>
-                                        {/* Footer */}
-                                        <div style={{ padding: '0.9rem 1.5rem', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: '#0f172a' }}>
-                                            <span style={{ fontSize: '0.78rem', color: totalSel > 0 ? '#f87171' : '#475569' }}>
-                                                {totalSel > 0 ? `${totalSel} period${totalSel !== 1 ? 's' : ''} selected` : 'Nothing selected'}
-                                            </span>
-                                            <div style={{ display: 'flex', gap: '0.55rem' }}>
-                                                <button onClick={() => setDeletePopup(null)} style={{ padding: '0.55rem 1.1rem', background: 'transparent', border: '1px solid #334155', borderRadius: '0.55rem', color: '#94a3b8', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}>Cancel</button>
-                                                <button onClick={executeDelete} disabled={totalSel === 0} style={{
-                                                    padding: '0.55rem 1.25rem',
-                                                    background: totalSel === 0 ? '#1e293b' : 'linear-gradient(135deg, #dc2626, #b91c1c)',
-                                                    border: `1px solid ${totalSel === 0 ? '#334155' : '#dc2626'}`,
-                                                    borderRadius: '0.55rem',
-                                                    color: totalSel === 0 ? '#475569' : '#fff',
-                                                    cursor: totalSel === 0 ? 'not-allowed' : 'pointer',
-                                                    fontWeight: 800, fontSize: '0.82rem',
-                                                    boxShadow: totalSel > 0 ? '0 4px 12px rgba(220,38,38,0.4)' : 'none',
-                                                    transition: 'all 0.2s'
-                                                }}>🗑️ Delete {totalSel > 0 ? `(${totalSel})` : ''}</button>
+                                                )}
+
+                                                {step === 3 && (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                                        <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', padding: '1.5rem', borderRadius: '1rem', textAlign: 'center' }}>
+                                                            <h4 style={{ margin: '0 0 0.5rem 0', color: '#f59e0b', fontSize: '1.1rem' }}>Ready to Apply Changes</h4>
+                                                            <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.9rem' }}>
+                                                                Strategy: <b style={{ color: 'white' }}>{reassignWizard.strategy === 'DIRECT' ? 'Direct Swap' : (reassignWizard.strategy === 'PARTIAL' ? 'Smart Re-reg' : 'Full Re-reg')}</b>
+                                                            </p>
+                                                        </div>
+
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '0.9rem' }}>
+                                                                <span>New Teacher:</span>
+                                                                <b style={{ color: 'white' }}>{newTeacher}</b>
+                                                            </div>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '0.9rem' }}>
+                                                                <span>Affected Classes:</span>
+                                                                <b style={{ color: 'white' }}>{[...new Set(analysis.assignments.map(a => a.className))].join(', ')}</b>
+                                                            </div>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '0.9rem' }}>
+                                                                <span>Total Modifications:</span>
+                                                                <b style={{ color: '#f59e0b' }}>{analysis.assignments.length} slots</b>
+                                                            </div>
+                                                        </div>
+
+                                                        <div style={{ background: '#0f172a', padding: '1rem', borderRadius: '0.8rem', border: '1px solid #334155' }}>
+                                                            <h5 style={{ margin: '0 0 0.5rem 0', color: '#64748b', fontSize: '0.8rem', textTransform: 'uppercase' }}>Preview of First 3 Changes</h5>
+                                                            {analysis.assignments.slice(0, 3).map((a, ai) => (
+                                                                <div key={ai} style={{ display: 'flex', gap: '0.5rem', fontSize: '0.85rem', marginBottom: '0.3rem', color: '#cbd5e1' }}>
+                                                                    <span style={{ color: '#f59e0b' }}>•</span> {a.day} {a.period} in {a.className}: {row.teacher} ➔ <b>{newTeacher}</b>
+                                                                </div>
+                                                            ))}
+                                                            {analysis.assignments.length > 3 && <div style={{ fontSize: '0.8rem', color: '#475569', textAlign: 'center', marginTop: '0.5rem' }}>+ {analysis.assignments.length - 3} more changes</div>}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Footer */}
+                                            <div style={{ padding: '1.25rem 2rem', borderTop: '1px solid #334155', background: '#0f172a', display: 'flex', justifyContent: 'space-between' }}>
+                                                <button
+                                                    onClick={() => step > 1 ? setReassignWizard(prev => ({ ...prev, step: prev.step - 1 })) : setReassignWizard(null)}
+                                                    style={{ padding: '0.8rem 1.5rem', background: 'transparent', border: '1px solid #334155', borderRadius: '0.8rem', color: '#94a3b8', cursor: 'pointer', fontWeight: 700 }}
+                                                >
+                                                    {step === 1 ? 'Cancel' : 'Back'}
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        if (step < 3) {
+                                                            setReassignWizard(prev => ({ ...prev, step: prev.step + 1 }));
+                                                        } else {
+                                                            // Execute based on strategy
+                                                            executeSmartReassign();
+                                                        }
+                                                    }}
+                                                    disabled={step === 1 && !newTeacher}
+                                                    style={{
+                                                        padding: '0.8rem 2rem',
+                                                        background: (step === 1 && !newTeacher) ? '#334155' : 'linear-gradient(135deg, #4f46e5, #4338ca)',
+                                                        border: 'none',
+                                                        borderRadius: '0.8rem',
+                                                        color: 'white',
+                                                        cursor: (step === 1 && !newTeacher) ? 'not-allowed' : 'pointer',
+                                                        fontWeight: 800,
+                                                        boxShadow: '0 10px 15px -3px rgba(79, 70, 229, 0.4)'
+                                                    }}
+                                                >
+                                                    {step === 3 ? 'Confirm & Apply' : 'Continue Analysis'}
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            );
-                        })()}
+                                );
+                            })()
+                        }
+
+                        {
+                            deletePopup && (() => {
+                                const { row, classGroups, checked, expanded } = deletePopup;
+                                const selCount = (cn) => checked[cn]?.size || 0;
+                                const totalSel = classGroups.reduce((s, { className }) => s + selCount(className), 0);
+
+                                const togglePeriod = (cn, key) => setDeletePopup(prev => {
+                                    const nxt = { ...prev, checked: { ...prev.checked } };
+                                    const set = new Set(nxt.checked[cn]);
+                                    if (set.has(key)) set.delete(key); else set.add(key);
+                                    nxt.checked[cn] = set;
+                                    return nxt;
+                                });
+                                const toggleClass = (cn, periods) => setDeletePopup(prev => {
+                                    const nxt = { ...prev, checked: { ...prev.checked } };
+                                    const allKeys = periods.map(p => `${p.day}|${p.periodKey}`);
+                                    const allChecked = allKeys.every(k => nxt.checked[cn]?.has(k));
+                                    nxt.checked[cn] = allChecked ? new Set() : new Set(allKeys);
+                                    return nxt;
+                                });
+                                const toggleExpand = (cn) => setDeletePopup(prev => {
+                                    const exp = new Set(prev.expanded);
+                                    if (exp.has(cn)) exp.delete(cn); else exp.add(cn);
+                                    return { ...prev, expanded: exp };
+                                });
+                                const selectAll = () => setDeletePopup(prev => ({
+                                    ...prev, checked: Object.fromEntries(
+                                        prev.classGroups.map(({ className, periods }) =>
+                                            [className, new Set(periods.map(p => `${p.day}|${p.periodKey}`))])
+                                    )
+                                }));
+                                const deselectAll = () => setDeletePopup(prev => ({
+                                    ...prev, checked: Object.fromEntries(prev.classGroups.map(({ className }) => [className, new Set()]))
+                                }));
+
+                                return (
+                                    <div onClick={() => setDeletePopup(null)} style={{
+                                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                                        background: 'rgba(0,0,0,0.75)', display: 'flex',
+                                        justifyContent: 'center', alignItems: 'center',
+                                        zIndex: 4000, backdropFilter: 'blur(5px)',
+                                        animation: 'fadeIn 0.2s ease-out'
+                                    }}>
+                                        <div onClick={e => e.stopPropagation()} style={{
+                                            background: '#0f172a', border: '1px solid #dc2626',
+                                            borderRadius: '1.25rem', width: '560px', maxWidth: '95vw',
+                                            maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+                                            boxShadow: '0 25px 50px -12px rgba(220,38,38,0.35)', overflow: 'hidden'
+                                        }}>
+                                            {/* Header */}
+                                            <div style={{ padding: '1.25rem 1.5rem', background: '#1e293b', borderBottom: '1px solid #334155', flexShrink: 0 }}>
+                                                <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#f87171', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Delete Timetable</div>
+                                                <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f1f5f9' }}>{row.teacher}</div>
+                                                <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.1rem' }}>{row.subject}</div>
+                                            </div>
+                                            {/* Bulk actions bar */}
+                                            <div style={{ padding: '0.6rem 1.5rem', background: '#1e293b', borderBottom: '1px solid #0f172a', display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}>
+                                                <span style={{ fontSize: '0.78rem', color: '#64748b', flexGrow: 1 }}>Select periods to remove:</span>
+                                                <button onClick={selectAll} style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Select All</button>
+                                                <button onClick={deselectAll} style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Deselect All</button>
+                                            </div>
+                                            {/* Classes list */}
+                                            <div style={{ overflowY: 'auto', flexGrow: 1, padding: '0.75rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                                                {classGroups.map(({ className, periods }) => {
+                                                    const allKeys = periods.map(p => `${p.day}|${p.periodKey}`);
+                                                    const sel = checked[className];
+                                                    const allChecked = allKeys.length > 0 && allKeys.every(k => sel?.has(k));
+                                                    const anyChecked = allKeys.some(k => sel?.has(k));
+                                                    const isExpanded = expanded.has(className);
+                                                    return (
+                                                        <div key={className}>
+                                                            <div style={{
+                                                                display: 'flex', alignItems: 'center', gap: '0.6rem',
+                                                                padding: '0.55rem 0.8rem',
+                                                                background: anyChecked ? 'rgba(220,38,38,0.1)' : '#1e293b',
+                                                                borderRadius: '0.55rem',
+                                                                border: `1px solid ${anyChecked ? 'rgba(220,38,38,0.5)' : '#334155'}`,
+                                                                transition: 'all 0.15s'
+                                                            }}>
+                                                                <input type="checkbox" checked={allChecked}
+                                                                    ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
+                                                                    onChange={() => toggleClass(className, periods)}
+                                                                    style={{ width: 16, height: 16, accentColor: '#dc2626', cursor: 'pointer', flexShrink: 0 }} />
+                                                                <span onClick={() => toggleClass(className, periods)}
+                                                                    style={{ fontWeight: 700, color: '#f1f5f9', fontSize: '0.92rem', flexGrow: 1, cursor: 'pointer' }}>{className}</span>
+                                                                <span style={{ fontSize: '0.73rem', color: '#64748b' }}>{periods.length} period{periods.length !== 1 ? 's' : ''}</span>
+                                                                {anyChecked && !allChecked && (
+                                                                    <span style={{ fontSize: '0.68rem', color: '#f87171', background: 'rgba(220,38,38,0.18)', padding: '0.12rem 0.4rem', borderRadius: '0.3rem' }}>{sel.size} sel</span>
+                                                                )}
+                                                                <button onClick={() => toggleExpand(className)}
+                                                                    style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.75rem', padding: '0 0.15rem', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>&#9660;</button>
+                                                            </div>
+                                                            {isExpanded && (
+                                                                <div style={{ marginLeft: '1.8rem', marginTop: '0.2rem', display: 'flex', flexDirection: 'column', gap: '0.18rem' }}>
+                                                                    {periods.map(({ day, periodKey, time }) => {
+                                                                        const key = `${day}|${periodKey}`;
+                                                                        const isCk = sel?.has(key);
+                                                                        return (
+                                                                            <label key={key} style={{
+                                                                                display: 'flex', alignItems: 'center', gap: '0.45rem',
+                                                                                padding: '0.32rem 0.55rem',
+                                                                                background: isCk ? 'rgba(220,38,38,0.07)' : 'transparent',
+                                                                                borderRadius: '0.35rem', cursor: 'pointer',
+                                                                                border: `1px solid ${isCk ? 'rgba(220,38,38,0.25)' : 'transparent'}`,
+                                                                                transition: 'all 0.1s'
+                                                                            }}>
+                                                                                <input type="checkbox" checked={!!isCk} onChange={() => togglePeriod(className, key)}
+                                                                                    style={{ width: 13, height: 13, accentColor: '#dc2626', cursor: 'pointer', flexShrink: 0 }} />
+                                                                                <span style={{ fontSize: '0.8rem', color: isCk ? '#fca5a5' : '#94a3b8' }}>
+                                                                                    <span style={{ fontWeight: 600, color: isCk ? '#f87171' : '#cbd5e1' }}>{DAY_LABELS[day] || day}</span>
+                                                                                    {' '}{periodKey} <span style={{ color: '#475569', fontSize: '0.72rem' }}>({time})</span>
+                                                                                </span>
+                                                                            </label>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            {/* Footer */}
+                                            <div style={{ padding: '0.9rem 1.5rem', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: '#0f172a' }}>
+                                                <span style={{ fontSize: '0.78rem', color: totalSel > 0 ? '#f87171' : '#475569' }}>
+                                                    {totalSel > 0 ? `${totalSel} period${totalSel !== 1 ? 's' : ''} selected` : 'Nothing selected'}
+                                                </span>
+                                                <div style={{ display: 'flex', gap: '0.55rem' }}>
+                                                    <button onClick={() => setDeletePopup(null)} style={{ padding: '0.55rem 1.1rem', background: 'transparent', border: '1px solid #334155', borderRadius: '0.55rem', color: '#94a3b8', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}>Cancel</button>
+                                                    <button onClick={executeDelete} disabled={totalSel === 0} style={{
+                                                        padding: '0.55rem 1.25rem',
+                                                        background: totalSel === 0 ? '#1e293b' : 'linear-gradient(135deg, #dc2626, #b91c1c)',
+                                                        border: `1px solid ${totalSel === 0 ? '#334155' : '#dc2626'}`,
+                                                        borderRadius: '0.55rem',
+                                                        color: totalSel === 0 ? '#475569' : '#fff',
+                                                        cursor: totalSel === 0 ? 'not-allowed' : 'pointer',
+                                                        fontWeight: 800, fontSize: '0.82rem',
+                                                        boxShadow: totalSel > 0 ? '0 4px 12px rgba(220,38,38,0.4)' : 'none',
+                                                        transition: 'all 0.2s'
+                                                    }}>🗑️ Delete {totalSel > 0 ? `(${totalSel})` : ''}</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()
+                        }
                         <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
                             <button
                                 onClick={addAllotmentRow}
@@ -4210,472 +4172,413 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 }}
                             >💾 Save All Changes</button>
                         </div>
-                    </div>
-                )}
+                    </div >
+                )
+                }
 
                 {/* Tab 4: Format TT (moved down) */}
-                {activeTab === 4 && (() => {
-                    const GRADE_CLASSES = {
-                        '6': ['6A', '6B', '6C', '6D', '6E', '6F', '6G'],
-                        '7': ['7A', '7B', '7C', '7D', '7E', '7F', '7G'],
-                        '8': ['8A', '8B', '8C', '8D', '8E', '8F', '8G'],
-                        '9': ['9A', '9B', '9C', '9D', '9E', '9F', '9G'],
-                        '10': ['10A', '10B', '10C', '10D', '10E', '10F', '10G'],
-                        '11': ['11A', '11B', '11C', '11D', '11E', '11F'],
-                        '12': ['12A', '12B', '12C', '12D', '12E', '12F'],
-                    };
-                    const gradeClassList = GRADE_CLASSES[activeGradeSubTab] || [];
-                    const DAYS = [['MON', 'Monday'], ['TUE', 'Tuesday'], ['WED', 'Wednesday'], ['THU', 'Thursday'], ['FRI', 'Friday'], ['SAT', 'Saturday']];
+                {
+                    activeTab === 4 && (() => {
+                        const GRADE_CLASSES = {
+                            '6': ['6A', '6B', '6C', '6D', '6E', '6F', '6G'],
+                            '7': ['7A', '7B', '7C', '7D', '7E', '7F', '7G'],
+                            '8': ['8A', '8B', '8C', '8D', '8E', '8F', '8G'],
+                            '9': ['9A', '9B', '9C', '9D', '9E', '9F', '9G'],
+                            '10': ['10A', '10B', '10C', '10D', '10E', '10F', '10G'],
+                            '11': ['11A', '11B', '11C', '11D', '11E', '11F'],
+                            '12': ['12A', '12B', '12C', '12D', '12E', '12F'],
+                        };
+                        const gradeClassList = GRADE_CLASSES[activeGradeSubTab] || [];
+                        const DAYS = [['MON', 'Monday'], ['TUE', 'Tuesday'], ['WED', 'Wednesday'], ['THU', 'Thursday'], ['FRI', 'Friday'], ['SAT', 'Saturday']];
 
-                    return (
-                        <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                            {/* Grade Tabs */}
-                            <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.2rem', background: '#1e293b', padding: '0.8rem', borderRadius: '0.8rem', border: '1px solid #334155', flexWrap: 'wrap' }}>
-                                {[6, 7, 8, 9, 10, 11, 12].map(grade => (
-                                    <button key={grade}
-                                        onClick={() => setActiveGradeSubTab(grade.toString())}
-                                        style={{
-                                            padding: '0.6rem 1.1rem', border: 'none', borderRadius: '0.6rem', cursor: 'pointer',
-                                            background: activeGradeSubTab === grade.toString() ? '#4f46e5' : '#334155',
-                                            color: 'white', fontWeight: 700, fontSize: '0.9rem', transition: 'all 0.2s',
-                                            boxShadow: activeGradeSubTab === grade.toString() ? '0 4px 12px rgba(79,70,229,0.3)' : 'none',
-                                            transform: activeGradeSubTab === grade.toString() ? 'translateY(-2px)' : 'none'
-                                        }}
-                                    >Grade {grade}</button>
-                                ))}
-                            </div>
-
-                            {/* Change Summary Panel */}
-                            {timetableChanges.count > 0 && (
-                                <div style={{
-                                    marginBottom: '2rem', padding: '1.5rem', background: 'rgba(249, 115, 22, 0.05)',
-                                    borderRadius: '1rem', border: '1px solid rgba(249, 115, 22, 0.2)',
-                                    display: 'flex', flexDirection: 'column', gap: '1.2rem'
-                                }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                            <div style={{ background: '#f97316', color: 'white', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontWeight: 900, fontSize: '0.9rem' }}>
-                                                {timetableChanges.count} CHANGES DETECTED
-                                            </div>
-                                            <button
-                                                onClick={() => {
-                                                    const firstChange = timetableChanges.diffs.find(d => {
-                                                        const gradeMatch = cls.startsWith(activeGradeSubTab); // Simplified check
-                                                        return true; // Just find the first one in the diffs for now and scroll its ID
-                                                    });
-                                                    if (firstChange) {
-                                                        const el = document.getElementById(`class-card-${firstChange.class}`);
-                                                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                                    }
-                                                }}
-                                                style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
-                                            >Scroll to First Change</button>
-                                            <button
-                                                onClick={() => {
-                                                    setBaselineTimetable(JSON.parse(JSON.stringify(generatedTimetable)));
-                                                    addToast('Baseline reset to current state', 'success');
-                                                }}
-                                                style={{ background: '#334155', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
-                                            >Reset Baseline</button>
-                                        </div>
-
-                                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem', cursor: 'pointer' }}>
-                                                <input type="checkbox" checked={showChangesOnly} onChange={e => setShowChangesOnly(e.target.checked)} />
-                                                Show changes only
-                                            </label>
-                                            <select
-                                                value={highlightTeacher || ''}
-                                                onChange={e => setHighlightTeacher(e.target.value || null)}
-                                                style={{ background: '#0f172a', border: '1px solid #334155', color: 'white', padding: '0.4rem', borderRadius: '0.4rem', fontSize: '0.85rem' }}
-                                            >
-                                                <option value="">Filter by Teacher...</option>
-                                                {[...new Set(timetableChanges.diffs.map(d => d.new.teacher))].sort().map(t => (
-                                                    <option key={t} value={t}>{t}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
-                                        <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #1e293b' }}>
-                                            <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Impacted Classes</div>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                                                {Object.entries(timetableChanges.diffs.reduce((acc, d) => { acc[d.class] = (acc[d.class] || 0) + 1; return acc; }, {}))
-                                                    .map(([c, count]) => (
-                                                        <span key={c} style={{ fontSize: '0.75rem', background: '#1e293b', padding: '0.1rem 0.4rem', borderRadius: '0.3rem', color: '#cbd5e1' }}>
-                                                            {c} <b style={{ color: '#f97316' }}>{count}</b>
-                                                        </span>
-                                                    ))}
-                                            </div>
-                                        </div>
-                                        <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #1e293b' }}>
-                                            <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Affected Teachers</div>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                                                {Object.entries(timetableChanges.diffs.reduce((acc, d) => {
-                                                    const t = d.new.teacher || 'Unassigned';
-                                                    acc[t] = (acc[t] || 0) + 1;
-                                                    return acc;
-                                                }, {}))
-                                                    .map(([t, count]) => (
-                                                        <span key={t} style={{ fontSize: '0.75rem', background: '#1e293b', padding: '0.1rem 0.4rem', borderRadius: '0.3rem', color: '#cbd5e1' }}>
-                                                            {t} <b style={{ color: '#f97316' }}>{count}</b>
-                                                        </span>
-                                                    ))}
-                                            </div>
-                                        </div>
-                                    </div>
+                        return (
+                            <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                                {/* Grade Tabs */}
+                                <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.2rem', background: '#1e293b', padding: '0.8rem', borderRadius: '0.8rem', border: '1px solid #334155', flexWrap: 'wrap' }}>
+                                    {[6, 7, 8, 9, 10, 11, 12].map(grade => (
+                                        <button key={grade}
+                                            onClick={() => setActiveGradeSubTab(grade.toString())}
+                                            style={{
+                                                padding: '0.6rem 1.1rem', border: 'none', borderRadius: '0.6rem', cursor: 'pointer',
+                                                background: activeGradeSubTab === grade.toString() ? '#4f46e5' : '#334155',
+                                                color: 'white', fontWeight: 700, fontSize: '0.9rem', transition: 'all 0.2s',
+                                                boxShadow: activeGradeSubTab === grade.toString() ? '0 4px 12px rgba(79,70,229,0.3)' : 'none',
+                                                transform: activeGradeSubTab === grade.toString() ? 'translateY(-2px)' : 'none'
+                                            }}
+                                        >Grade {grade}</button>
+                                    ))}
                                 </div>
-                            )}
 
-                            {/* Baseline Capture Prompt (if none exists) */}
-                            {!baselineTimetable && generatedTimetable && (
-                                <div style={{ marginBottom: '2rem', padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Capture current state as baseline to track future changes?</span>
-                                    <button
-                                        onClick={() => setBaselineTimetable(JSON.parse(JSON.stringify(generatedTimetable)))}
-                                        style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 700 }}
-                                    >Enable Change Tracking</button>
-                                </div>
-                            )}
+                                {/* Change Summary Panel */}
+                                {timetableChanges.count > 0 && (
+                                    <div style={{
+                                        marginBottom: '2rem', padding: '1.5rem', background: 'rgba(249, 115, 22, 0.05)',
+                                        borderRadius: '1rem', border: '1px solid rgba(249, 115, 22, 0.2)',
+                                        display: 'flex', flexDirection: 'column', gap: '1.2rem'
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                <div style={{ background: '#f97316', color: 'white', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontWeight: 900, fontSize: '0.9rem' }}>
+                                                    {timetableChanges.count} CHANGES DETECTED
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        const firstChange = timetableChanges.diffs.find(d => {
+                                                            const gradeMatch = cls.startsWith(activeGradeSubTab); // Simplified check
+                                                            return true; // Just find the first one in the diffs for now and scroll its ID
+                                                        });
+                                                        if (firstChange) {
+                                                            const el = document.getElementById(`class-card-${firstChange.class}`);
+                                                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                        }
+                                                    }}
+                                                    style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
+                                                >Scroll to First Change</button>
+                                                <button
+                                                    onClick={() => {
+                                                        setBaselineTimetable(JSON.parse(JSON.stringify(generatedTimetable)));
+                                                        addToast('Baseline reset to current state', 'success');
+                                                    }}
+                                                    style={{ background: '#334155', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
+                                                >Reset Baseline</button>
+                                            </div>
 
-                            {/* Page heading */}
-                            <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                <h2 style={{ color: '#f1f5f9', fontSize: '1.2rem', fontWeight: 900, margin: 0 }}>
-                                    🎓 Grade {activeGradeSubTab} Timetables
-                                </h2>
-                                <span style={{ color: '#475569', fontSize: '0.8rem' }}>({gradeClassList.join(', ')})</span>
-                            </div>
+                                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                                    <input type="checkbox" checked={showChangesOnly} onChange={e => setShowChangesOnly(e.target.checked)} />
+                                                    Show changes only
+                                                </label>
+                                                <select
+                                                    value={highlightTeacher || ''}
+                                                    onChange={e => setHighlightTeacher(e.target.value || null)}
+                                                    style={{ background: '#0f172a', border: '1px solid #334155', color: 'white', padding: '0.4rem', borderRadius: '0.4rem', fontSize: '0.85rem' }}
+                                                >
+                                                    <option value="">Filter by Teacher...</option>
+                                                    {[...new Set(timetableChanges.diffs.map(d => d.new.teacher))].sort().map(t => (
+                                                        <option key={t} value={t}>{t}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
 
-                            {/* All classes stacked vertically */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
-                                {gradeClassList.map(cls => {
-                                    const renderCell = (dayKey, periodKey) => {
-                                        const cell = generatedTimetable?.classTimetables?.[cls]?.[dayKey]?.[periodKey];
-                                        if (!cell || !cell.subject) return null;
-
-                                        // Change Tracking Logic
-                                        const change = timetableChanges.diffs.find(d => d.class === cls && d.day === dayKey && d.period === periodKey);
-                                        const isChanged = !!change;
-
-                                        if (cell.isStream) {
-                                            return (
-                                                <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
-                                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
-                                                    height: '100%', width: '100%', minHeight: '40px'
-                                                }}>
-                                                    <span style={{ fontWeight: 800, fontSize: '0.85em', color: '#fbbf24', lineHeight: 1.1, textAlign: 'center' }}>{cell.subject}</span>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', justifyContent: 'center', maxWidth: '100%' }}>
-                                                        {(cell.subjects || []).map((s, idx) => (
-                                                            <span key={idx} style={{ fontSize: '0.55em', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                                                                {s.subject}{idx < (cell.subjects.length - 1) ? ',' : ''}
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
+                                            <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #1e293b' }}>
+                                                <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Impacted Classes</div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                                    {Object.entries(timetableChanges.diffs.reduce((acc, d) => { acc[d.class] = (acc[d.class] || 0) + 1; return acc; }, {}))
+                                                        .map(([c, count]) => (
+                                                            <span key={c} style={{ fontSize: '0.75rem', background: '#1e293b', padding: '0.1rem 0.4rem', borderRadius: '0.3rem', color: '#cbd5e1' }}>
+                                                                {c} <b style={{ color: '#f97316' }}>{count}</b>
                                                             </span>
                                                         ))}
-                                                    </div>
-                                                    {isChanged && <div className="tt-change-badge" />}
-                                                </div>
-                                            );
-                                        }
-
-                                        const sub = cell.subject.toUpperCase();
-                                        const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
-                                        const teacherFirst = cell.teacher
-                                            ? (() => { const pts = cell.teacher.trim().split(/\s+/); const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : ''; const si = pts[1] ? pts[1][0].toUpperCase() : ''; return si ? `${fn} ${si}` : fn; })()
-                                            : '';
-                                        return (
-                                            <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
-                                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
-                                                height: '100%', width: '100%', minHeight: '40px'
-                                            }}>
-                                                <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>
-                                                    {abbr}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}
-                                                </span>
-                                                {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1 }}>{teacherFirst}</span>}
-
-                                                {isChanged && (
-                                                    <>
-                                                        <div className="tt-change-badge" />
-                                                        <div className="tt-tooltip">
-                                                            <div style={{ fontWeight: 700, color: '#f97316', marginBottom: '4px' }}>Modification Identified</div>
-                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                                <span style={{ color: '#94a3b8' }}>Was: <span style={{ color: '#f1f5f9' }}>{change.old.subject} ({change.old.teacher || 'None'})</span></span>
-                                                                <span style={{ color: '#94a3b8' }}>Now: <span style={{ color: '#f1f5f9' }}>{change.new.subject} ({change.new.teacher || 'None'})</span></span>
-                                                            </div>
-                                                        </div>
-                                                    </>
-                                                )}
-                                            </div>
-                                        );
-                                    };
-
-                                    // Filter Logic: If "Show changes only" is ON, skip classes that have zero changes in the entire week
-                                    if (showChangesOnly) {
-                                        const hasAnyChange = timetableChanges.diffs.some(d => d.class === cls);
-                                        if (!hasAnyChange) return null;
-                                    }
-
-                                    return (
-                                        <div key={cls} id={`class-card-${cls}`} style={{ background: '#1e293b', borderRadius: '1rem', padding: '1.5rem 2rem', border: '1px solid #334155' }}>
-                                            {/* Class header */}
-                                            <div style={{ textAlign: 'center', marginBottom: '1.2rem' }}>
-                                                <div style={{ fontSize: '1rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em' }}>
-                                                    THE CHOICE SCHOOL, Tripunithura &nbsp;·&nbsp; {academicYear || '2026-27'}
-                                                </div>
-                                                <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#0ea5e9', marginTop: '0.25rem', letterSpacing: '0.06em' }}>
-                                                    {cls}
                                                 </div>
                                             </div>
-
-                                            {/* Timetable grid */}
-                                            <div style={{ overflowX: 'auto', width: '100%', maxWidth: 1200, margin: '0 auto' }}>
-                                                <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '1100px', background: 'transparent', color: '#f1f5f9', fontFamily: 'inherit' }}>
-                                                    <thead>
-                                                        <tr>
-                                                            <th style={ttCellHeader({})}></th>
-                                                            {(() => {
-                                                                const isMiddle = ['6', '7', '8'].includes(activeGradeSubTab);
-                                                                const headers = [
-                                                                    { l: '1', t: '8:35-9:15' }, { l: '2', t: '9:15-9:55' },
-                                                                    { l: 'BREAK-I', t: '9:55-10:10', b: true },
-                                                                    { l: '3', t: '10:10-10:50' }, { l: '4', t: '10:50-11:30' }, { l: '5', t: '11:30-12:10' },
-                                                                    { l: 'BREAK-II', t: '12:10-12:20', b: true },
-                                                                    { l: '6', t: '12:20-13:00' },
-                                                                    { l: isMiddle ? 'LUNCH' : '7', t: '13:00-13:30', lu: isMiddle },
-                                                                    { l: isMiddle ? '8' : 'LUNCH', t: '13:30-14:05', lu: !isMiddle },
-                                                                    { l: '9', t: '14:05-14:55' }
-                                                                ];
-                                                                return headers.map((h, hi) => (
-                                                                    <th key={hi} style={ttCellHeader({
-                                                                        background: h.b ? 'rgba(251,191,36,0.1)' : (h.lu ? 'rgba(56,189,248,0.1)' : 'transparent'),
-                                                                        color: h.b ? '#fbbf24' : (h.lu ? '#38bdf8' : '#f1f5f9')
-                                                                    })}>
-                                                                        {h.l}<br /><span style={{ fontWeight: 400, fontSize: '0.8em', color: '#94a3b8' }}>{h.t}</span>
-                                                                    </th>
-                                                                ));
-                                                            })()}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {DAYS.map(([label, dayKey], i) => (
-                                                            <tr key={label}>
-                                                                <th style={ttCellDay()}>{label}</th>
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'S1')}</td>
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'S2')}</td>
-
-                                                                {/* S3: BREAK I merged vertically */}
-                                                                {i === 0 ? (
-                                                                    <td rowSpan={DAYS.length} style={ttCellBreak('BREAK', DAYS.length)}>
-                                                                        <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK</span>
-                                                                    </td>
-                                                                ) : null}
-
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'S4')}</td>
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'S5')}</td>
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'S6')}</td>
-
-                                                                {/* S7: BREAK II merged vertically */}
-                                                                {i === 0 ? (
-                                                                    <td rowSpan={DAYS.length} style={ttCellBreak('BREAK', DAYS.length)}>
-                                                                        <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK</span>
-                                                                    </td>
-                                                                ) : null}
-
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'S8')}</td>
-
-                                                                {/* S9 & S10: Dynamic Periodic/Lunch merged vertically */}
-                                                                {(() => {
-                                                                    const isMiddle = ['6', '7', '8'].includes(activeGradeSubTab);
-                                                                    if (isMiddle) {
-                                                                        return (
-                                                                            <>
-                                                                                {i === 0 ? (
-                                                                                    <td rowSpan={DAYS.length} style={ttCellBreak('LUNCH', DAYS.length)}>
-                                                                                        <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
-                                                                                    </td>
-                                                                                ) : null}
-                                                                                <td style={ttCell()}>{renderCell(dayKey, 'S10')}</td>
-                                                                            </>
-                                                                        );
-                                                                    } else {
-                                                                        return (
-                                                                            <>
-                                                                                <td style={ttCell()}>{renderCell(dayKey, 'S9')}</td>
-                                                                                {i === 0 ? (
-                                                                                    <td rowSpan={DAYS.length} style={ttCellBreak('LUNCH', DAYS.length)}>
-                                                                                        <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
-                                                                                    </td>
-                                                                                ) : null}
-                                                                            </>
-                                                                        );
-                                                                    }
-                                                                })()}
-
-                                                                <td style={ttCell()}>{renderCell(dayKey, 'S11')}</td>
-                                                            </tr>
+                                            <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #1e293b' }}>
+                                                <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Affected Teachers</div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                                    {Object.entries(timetableChanges.diffs.reduce((acc, d) => {
+                                                        const t = d.new.teacher || 'Unassigned';
+                                                        acc[t] = (acc[t] || 0) + 1;
+                                                        return acc;
+                                                    }, {}))
+                                                        .map(([t, count]) => (
+                                                            <span key={t} style={{ fontSize: '0.75rem', background: '#1e293b', padding: '0.1rem 0.4rem', borderRadius: '0.3rem', color: '#cbd5e1' }}>
+                                                                {t} <b style={{ color: '#f97316' }}>{count}</b>
+                                                            </span>
                                                         ))}
-                                                    </tbody>
-                                                </table>
+                                                </div>
                                             </div>
                                         </div>
-                                    );
-                                })}
+                                    </div>
+                                )}
+
+                                {/* Baseline Capture Prompt (if none exists) */}
+                                {!baselineTimetable && generatedTimetable && (
+                                    <div style={{ marginBottom: '2rem', padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Capture current state as baseline to track future changes?</span>
+                                        <button
+                                            onClick={() => setBaselineTimetable(JSON.parse(JSON.stringify(generatedTimetable)))}
+                                            style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 700 }}
+                                        >Enable Change Tracking</button>
+                                    </div>
+                                )}
+
+                                {/* Page heading */}
+                                <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    <h2 style={{ color: '#f1f5f9', fontSize: '1.2rem', fontWeight: 900, margin: 0 }}>
+                                        🎓 Grade {activeGradeSubTab} Timetables
+                                    </h2>
+                                    <span style={{ color: '#475569', fontSize: '0.8rem' }}>({gradeClassList.join(', ')})</span>
+                                </div>
+
+                                {/* All classes stacked vertically */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+                                    {gradeClassList.map(cls => {
+                                        const renderCell = (dayKey, periodKey) => {
+                                            const cell = generatedTimetable?.classTimetables?.[cls]?.[dayKey]?.[periodKey];
+                                            if (!cell || !cell.subject) return null;
+
+                                            // Change Tracking Logic
+                                            const change = timetableChanges.diffs.find(d => d.class === cls && d.day === dayKey && d.period === periodKey);
+                                            const isChanged = !!change;
+
+                                            if (cell.isStream) {
+                                                return (
+                                                    <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
+                                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
+                                                        height: '100%', width: '100%', minHeight: '40px'
+                                                    }}>
+                                                        <span style={{ fontWeight: 800, fontSize: '0.85em', color: '#fbbf24', lineHeight: 1.1, textAlign: 'center' }}>{cell.subject}</span>
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', justifyContent: 'center', maxWidth: '100%' }}>
+                                                            {(cell.subjects || []).map((s, idx) => (
+                                                                <span key={idx} style={{ fontSize: '0.55em', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                                                                    {s.subject}{idx < (cell.subjects.length - 1) ? ',' : ''}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                        {isChanged && <div className="tt-change-badge" />}
+                                                    </div>
+                                                );
+                                            }
+
+                                            const sub = cell.subject.toUpperCase();
+                                            const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
+                                            const teacherFirst = cell.teacher
+                                                ? (() => { const pts = cell.teacher.trim().split(/\s+/); const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : ''; const si = pts[1] ? pts[1][0].toUpperCase() : ''; return si ? `${fn} ${si}` : fn; })()
+                                                : '';
+                                            return (
+                                                <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
+                                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
+                                                    height: '100%', width: '100%', minHeight: '40px'
+                                                }}>
+                                                    <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>
+                                                        {abbr}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}
+                                                    </span>
+                                                    {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1 }}>{teacherFirst}</span>}
+
+                                                    {isChanged && (
+                                                        <>
+                                                            <div className="tt-change-badge" />
+                                                            <div className="tt-tooltip">
+                                                                <div style={{ fontWeight: 700, color: '#f97316', marginBottom: '4px' }}>Modification Identified</div>
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                                    <span style={{ color: '#94a3b8' }}>Was: <span style={{ color: '#f1f5f9' }}>{change.old.subject} ({change.old.teacher || 'None'})</span></span>
+                                                                    <span style={{ color: '#94a3b8' }}>Now: <span style={{ color: '#f1f5f9' }}>{change.new.subject} ({change.new.teacher || 'None'})</span></span>
+                                                                </div>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            );
+                                        };
+
+                                        // Filter Logic: If "Show changes only" is ON, skip classes that have zero changes in the entire week
+                                        if (showChangesOnly) {
+                                            const hasAnyChange = timetableChanges.diffs.some(d => d.class === cls);
+                                            if (!hasAnyChange) return null;
+                                        }
+
+                                        return (
+                                            <div key={cls} id={`class-card-${cls}`} style={{ background: '#1e293b', borderRadius: '1rem', padding: '1.5rem 2rem', border: '1px solid #334155' }}>
+                                                {/* Class header */}
+                                                <div style={{ textAlign: 'center', marginBottom: '1.2rem' }}>
+                                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em' }}>
+                                                        THE CHOICE SCHOOL, Tripunithura &nbsp;·&nbsp; {academicYear || '2026-27'}
+                                                    </div>
+                                                    <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#0ea5e9', marginTop: '0.25rem', letterSpacing: '0.06em' }}>
+                                                        {cls}
+                                                    </div>
+                                                </div>
+
+                                                {/* Timetable grid */}
+                                                <div style={{ overflowX: 'auto', width: '100%', maxWidth: 1200, margin: '0 auto' }}>
+                                                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '1100px', background: 'transparent', color: '#f1f5f9', fontFamily: 'inherit' }}>
+                                                        <thead>
+                                                            <tr>
+                                                                <th style={ttCellHeader({})}></th>
+                                                                {(() => {
+                                                                    const isMiddle = ['6', '7', '8'].includes(activeGradeSubTab);
+                                                                    const headers = [
+                                                                        { l: '1', t: '8:35-9:15' }, { l: '2', t: '9:15-9:55' },
+                                                                        { l: 'BREAK-I', t: '9:55-10:10', b: true },
+                                                                        { l: '3', t: '10:10-10:50' }, { l: '4', t: '10:50-11:30' }, { l: '5', t: '11:30-12:10' },
+                                                                        { l: 'BREAK-II', t: '12:10-12:20', b: true },
+                                                                        { l: '6', t: '12:20-13:00' },
+                                                                        { l: isMiddle ? 'LUNCH' : '7', t: '13:00-13:30', lu: isMiddle },
+                                                                        { l: isMiddle ? '8' : 'LUNCH', t: '13:30-14:05', lu: !isMiddle },
+                                                                        { l: '9', t: '14:05-14:55' }
+                                                                    ];
+                                                                    return headers.map((h, hi) => (
+                                                                        <th key={hi} style={ttCellHeader({
+                                                                            background: h.b ? 'rgba(251,191,36,0.1)' : (h.lu ? 'rgba(56,189,248,0.1)' : 'transparent'),
+                                                                            color: h.b ? '#fbbf24' : (h.lu ? '#38bdf8' : '#f1f5f9')
+                                                                        })}>
+                                                                            {h.l}<br /><span style={{ fontWeight: 400, fontSize: '0.8em', color: '#94a3b8' }}>{h.t}</span>
+                                                                        </th>
+                                                                    ));
+                                                                })()}
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {DAYS.map(([label, dayKey], i) => (
+                                                                <tr key={label}>
+                                                                    <th style={ttCellDay()}>{label}</th>
+                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S1')}</td>
+                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S2')}</td>
+
+                                                                    {/* S3: BREAK I merged vertically */}
+                                                                    {i === 0 ? (
+                                                                        <td rowSpan={DAYS.length} style={ttCellBreak('BREAK', DAYS.length)}>
+                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK</span>
+                                                                        </td>
+                                                                    ) : null}
+
+                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S4')}</td>
+                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S5')}</td>
+                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S6')}</td>
+
+                                                                    {/* S7: BREAK II merged vertically */}
+                                                                    {i === 0 ? (
+                                                                        <td rowSpan={DAYS.length} style={ttCellBreak('BREAK', DAYS.length)}>
+                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK</span>
+                                                                        </td>
+                                                                    ) : null}
+
+                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S8')}</td>
+
+                                                                    {/* S9 & S10: Dynamic Periodic/Lunch merged vertically */}
+                                                                    {(() => {
+                                                                        const isMiddle = ['6', '7', '8'].includes(activeGradeSubTab);
+                                                                        if (isMiddle) {
+                                                                            return (
+                                                                                <>
+                                                                                    {i === 0 ? (
+                                                                                        <td rowSpan={DAYS.length} style={ttCellBreak('LUNCH', DAYS.length)}>
+                                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
+                                                                                        </td>
+                                                                                    ) : null}
+                                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S10')}</td>
+                                                                                </>
+                                                                            );
+                                                                        } else {
+                                                                            return (
+                                                                                <>
+                                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S9')}</td>
+                                                                                    {i === 0 ? (
+                                                                                        <td rowSpan={DAYS.length} style={ttCellBreak('LUNCH', DAYS.length)}>
+                                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
+                                                                                        </td>
+                                                                                    ) : null}
+                                                                                </>
+                                                                            );
+                                                                        }
+                                                                    })()}
+
+                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S11')}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
-                        </div>
-                    );
-                })()}
+                        );
+                    })()
+                }
 
                 {/* Tab 4: Subject Period Distribution */}
-                {activeTab === 2 && (
-                    <div>
-                        <button
-                            onClick={() => {
-                                localStorage.setItem('tt_distribution_47', JSON.stringify(distribution47));
-                                addToast('Saved', 'success');
-                            }}
-                            style={{
-                                padding: '0.75rem 1.5rem',
-                                background: '#10b981',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '0.75rem',
-                                cursor: 'pointer',
-                                marginBottom: '1.5rem',
-                                display: 'block'
-                            }}
-                        >
-                            💾 Save
-                        </button>
-                        {/* Header with Title and Actions */}
-                        <div style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: '1.5rem',
-                            flexWrap: 'wrap',
-                            gap: '1rem'
-                        }}>
-                            <div>
-                                <h3 style={{ fontSize: '1.3rem', fontWeight: '600', color: '#f1f5f9' }}>
-                                    📊 Subject Period Distribution - 47 Classrooms
-                                </h3>
-                                <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>
-                                    Click any cell to edit • Bulk select with checkboxes • Shift+click for range
-                                </p>
-                            </div>
-
-                            <div style={{ display: 'flex', gap: '0.75rem' }}>
-                                <button
-                                    onClick={() => setShowAddSubject(true)}
-                                    style={{
-                                        padding: '0.75rem 1.5rem',
-                                        background: '#4f46e5',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '0.5rem',
-                                        fontWeight: '600',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem'
-                                    }}
-                                >
-                                    ➕ ADD NEW SUBJECT
-                                </button>
-
-                                <button
-                                    onClick={() => {
-                                        console.log('Manual sync triggered');
-                                        const updated = syncSubjectsFromMappings(
-                                            { ...distribution47 },
-                                            teacherSubjectMappings
-                                        );
-                                        setDistribution47(updated);
-                                        saveDistribution(updated);
-                                        addToast('✅ Subjects synced from Tab 3!', 'success');
-                                    }}
-                                    style={{
-                                        padding: '0.75rem 1.5rem',
-                                        background: '#2563eb',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '0.5rem',
-                                        fontWeight: '600',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem'
-                                    }}
-                                >
-                                    🔄 SYNC FROM TAB 3
-                                </button>
-
-                                <button
-                                    onClick={() => {
-                                        saveDistribution(distribution47);
-                                        addToast('✅ Period distribution saved for 47 classrooms!', 'success');
-                                    }}
-                                    style={{
-                                        padding: '0.75rem 1.5rem',
-                                        background: '#10b981',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '0.5rem',
-                                        fontWeight: '600',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem'
-                                    }}
-                                >
-                                    💾 SAVE DISTRIBUTION
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Add New Subject Modal */}
-                        {showAddSubject && (
+                {
+                    activeTab === 2 && (
+                        <div>
+                            <button
+                                onClick={() => {
+                                    localStorage.setItem('tt_distribution_47', JSON.stringify(distribution47));
+                                    addToast('Saved', 'success');
+                                }}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: '#10b981',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '0.75rem',
+                                    cursor: 'pointer',
+                                    marginBottom: '1.5rem',
+                                    display: 'block'
+                                }}
+                            >
+                                💾 Save
+                            </button>
+                            {/* Header with Title and Actions */}
                             <div style={{
-                                background: '#1e293b',
-                                borderRadius: '0.75rem',
-                                padding: '1.5rem',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
                                 marginBottom: '1.5rem',
-                                border: '2px solid #4f46e5'
+                                flexWrap: 'wrap',
+                                gap: '1rem'
                             }}>
-                                <h4 style={{ color: '#f1f5f9', fontSize: '1.1rem', fontWeight: '600', marginBottom: '1rem' }}>
-                                    Add New Subject
-                                </h4>
-                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                    <input
-                                        type="text"
-                                        value={newSubjectName}
-                                        onChange={(e) => setNewSubjectName(e.target.value)}
-                                        placeholder="Enter subject name (e.g. 'ECONOMICS')"
+                                <div>
+                                    <h3 style={{ fontSize: '1.3rem', fontWeight: '600', color: '#f1f5f9' }}>
+                                        📊 Subject Period Distribution - 47 Classrooms
+                                    </h3>
+                                    <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                                        Click any cell to edit • Bulk select with checkboxes • Shift+click for range
+                                    </p>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                    <button
+                                        onClick={() => setShowAddSubject(true)}
                                         style={{
-                                            flex: 1,
-                                            padding: '0.75rem 1rem',
-                                            background: '#0f172a',
-                                            border: '1px solid #4f46e5',
+                                            padding: '0.75rem 1.5rem',
+                                            background: '#4f46e5',
+                                            color: 'white',
+                                            border: 'none',
                                             borderRadius: '0.5rem',
-                                            color: '#f1f5f9',
-                                            fontSize: '1rem'
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem'
                                         }}
-                                        autoFocus
-                                    />
+                                    >
+                                        ➕ ADD NEW SUBJECT
+                                    </button>
+
                                     <button
                                         onClick={() => {
-                                            if (newSubjectName.trim()) {
-                                                const subject = newSubjectName.trim().toUpperCase();
-                                                let updated = { ...distribution47 };
-                                                // Initialize with zeros for all classes
-                                                ALL_CLASSES.forEach(className => {
-                                                    if (!updated[className]) updated[className] = {};
-                                                    updated[className][subject] = 0;
-                                                });
-                                                setDistribution47(updated);
-                                                saveDistribution(updated);
-                                                setNewSubjectName('');
-                                                setShowAddSubject(false);
-                                            }
+                                            console.log('Manual sync triggered');
+                                            const updated = syncSubjectsFromMappings(
+                                                { ...distribution47 },
+                                                teacherSubjectMappings
+                                            );
+                                            setDistribution47(updated);
+                                            saveDistribution(updated);
+                                            addToast('✅ Subjects synced from Tab 3!', 'success');
+                                        }}
+                                        style={{
+                                            padding: '0.75rem 1.5rem',
+                                            background: '#2563eb',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '0.5rem',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem'
+                                        }}
+                                    >
+                                        🔄 SYNC FROM TAB 3
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            saveDistribution(distribution47);
+                                            addToast('✅ Period distribution saved for 47 classrooms!', 'success');
                                         }}
                                         style={{
                                             padding: '0.75rem 1.5rem',
@@ -4684,284 +4587,264 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             border: 'none',
                                             borderRadius: '0.5rem',
                                             fontWeight: '600',
-                                            cursor: 'pointer'
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem'
                                         }}
                                     >
-                                        ADD
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setShowAddSubject(false);
-                                            setNewSubjectName('');
-                                        }}
-                                        style={{
-                                            padding: '0.75rem 1.5rem',
-                                            background: '#64748b',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: '0.5rem',
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        CANCEL
+                                        💾 SAVE DISTRIBUTION
                                     </button>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Bulk Edit Toolbar */}
-                        <div style={{
-                            background: '#1e293b',
-                            borderRadius: '0.75rem',
-                            padding: '1rem 1.5rem',
-                            marginBottom: '1.5rem',
-                            border: '1px solid #4f46e5',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '1.5rem',
-                            flexWrap: 'wrap'
-                        }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                <span style={{ color: '#f1f5f9', fontWeight: '500' }}>BULK EDIT:</span>
-                                <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-                                    {selectedClasses.length} classes selected
-                                </span>
-                            </div>
+                            {/* Add New Subject Modal */}
+                            {showAddSubject && (
+                                <div style={{
+                                    background: '#1e293b',
+                                    borderRadius: '0.75rem',
+                                    padding: '1.5rem',
+                                    marginBottom: '1.5rem',
+                                    border: '2px solid #4f46e5'
+                                }}>
+                                    <h4 style={{ color: '#f1f5f9', fontSize: '1.1rem', fontWeight: '600', marginBottom: '1rem' }}>
+                                        Add New Subject
+                                    </h4>
+                                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                        <input
+                                            type="text"
+                                            value={newSubjectName}
+                                            onChange={(e) => setNewSubjectName(e.target.value)}
+                                            placeholder="Enter subject name (e.g. 'ECONOMICS')"
+                                            style={{
+                                                flex: 1,
+                                                padding: '0.75rem 1rem',
+                                                background: '#0f172a',
+                                                border: '1px solid #4f46e5',
+                                                borderRadius: '0.5rem',
+                                                color: '#f1f5f9',
+                                                fontSize: '1rem'
+                                            }}
+                                            autoFocus
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                if (newSubjectName.trim()) {
+                                                    const subject = newSubjectName.trim().toUpperCase();
+                                                    let updated = { ...distribution47 };
+                                                    // Initialize with zeros for all classes
+                                                    ALL_CLASSES.forEach(className => {
+                                                        if (!updated[className]) updated[className] = {};
+                                                        updated[className][subject] = 0;
+                                                    });
+                                                    setDistribution47(updated);
+                                                    saveDistribution(updated);
+                                                    setNewSubjectName('');
+                                                    setShowAddSubject(false);
+                                                }
+                                            }}
+                                            style={{
+                                                padding: '0.75rem 1.5rem',
+                                                background: '#10b981',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '0.5rem',
+                                                fontWeight: '600',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            ADD
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setShowAddSubject(false);
+                                                setNewSubjectName('');
+                                            }}
+                                            style={{
+                                                padding: '0.75rem 1.5rem',
+                                                background: '#64748b',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '0.5rem',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            CANCEL
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <span style={{ color: '#f1f5f9' }}>Set periods to:</span>
-                                <input
-                                    type="number"
-                                    value={bulkPeriodValue}
-                                    onChange={(e) => setBulkPeriodValue(e.target.value)}
-                                    min="0"
-                                    max="8"
-                                    style={{
-                                        width: '60px',
-                                        padding: '0.5rem',
-                                        background: '#0f172a',
-                                        border: '1px solid #334155',
-                                        borderRadius: '0.375rem',
-                                        color: '#f1f5f9',
-                                        textAlign: 'center'
-                                    }}
-                                />
-                                <button
-                                    onClick={handleBulkApply}
-                                    disabled={!currentBulkSubject || selectedClasses.length === 0}
-                                    style={{
-                                        padding: '0.5rem 1.25rem',
-                                        background: !currentBulkSubject || selectedClasses.length === 0 ? '#64748b' : '#10b981',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '0.375rem',
-                                        fontWeight: '600',
-                                        cursor: !currentBulkSubject || selectedClasses.length === 0 ? 'not-allowed' : 'pointer'
-                                    }}
-                                >
-                                    APPLY TO SELECTED
-                                </button>
-                            </div>
+                            {/* Bulk Edit Toolbar */}
+                            <div style={{
+                                background: '#1e293b',
+                                borderRadius: '0.75rem',
+                                padding: '1rem 1.5rem',
+                                marginBottom: '1.5rem',
+                                border: '1px solid #4f46e5',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '1.5rem',
+                                flexWrap: 'wrap'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    <span style={{ color: '#f1f5f9', fontWeight: '500' }}>BULK EDIT:</span>
+                                    <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
+                                        {selectedClasses.length} classes selected
+                                    </span>
+                                </div>
 
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                {['6', '7', '8', '9', '10', '11', '12'].map(grade => (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ color: '#f1f5f9' }}>Set periods to:</span>
+                                    <input
+                                        type="number"
+                                        value={bulkPeriodValue}
+                                        onChange={(e) => setBulkPeriodValue(e.target.value)}
+                                        min="0"
+                                        max="8"
+                                        style={{
+                                            width: '60px',
+                                            padding: '0.5rem',
+                                            background: '#0f172a',
+                                            border: '1px solid #334155',
+                                            borderRadius: '0.375rem',
+                                            color: '#f1f5f9',
+                                            textAlign: 'center'
+                                        }}
+                                    />
                                     <button
-                                        key={grade}
-                                        onClick={() => handleGradeBulk(grade)}
+                                        onClick={handleBulkApply}
+                                        disabled={!currentBulkSubject || selectedClasses.length === 0}
+                                        style={{
+                                            padding: '0.5rem 1.25rem',
+                                            background: !currentBulkSubject || selectedClasses.length === 0 ? '#64748b' : '#10b981',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '0.375rem',
+                                            fontWeight: '600',
+                                            cursor: !currentBulkSubject || selectedClasses.length === 0 ? 'not-allowed' : 'pointer'
+                                        }}
+                                    >
+                                        APPLY TO SELECTED
+                                    </button>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    {['6', '7', '8', '9', '10', '11', '12'].map(grade => (
+                                        <button
+                                            key={grade}
+                                            onClick={() => handleGradeBulk(grade)}
+                                            style={{
+                                                padding: '0.5rem 1rem',
+                                                background: '#334155',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '0.375rem',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Grade {grade}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Merge Selected Toolbar (appears when eligible) */}
+                            {selectedCells.length > 1 && currentBulkSubject &&
+                                selectedCells.every(c => c.subject === currentBulkSubject) &&
+                                selectedCells.every(c => !isClassMerged(distribution47, currentBulkSubject, c.className)) &&
+                                <div style={{
+                                    marginBottom: '1rem',
+                                    padding: '0.75rem 1rem',
+                                    background: '#7c3aed',
+                                    color: 'white',
+                                    borderRadius: '0.5rem',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem'
+                                }}>
+                                    <span>{selectedCells.length} classes selected for <strong>{currentBulkSubject}</strong></span>
+                                    <button
+                                        onClick={() => {
+                                            const answer = prompt('Enter total weekly periods for this combined group:', '5');
+                                            if (answer !== null) {
+                                                const total = parseInt(answer) || 0;
+                                                // create merged group
+                                                const classListForMerge = selectedCells.map(c => c.className);
+                                                const updated = addMergedGroup(
+                                                    { ...distribution47 },
+                                                    currentBulkSubject,
+                                                    classListForMerge,
+                                                    total
+                                                );
+                                                // set first class raw value and clear others
+                                                if (selectedCells.length > 0) {
+                                                    const first = selectedCells[0].className;
+                                                    updated[first][currentBulkSubject] = total;
+                                                    selectedCells.slice(1).forEach(c => {
+                                                        updated[c.className][currentBulkSubject] = 0;
+                                                    });
+                                                }
+                                                setDistribution47(updated);
+                                                saveDistribution(updated);
+                                                setSelectedClasses([]);
+                                                selectedCellsRef.current = [];
+                                                setSelectedCells([]);
+                                                addToast('✅ Classes merged', 'success');
+                                            }
+                                        }}
                                         style={{
                                             padding: '0.5rem 1rem',
-                                            background: '#334155',
+                                            background: '#4f46e5',
                                             color: 'white',
                                             border: 'none',
                                             borderRadius: '0.375rem',
                                             cursor: 'pointer'
                                         }}
                                     >
-                                        Grade {grade}
+                                        🔗 Merge Selected
                                     </button>
-                                ))}
-                            </div>
-                        </div>
+                                </div>
+                            }
 
-                        {/* Merge Selected Toolbar (appears when eligible) */}
-                        {selectedCells.length > 1 && currentBulkSubject &&
-                            selectedCells.every(c => c.subject === currentBulkSubject) &&
-                            selectedCells.every(c => !isClassMerged(distribution47, currentBulkSubject, c.className)) &&
+                            {/* 47-COLUMN GRID with FROZEN SUBJECT COLUMN */}
                             <div style={{
-                                marginBottom: '1rem',
-                                padding: '0.75rem 1rem',
-                                background: '#7c3aed',
-                                color: 'white',
-                                borderRadius: '0.5rem',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.5rem'
+                                background: '#1e293b',
+                                borderRadius: '1rem',
+                                border: '1px solid #334155',
+                                overflow: 'auto',
+                                maxHeight: 'calc(100vh - 300px)',
+                                position: 'relative'
                             }}>
-                                <span>{selectedCells.length} classes selected for <strong>{currentBulkSubject}</strong></span>
-                                <button
-                                    onClick={() => {
-                                        const answer = prompt('Enter total weekly periods for this combined group:', '5');
-                                        if (answer !== null) {
-                                            const total = parseInt(answer) || 0;
-                                            // create merged group
-                                            const classListForMerge = selectedCells.map(c => c.className);
-                                            const updated = addMergedGroup(
-                                                { ...distribution47 },
-                                                currentBulkSubject,
-                                                classListForMerge,
-                                                total
-                                            );
-                                            // set first class raw value and clear others
-                                            if (selectedCells.length > 0) {
-                                                const first = selectedCells[0].className;
-                                                updated[first][currentBulkSubject] = total;
-                                                selectedCells.slice(1).forEach(c => {
-                                                    updated[c.className][currentBulkSubject] = 0;
-                                                });
-                                            }
-                                            setDistribution47(updated);
-                                            saveDistribution(updated);
-                                            setSelectedClasses([]);
-                                            selectedCellsRef.current = [];
-                                            setSelectedCells([]);
-                                            addToast('✅ Classes merged', 'success');
-                                        }
-                                    }}
-                                    style={{
-                                        padding: '0.5rem 1rem',
-                                        background: '#4f46e5',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '0.375rem',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    🔗 Merge Selected
-                                </button>
-                            </div>
-                        }
-
-                        {/* 47-COLUMN GRID with FROZEN SUBJECT COLUMN */}
-                        <div style={{
-                            background: '#1e293b',
-                            borderRadius: '1rem',
-                            border: '1px solid #334155',
-                            overflow: 'auto',
-                            maxHeight: 'calc(100vh - 300px)',
-                            position: 'relative'
-                        }}>
-                            <table style={{
-                                width: '100%',
-                                borderCollapse: 'separate',
-                                borderSpacing: '0',
-                                minWidth: '1200px'
-                            }}>
-                                {/* FROZEN HEADER ROW */}
-                                <thead style={{
-                                    position: 'sticky',
-                                    top: 0,
-                                    zIndex: 20,
-                                    background: '#0f172a'
+                                <table style={{
+                                    width: '100%',
+                                    borderCollapse: 'separate',
+                                    borderSpacing: '0',
+                                    minWidth: '1200px'
                                 }}>
-                                    <tr>
-                                        {/* Checkbox Column Header */}
-                                        <th style={{
-                                            padding: '0.75rem 0.5rem',
-                                            background: '#0f172a',
-                                            borderBottom: '2px solid #4f46e5',
-                                            borderRight: '1px solid #334155',
-                                            position: 'sticky',
-                                            left: 0,
-                                            zIndex: 30,
-                                            minWidth: '40px'
-                                        }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedClasses.length === ALL_CLASSES.length}
-                                                onChange={handleSelectAll}
-                                                style={{
-                                                    width: '18px',
-                                                    height: '18px',
-                                                    cursor: 'pointer',
-                                                    accentColor: '#4f46e5'
-                                                }}
-                                            />
-                                        </th>
-
-                                        {/* FROZEN SUBJECT COLUMN HEADER */}
-                                        <th style={{
-                                            padding: '1rem',
-                                            textAlign: 'left',
-                                            color: '#f1f5f9',
-                                            fontSize: '0.95rem',
-                                            background: '#0f172a',
-                                            borderBottom: '2px solid #4f46e5',
-                                            borderRight: '2px solid #4f46e5',
-                                            position: 'sticky',
-                                            left: '58px',
-                                            zIndex: 25,
-                                            minWidth: '180px'
-                                        }}>
-                                            SUBJECT
-                                        </th>
-
-                                        {/* ALL 47 CLASS COLUMN HEADERS */}
-                                        {ALL_CLASSES.map(className => (
-                                            <th key={className} style={{
+                                    {/* FROZEN HEADER ROW */}
+                                    <thead style={{
+                                        position: 'sticky',
+                                        top: 0,
+                                        zIndex: 20,
+                                        background: '#0f172a'
+                                    }}>
+                                        <tr>
+                                            {/* Checkbox Column Header */}
+                                            <th style={{
                                                 padding: '0.75rem 0.5rem',
-                                                textAlign: 'center',
-                                                color: className.includes('11') || className.includes('12') ? '#d97706' : '#06b6d4',
-                                                fontSize: '0.85rem',
-                                                fontWeight: '600',
                                                 background: '#0f172a',
                                                 borderBottom: '2px solid #4f46e5',
-                                                borderLeft: '1px solid #334155',
-                                                minWidth: '50px',
-                                                whiteSpace: 'nowrap'
-                                            }}>
-                                                {className}
-                                            </th>
-                                        ))}
-
-                                        {/* Actions Column Header */}
-                                        <th style={{
-                                            padding: '0.75rem 1rem',
-                                            background: '#0f172a',
-                                            borderBottom: '2px solid #4f46e5',
-                                            borderLeft: '1px solid #334155',
-                                            minWidth: '80px',
-                                            color: '#f1f5f9',
-                                            fontSize: '0.85rem'
-                                        }}>
-                                            ACTIONS
-                                        </th>
-                                    </tr>
-                                </thead>
-
-                                {/* TABLE BODY - SUBJECT ROWS */}
-                                <tbody>
-                                    {getAllSubjects(distribution47).map((subject) => (
-                                        <tr
-                                            key={subject}
-                                            style={{
-                                                borderBottom: '1px solid #334155',
-                                                background: subject === currentBulkSubject ? 'rgba(79, 70, 229, 0.1)' : 'transparent'
-                                            }}
-                                        >
-                                            {/* Checkbox Cell - FROZEN */}
-                                            <td style={{
-                                                padding: '0.75rem 0.5rem',
-                                                background: '#1e293b',
                                                 borderRight: '1px solid #334155',
                                                 position: 'sticky',
                                                 left: 0,
-                                                zIndex: 10,
-                                                textAlign: 'center'
+                                                zIndex: 30,
+                                                minWidth: '40px'
                                             }}>
                                                 <input
                                                     type="checkbox"
-                                                    checked={selectedSubjects.has(subject)}
-                                                    onChange={() => handleSubjectSelect(subject)}
+                                                    checked={selectedClasses.length === ALL_CLASSES.length}
+                                                    onChange={handleSelectAll}
                                                     style={{
                                                         width: '18px',
                                                         height: '18px',
@@ -4969,233 +4852,300 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         accentColor: '#4f46e5'
                                                     }}
                                                 />
-                                            </td>
+                                            </th>
 
-                                            {/* FROZEN SUBJECT COLUMN */}
-                                            <td style={{
-                                                padding: '0.75rem 1rem',
-                                                background: subject === currentBulkSubject ? 'rgba(79, 70, 229, 0.2)' : '#1e293b',
+                                            {/* FROZEN SUBJECT COLUMN HEADER */}
+                                            <th style={{
+                                                padding: '1rem',
+                                                textAlign: 'left',
+                                                color: '#f1f5f9',
+                                                fontSize: '0.95rem',
+                                                background: '#0f172a',
+                                                borderBottom: '2px solid #4f46e5',
                                                 borderRight: '2px solid #4f46e5',
                                                 position: 'sticky',
                                                 left: '58px',
-                                                zIndex: 5,
-                                                fontWeight: '500',
-                                                color: '#f1f5f9'
+                                                zIndex: 25,
+                                                minWidth: '180px'
                                             }}>
-                                                {editingSubjectName === subject ? (
-                                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                        <input
-                                                            type="text"
-                                                            value={subjectRenameValue}
-                                                            onChange={(e) => setSubjectRenameValue(e.target.value)}
-                                                            style={{
-                                                                padding: '0.4rem 0.75rem',
-                                                                background: '#0f172a',
-                                                                border: '1px solid #4f46e5',
-                                                                borderRadius: '0.375rem',
-                                                                color: '#f1f5f9',
-                                                                fontSize: '0.95rem',
-                                                                width: '140px'
-                                                            }}
-                                                            autoFocus
-                                                        />
-                                                        <button
-                                                            onClick={() => {
-                                                                if (subjectRenameValue.trim() && subjectRenameValue !== subject) {
-                                                                    const updated = renameSubject(
-                                                                        { ...distribution47 },
-                                                                        subject,
-                                                                        subjectRenameValue.trim().toUpperCase()
-                                                                    );
-                                                                    setDistribution47(updated);
-                                                                    saveDistribution(updated);
-                                                                }
-                                                                setEditingSubjectName(null);
-                                                                setSubjectRenameValue('');
-                                                            }}
-                                                            style={{
-                                                                padding: '0.4rem 0.8rem',
-                                                                background: '#10b981',
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '0.375rem',
-                                                                cursor: 'pointer'
-                                                            }}
-                                                        >
-                                                            ✓
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                setEditingSubjectName(null);
-                                                                setSubjectRenameValue('');
-                                                            }}
-                                                            style={{
-                                                                padding: '0.4rem 0.8rem',
-                                                                background: '#64748b',
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '0.375rem',
-                                                                cursor: 'pointer'
-                                                            }}
-                                                        >
-                                                            ✗
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                        <span
-                                                            style={{
-                                                                color: '#f1f5f9',
-                                                                fontWeight: '600',
-                                                                cursor: 'pointer',
-                                                                padding: '0.25rem 0.5rem',
-                                                                borderRadius: '0.25rem'
-                                                            }}
-                                                            onClick={() => {
-                                                                setEditingSubjectName(subject);
-                                                                setSubjectRenameValue(subject);
-                                                                setCurrentBulkSubject(subject);
-                                                            }}
-                                                            onMouseEnter={(e) => e.target.style.background = '#334155'}
-                                                            onMouseLeave={(e) => e.target.style.background = 'transparent'}
-                                                        >
-                                                            {subject}
-                                                        </span>
-                                                        <button
-                                                            onClick={() => {
-                                                                if (confirm(`Delete subject "${subject}" from ALL 47 classes? This cannot be undone.`)) {
-                                                                    const updated = deleteSubject({ ...distribution47 }, subject);
-                                                                    setDistribution47(updated);
-                                                                    saveDistribution(updated);
-                                                                    if (currentBulkSubject === subject) setCurrentBulkSubject(null);
-                                                                }
-                                                            }}
-                                                            style={{
-                                                                padding: '0.25rem 0.5rem',
-                                                                background: 'transparent',
-                                                                color: '#ef4444',
-                                                                border: '1px solid #ef4444',
-                                                                borderRadius: '0.25rem',
-                                                                fontSize: '0.75rem',
-                                                                cursor: 'pointer',
-                                                                opacity: 0.7
-                                                            }}
-                                                            onMouseEnter={(e) => {
-                                                                e.target.style.opacity = '1';
-                                                                e.target.style.background = '#ef4444';
-                                                                e.target.style.color = 'white';
-                                                            }}
-                                                            onMouseLeave={(e) => {
-                                                                e.target.style.opacity = '0.7';
-                                                                e.target.style.background = 'transparent';
-                                                                e.target.style.color = '#ef4444';
-                                                            }}
-                                                        >
-                                                            🗑️
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </td>
+                                                SUBJECT
+                                            </th>
 
-                                            {/* 47 CLASS CELLS - EDITABLE PERIOD COUNTS */}
-                                            {ALL_CLASSES.map(className => {
-                                                const cellKey = `${subject}-${className}`;
-                                                const isEditing = editingCell === cellKey;
-                                                const rawValue = getValue(distribution47, subject, className);
-                                                const group = getGroupForClass(distribution47, subject, className);
-                                                const isMerged = !!group;
-                                                const isFirst = group && group.classes[0] === className;
-                                                const displayValue = isMerged
-                                                    ? (isFirst ? `${group.total} periods` : `↳ ${group.total}`)
-                                                    : rawValue;
-                                                const bgColor = isMerged ? '#9333ea' : (rawValue > 0 ? '#4f46e5' : 'transparent');
-                                                const textColor = isMerged ? 'white' : (rawValue > 0 ? 'white' : '#94a3b8');
+                                            {/* ALL 47 CLASS COLUMN HEADERS */}
+                                            {ALL_CLASSES.map(className => (
+                                                <th key={className} style={{
+                                                    padding: '0.75rem 0.5rem',
+                                                    textAlign: 'center',
+                                                    color: className.includes('11') || className.includes('12') ? '#d97706' : '#06b6d4',
+                                                    fontSize: '0.85rem',
+                                                    fontWeight: '600',
+                                                    background: '#0f172a',
+                                                    borderBottom: '2px solid #4f46e5',
+                                                    borderLeft: '1px solid #334155',
+                                                    minWidth: '50px',
+                                                    whiteSpace: 'nowrap'
+                                                }}>
+                                                    {className}
+                                                </th>
+                                            ))}
 
-                                                return (
-                                                    <td
-                                                        key={className}
+                                            {/* Actions Column Header */}
+                                            <th style={{
+                                                padding: '0.75rem 1rem',
+                                                background: '#0f172a',
+                                                borderBottom: '2px solid #4f46e5',
+                                                borderLeft: '1px solid #334155',
+                                                minWidth: '80px',
+                                                color: '#f1f5f9',
+                                                fontSize: '0.85rem'
+                                            }}>
+                                                ACTIONS
+                                            </th>
+                                        </tr>
+                                    </thead>
+
+                                    {/* TABLE BODY - SUBJECT ROWS */}
+                                    <tbody>
+                                        {getAllSubjects(distribution47).map((subject) => (
+                                            <tr
+                                                key={subject}
+                                                style={{
+                                                    borderBottom: '1px solid #334155',
+                                                    background: subject === currentBulkSubject ? 'rgba(79, 70, 229, 0.1)' : 'transparent'
+                                                }}
+                                            >
+                                                {/* Checkbox Cell - FROZEN */}
+                                                <td style={{
+                                                    padding: '0.75rem 0.5rem',
+                                                    background: '#1e293b',
+                                                    borderRight: '1px solid #334155',
+                                                    position: 'sticky',
+                                                    left: 0,
+                                                    zIndex: 10,
+                                                    textAlign: 'center'
+                                                }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedSubjects.has(subject)}
+                                                        onChange={() => handleSubjectSelect(subject)}
                                                         style={{
-                                                            padding: '0.5rem 0.25rem',
-                                                            textAlign: 'center',
-                                                            background: selectedCells.some(c => c.subject === subject && c.className === className) ? 'rgba(79, 70, 229, 0.15)' : 'transparent',
-                                                            borderLeft: '1px solid #334155',
-                                                            cursor: 'pointer'
+                                                            width: '18px',
+                                                            height: '18px',
+                                                            cursor: 'pointer',
+                                                            accentColor: '#4f46e5'
                                                         }}
-                                                        onMouseDown={(e) => {
-                                                            if (e.ctrlKey || e.metaKey) {
-                                                                toggleCtrlSelect(subject, className);
-                                                                setMouseDown(true);
-                                                                ctrlSelecting.current = true; // remember to suppress click
-                                                            } else {
-                                                                ctrlSelecting.current = false;
-                                                            }
-                                                        }}
-                                                        onMouseEnter={(e) => {
-                                                            if (mouseDown && (e.ctrlKey || e.metaKey)) {
-                                                                toggleCtrlSelect(subject, className);
-                                                            }
-                                                        }}
-                                                        onClick={(e) => {
-                                                            // Handle shift+click range selection
-                                                            if (e.shiftKey && lastSelectedClass) {
-                                                                const start = ALL_CLASSES.indexOf(lastSelectedClass);
-                                                                const end = ALL_CLASSES.indexOf(className);
-                                                                const [min, max] = [Math.min(start, end), Math.max(start, end)];
-                                                                const range = ALL_CLASSES.slice(min, max + 1);
-                                                                setSelectedClasses(prev => {
-                                                                    const newSelection = [...new Set([...prev, ...range])];
-                                                                    return newSelection;
-                                                                });
-                                                                // if we're merging within a subject, also add to selectedCells
-                                                                if (currentBulkSubject && currentBulkSubject === subject) {
-                                                                    setSelectedCells(prev => {
-                                                                        const added = range.map(cn => ({ subject, className: cn }));
-                                                                        // merge unique
-                                                                        const all = [...prev, ...added];
-                                                                        const uniq = [];
-                                                                        all.forEach(x => {
-                                                                            if (!uniq.find(y => y.subject === x.subject && y.className === x.className)) {
-                                                                                uniq.push(x);
-                                                                            }
-                                                                        });
-                                                                        selectedCellsRef.current = uniq;
-                                                                        return uniq;
-                                                                    });
-                                                                }
-                                                            }
-                                                            setLastSelectedClass(className);
-                                                        }}
-                                                    >
-                                                        {isEditing ? (
-                                                            <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'center' }}>
-                                                                <input
-                                                                    type="number"
-                                                                    value={editValue}
-                                                                    onChange={(e) => setEditValue(e.target.value)}
-                                                                    onBlur={() => {
-                                                                        let updated = { ...distribution47 };
-                                                                        if (isMerged && isFirst) {
-                                                                            // change group total
-                                                                            const grp = getGroupForClass(updated, subject, className);
-                                                                            if (grp) {
-                                                                                grp.total = parseInt(editValue) || 0;
-                                                                                // also mirror value in the first cell
-                                                                                updated[className][subject] = grp.total;
-                                                                            }
-                                                                        } else {
-                                                                            updated = setValue(updated, subject, className, editValue);
-                                                                        }
+                                                    />
+                                                </td>
+
+                                                {/* FROZEN SUBJECT COLUMN */}
+                                                <td style={{
+                                                    padding: '0.75rem 1rem',
+                                                    background: subject === currentBulkSubject ? 'rgba(79, 70, 229, 0.2)' : '#1e293b',
+                                                    borderRight: '2px solid #4f46e5',
+                                                    position: 'sticky',
+                                                    left: '58px',
+                                                    zIndex: 5,
+                                                    fontWeight: '500',
+                                                    color: '#f1f5f9'
+                                                }}>
+                                                    {editingSubjectName === subject ? (
+                                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                            <input
+                                                                type="text"
+                                                                value={subjectRenameValue}
+                                                                onChange={(e) => setSubjectRenameValue(e.target.value)}
+                                                                style={{
+                                                                    padding: '0.4rem 0.75rem',
+                                                                    background: '#0f172a',
+                                                                    border: '1px solid #4f46e5',
+                                                                    borderRadius: '0.375rem',
+                                                                    color: '#f1f5f9',
+                                                                    fontSize: '0.95rem',
+                                                                    width: '140px'
+                                                                }}
+                                                                autoFocus
+                                                            />
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (subjectRenameValue.trim() && subjectRenameValue !== subject) {
+                                                                        const updated = renameSubject(
+                                                                            { ...distribution47 },
+                                                                            subject,
+                                                                            subjectRenameValue.trim().toUpperCase()
+                                                                        );
                                                                         setDistribution47(updated);
                                                                         saveDistribution(updated);
-                                                                        setEditingCell(null);
-                                                                    }}
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === 'Enter') {
+                                                                    }
+                                                                    setEditingSubjectName(null);
+                                                                    setSubjectRenameValue('');
+                                                                }}
+                                                                style={{
+                                                                    padding: '0.4rem 0.8rem',
+                                                                    background: '#10b981',
+                                                                    color: 'white',
+                                                                    border: 'none',
+                                                                    borderRadius: '0.375rem',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                ✓
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setEditingSubjectName(null);
+                                                                    setSubjectRenameValue('');
+                                                                }}
+                                                                style={{
+                                                                    padding: '0.4rem 0.8rem',
+                                                                    background: '#64748b',
+                                                                    color: 'white',
+                                                                    border: 'none',
+                                                                    borderRadius: '0.375rem',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                ✗
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                            <span
+                                                                style={{
+                                                                    color: '#f1f5f9',
+                                                                    fontWeight: '600',
+                                                                    cursor: 'pointer',
+                                                                    padding: '0.25rem 0.5rem',
+                                                                    borderRadius: '0.25rem'
+                                                                }}
+                                                                onClick={() => {
+                                                                    setEditingSubjectName(subject);
+                                                                    setSubjectRenameValue(subject);
+                                                                    setCurrentBulkSubject(subject);
+                                                                }}
+                                                                onMouseEnter={(e) => e.target.style.background = '#334155'}
+                                                                onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                                                            >
+                                                                {subject}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (confirm(`Delete subject "${subject}" from ALL 47 classes? This cannot be undone.`)) {
+                                                                        const updated = deleteSubject({ ...distribution47 }, subject);
+                                                                        setDistribution47(updated);
+                                                                        saveDistribution(updated);
+                                                                        if (currentBulkSubject === subject) setCurrentBulkSubject(null);
+                                                                    }
+                                                                }}
+                                                                style={{
+                                                                    padding: '0.25rem 0.5rem',
+                                                                    background: 'transparent',
+                                                                    color: '#ef4444',
+                                                                    border: '1px solid #ef4444',
+                                                                    borderRadius: '0.25rem',
+                                                                    fontSize: '0.75rem',
+                                                                    cursor: 'pointer',
+                                                                    opacity: 0.7
+                                                                }}
+                                                                onMouseEnter={(e) => {
+                                                                    e.target.style.opacity = '1';
+                                                                    e.target.style.background = '#ef4444';
+                                                                    e.target.style.color = 'white';
+                                                                }}
+                                                                onMouseLeave={(e) => {
+                                                                    e.target.style.opacity = '0.7';
+                                                                    e.target.style.background = 'transparent';
+                                                                    e.target.style.color = '#ef4444';
+                                                                }}
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </td>
+
+                                                {/* 47 CLASS CELLS - EDITABLE PERIOD COUNTS */}
+                                                {ALL_CLASSES.map(className => {
+                                                    const cellKey = `${subject}-${className}`;
+                                                    const isEditing = editingCell === cellKey;
+                                                    const rawValue = getValue(distribution47, subject, className);
+                                                    const group = getGroupForClass(distribution47, subject, className);
+                                                    const isMerged = !!group;
+                                                    const isFirst = group && group.classes[0] === className;
+                                                    const displayValue = isMerged
+                                                        ? (isFirst ? `${group.total} periods` : `↳ ${group.total}`)
+                                                        : rawValue;
+                                                    const bgColor = isMerged ? '#9333ea' : (rawValue > 0 ? '#4f46e5' : 'transparent');
+                                                    const textColor = isMerged ? 'white' : (rawValue > 0 ? 'white' : '#94a3b8');
+
+                                                    return (
+                                                        <td
+                                                            key={className}
+                                                            style={{
+                                                                padding: '0.5rem 0.25rem',
+                                                                textAlign: 'center',
+                                                                background: selectedCells.some(c => c.subject === subject && c.className === className) ? 'rgba(79, 70, 229, 0.15)' : 'transparent',
+                                                                borderLeft: '1px solid #334155',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                            onMouseDown={(e) => {
+                                                                if (e.ctrlKey || e.metaKey) {
+                                                                    toggleCtrlSelect(subject, className);
+                                                                    setMouseDown(true);
+                                                                    ctrlSelecting.current = true; // remember to suppress click
+                                                                } else {
+                                                                    ctrlSelecting.current = false;
+                                                                }
+                                                            }}
+                                                            onMouseEnter={(e) => {
+                                                                if (mouseDown && (e.ctrlKey || e.metaKey)) {
+                                                                    toggleCtrlSelect(subject, className);
+                                                                }
+                                                            }}
+                                                            onClick={(e) => {
+                                                                // Handle shift+click range selection
+                                                                if (e.shiftKey && lastSelectedClass) {
+                                                                    const start = ALL_CLASSES.indexOf(lastSelectedClass);
+                                                                    const end = ALL_CLASSES.indexOf(className);
+                                                                    const [min, max] = [Math.min(start, end), Math.max(start, end)];
+                                                                    const range = ALL_CLASSES.slice(min, max + 1);
+                                                                    setSelectedClasses(prev => {
+                                                                        const newSelection = [...new Set([...prev, ...range])];
+                                                                        return newSelection;
+                                                                    });
+                                                                    // if we're merging within a subject, also add to selectedCells
+                                                                    if (currentBulkSubject && currentBulkSubject === subject) {
+                                                                        setSelectedCells(prev => {
+                                                                            const added = range.map(cn => ({ subject, className: cn }));
+                                                                            // merge unique
+                                                                            const all = [...prev, ...added];
+                                                                            const uniq = [];
+                                                                            all.forEach(x => {
+                                                                                if (!uniq.find(y => y.subject === x.subject && y.className === x.className)) {
+                                                                                    uniq.push(x);
+                                                                                }
+                                                                            });
+                                                                            selectedCellsRef.current = uniq;
+                                                                            return uniq;
+                                                                        });
+                                                                    }
+                                                                }
+                                                                setLastSelectedClass(className);
+                                                            }}
+                                                        >
+                                                            {isEditing ? (
+                                                                <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'center' }}>
+                                                                    <input
+                                                                        type="number"
+                                                                        value={editValue}
+                                                                        onChange={(e) => setEditValue(e.target.value)}
+                                                                        onBlur={() => {
                                                                             let updated = { ...distribution47 };
                                                                             if (isMerged && isFirst) {
+                                                                                // change group total
                                                                                 const grp = getGroupForClass(updated, subject, className);
                                                                                 if (grp) {
                                                                                     grp.total = parseInt(editValue) || 0;
+                                                                                    // also mirror value in the first cell
                                                                                     updated[className][subject] = grp.total;
                                                                                 }
                                                                             } else {
@@ -5204,690 +5154,711 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                             setDistribution47(updated);
                                                                             saveDistribution(updated);
                                                                             setEditingCell(null);
-                                                                        }
-                                                                    }}
-                                                                    min="0"
-                                                                    max="8"
-                                                                    style={{
-                                                                        width: '45px',
-                                                                        padding: '0.3rem',
-                                                                        background: '#0f172a',
-                                                                        border: '2px solid #4f46e5',
-                                                                        borderRadius: '0.25rem',
-                                                                        color: '#f1f5f9',
-                                                                        textAlign: 'center',
-                                                                        fontWeight: '600'
-                                                                    }}
-                                                                    autoFocus
-                                                                />
-                                                            </div>
-                                                        ) : (
-                                                            <div
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    // if previous mousedown triggered ctrl-selection, do not start edit
-                                                                    if (ctrlSelecting.current) {
-                                                                        ctrlSelecting.current = false;
-                                                                        return;
-                                                                    }
-                                                                    if (e.ctrlKey || e.metaKey) {
-                                                                        // ignore ctrl-clicks to avoid toggling edit mode
-                                                                        return;
-                                                                    }
-                                                                    if (isMerged && !isFirst) return; // don't edit non-first merged cells
-                                                                    // normal click goes into edit mode; selection handled separately on mouseDown
-                                                                    setSelectedClasses([]);
-                                                                    selectedCellsRef.current = [];
-                                                                    setSelectedCells([]);
-                                                                    setEditingCell(cellKey);
-                                                                    setEditValue(rawValue);
-                                                                    setCurrentBulkSubject(subject);
-                                                                }}
-                                                                style={{
-                                                                    padding: '0.5rem 0.25rem',
-                                                                    background: bgColor,
-                                                                    color: textColor,
-                                                                    borderRadius: '0.25rem',
-                                                                    fontWeight: isMerged || rawValue > 0 ? '600' : '400',
-                                                                    transition: 'all 0.1s',
-                                                                    width: '100%',
-                                                                    textAlign: 'center',
-                                                                    position: 'relative'
-                                                                }}
-                                                                onMouseEnter={(e) => {
-                                                                    if (!isMerged && rawValue === 0) {
-                                                                        e.target.style.background = '#334155';
-                                                                    }
-                                                                }}
-                                                                onMouseLeave={(e) => {
-                                                                    if (!isMerged && rawValue === 0) {
-                                                                        e.target.style.background = 'transparent';
-                                                                    }
-                                                                }}
-                                                            >
-                                                                {displayValue}
-                                                                {/* demerge button on first cell */}
-                                                                {isMerged && isFirst && (
-                                                                    <button
-                                                                        onClick={(ev) => {
-                                                                            ev.stopPropagation();
-                                                                            if (confirm('Remove merged group?')) {
-                                                                                const grp = getGroupForClass(distribution47, subject, className);
+                                                                        }}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
                                                                                 let updated = { ...distribution47 };
-                                                                                updated = removeMergedGroup(updated, subject, grp.id);
-                                                                                // reset individual values to zero
-                                                                                grp.classes.forEach(cl => {
-                                                                                    updated[cl][subject] = 0;
-                                                                                });
+                                                                                if (isMerged && isFirst) {
+                                                                                    const grp = getGroupForClass(updated, subject, className);
+                                                                                    if (grp) {
+                                                                                        grp.total = parseInt(editValue) || 0;
+                                                                                        updated[className][subject] = grp.total;
+                                                                                    }
+                                                                                } else {
+                                                                                    updated = setValue(updated, subject, className, editValue);
+                                                                                }
                                                                                 setDistribution47(updated);
                                                                                 saveDistribution(updated);
-                                                                                setSelectedClasses([]);
+                                                                                setEditingCell(null);
                                                                             }
                                                                         }}
+                                                                        min="0"
+                                                                        max="8"
                                                                         style={{
-                                                                            position: 'absolute',
-                                                                            top: '2px',
-                                                                            right: '2px',
-                                                                            background: 'transparent',
-                                                                            color: 'white',
-                                                                            border: 'none',
-                                                                            fontSize: '0.7rem',
-                                                                            cursor: 'pointer',
-                                                                            padding: '0',
-                                                                            lineHeight: '1'
+                                                                            width: '45px',
+                                                                            padding: '0.3rem',
+                                                                            background: '#0f172a',
+                                                                            border: '2px solid #4f46e5',
+                                                                            borderRadius: '0.25rem',
+                                                                            color: '#f1f5f9',
+                                                                            textAlign: 'center',
+                                                                            fontWeight: '600'
                                                                         }}
-                                                                        title="Demerge group"
-                                                                    >
-                                                                        ×
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                );
-                                            })}
-
-                                            {/* Actions Cell */}
-                                            <td style={{
-                                                padding: '0.75rem',
-                                                textAlign: 'center',
-                                                borderLeft: '1px solid #334155'
-                                            }}>
-                                                <button
-                                                    onClick={() => {
-                                                        setCurrentBulkSubject(subject);
-                                                        addToast(`Selected subject: ${subject}. Use bulk edit toolbar to set periods.`, 'success');
-                                                    }}
-                                                    style={{
-                                                        padding: '0.4rem 0.8rem',
-                                                        background: currentBulkSubject === subject ? '#4f46e5' : '#334155',
-                                                        color: 'white',
-                                                        border: 'none',
-                                                        borderRadius: '0.375rem',
-                                                        fontSize: '0.75rem',
-                                                        cursor: 'pointer'
-                                                    }}
-                                                >
-                                                    ✎ Bulk
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-
-                            {getAllSubjects(distribution47).length === 0 && (
-                                <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
-                                    <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>No subjects yet</p>
-                                    <p style={{ fontSize: '0.95rem' }}>Add subjects from Tab 3 or click "ADD NEW SUBJECT" above</p>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Legend and Stats */}
-                        <div style={{
-                            marginTop: '1.5rem',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            color: '#94a3b8',
-                            fontSize: '0.85rem',
-                            borderTop: '1px solid #334155',
-                            paddingTop: '1rem'
-                        }}>
-                            <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-                                <span>📘 <span style={{ color: '#4f46e5' }}>Blue cells</span> = Subject taught</span>
-                                <span>📗 <span style={{ color: '#06b6d4' }}>Teal headers</span> = Grades 6-10</span>
-                                <span>📙 <span style={{ color: '#d97706' }}>Orange headers</span> = Grades 11-12</span>
-                                <span>✅ <span style={{ color: '#10b981' }}>Bulk edit</span> = Select classes → Set value → Apply</span>
-                                <span>🔗 <span style={{ color: '#9333ea' }}>Purple cells</span> = Merged group</span>
-                            </div>
-                            <div>
-                                Total subjects: {getAllSubjects(distribution47).length} | Total classes: 47
-                            </div>
-                        </div>
-                        {/* Merge summary list */}
-                        {Object.keys(getMergedGroups(distribution47)).length > 0 && (
-                            <div style={{ marginTop: '1rem', color: '#d1d5db', fontSize: '0.9rem' }}>
-                                <strong>Combined groups:</strong>
-                                <ul style={{ marginLeft: '1rem', marginTop: '0.25rem' }}>
-                                    {Object.entries(getMergedGroups(distribution47)).map(([subject, groups]) =>
-                                        groups.map(g => (
-                                            <li key={g.id}>
-                                                {subject}: {g.classes.join(' + ')} = {g.total} periods/week
-                                            </li>
-                                        ))
-                                    )}
-                                </ul>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Tab 3: DPT (Day, Period, Time) */}
-                {activeTab === 3 && (() => {
-                    const DPT_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                    const DPT_PERIODS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
-                    const DPT_DAY_SHORT = { Monday: 'MON', Tuesday: 'TUE', Wednesday: 'WED', Thursday: 'THU', Friday: 'FRI', Saturday: 'SAT' };
-
-                    if (!generatedTimetable) {
-                        return (
-                            <div style={{ animation: 'fadeIn 0.3s ease-out', textAlign: 'center', padding: '5rem 2rem' }}>
-                                <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🕒</div>
-                                <h2 style={{ color: '#f1f5f9', fontSize: '1.8rem', fontWeight: 800, marginBottom: '0.75rem' }}>DPT — Availability & Engagement</h2>
-                                <p style={{ color: '#64748b', fontSize: '1rem' }}>Generate a timetable first to see the DPT view.</p>
-                            </div>
-                        );
-                    }
-
-                    const teacherNames = Object.keys(generatedTimetable.teacherTimetables || {}).sort();
-                    const classNames = Object.keys(generatedTimetable.classTimetables || {}).sort((a, b) => {
-                        const numA = parseInt(a) || 0;
-                        const numB = parseInt(b) || 0;
-                        if (numA !== numB) return numA - numB;
-                        return a.localeCompare(b);
-                    });
-
-                    // For each teacher/day/period → get className or null
-                    const getTeacherEngagement = (teacher, day, period) => {
-                        const slot = generatedTimetable.teacherTimetables?.[teacher]?.[day]?.[period];
-                        if (!slot || !slot.className) return null;
-                        let tag = '';
-                        if (slot.isStream) tag = ' [S]';
-                        else if (slot.isTBlock) tag = ' [T]';
-                        else if (slot.isLBlock) tag = ' [L]';
-                        return slot.className + tag;
-                    };
-
-                    const getClassEngagement = (clsName, day, period) => {
-                        const slot = generatedTimetable.classTimetables?.[clsName]?.[day]?.[period];
-                        if (!slot || !slot.subject) return null;
-                        const label = slot.isStream ? (slot.streamName || slot.subject) : slot.subject;
-                        let tag = '';
-                        if (slot.isStream) tag = ' [S]';
-                        else if (slot.isTBlock) tag = ' [T]';
-                        else if (slot.isLBlock) tag = ' [L]';
-                        const labelAbbr = getAbbreviation(label);
-                        return labelAbbr + tag;
-                    };
-
-                    const getTooltip = (item, day, period, type) => {
-                        if (type === 'Teachers') {
-                            const slot = generatedTimetable.teacherTimetables?.[item]?.[day]?.[period];
-                            if (!slot) return `${item} FREE (${day} ${period})`;
-                            if (slot.isStream) {
-                                return `[STREAM] ${item} teaching ${slot.subject} for Group: ${slot.groupName || 'N/A'} in Class ${slot.className}`;
-                            }
-                            return `${item} teaching ${slot.subject} in Class ${slot.className}`;
-                        } else {
-                            const slot = generatedTimetable.classTimetables?.[item]?.[day]?.[period];
-                            if (!slot) return `${item} FREE (${day} ${period})`;
-                            if (slot.isStream) {
-                                let details = (slot.subjects || []).map(s => `${s.groupName || s.subject}: ${s.teacher}`).join('\n');
-                                return `${slot.streamName || slot.subject} Period\n${details}`;
-                            }
-                            return `${slot.subject} by ${slot.teacher}`;
-                        }
-                    };
-
-                    // Count busy periods with breakdown
-                    const getBusyDetails = (item, type) => {
-                        let normal = 0;
-                        let stream = 0;
-                        DPT_DAYS.forEach(day => {
-                            DPT_PERIODS.forEach(p => {
-                                if (type === 'Teachers') {
-                                    const slot = generatedTimetable.teacherTimetables?.[item]?.[day]?.[p];
-                                    if (slot && slot.className) {
-                                        if (slot.isStream) stream++;
-                                        else normal++;
-                                    }
-                                } else {
-                                    const slot = generatedTimetable.classTimetables?.[item]?.[day]?.[p];
-                                    if (slot && slot.subject) {
-                                        if (slot.isStream) stream++;
-                                        else normal++;
-                                    }
-                                }
-                            });
-                        });
-                        return { total: normal + stream, normal, stream };
-                    };
-
-                    const rowItems = dptViewType === 'Teachers' ? teacherNames : classNames;
-
-                    const cellBase = {
-                        width: '42px', minWidth: '42px', height: '38px',
-                        textAlign: 'center', verticalAlign: 'middle',
-                        fontSize: '0.62rem', fontWeight: 700,
-                        border: '1px solid #1e293b',
-                        borderRadius: '4px',
-                        padding: '2px',
-                        transition: 'background 0.15s',
-                        cursor: 'help'
-                    };
-
-                    return (
-                        <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                            {/* Header */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-                                <div>
-                                    <h2 style={{ color: '#f1f5f9', fontSize: '1.4rem', fontWeight: 900, margin: 0 }}>🕒 DPT — {dptViewType} View</h2>
-                                    <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
-                                        {dptViewType === 'Teachers' ? 'Showing class engagement per teacher.' : 'Showing subject engagement per class.'}
-                                    </p>
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                    {/* View Toggle */}
-                                    <div style={{ background: '#1e293b', padding: '0.3rem', borderRadius: '0.75rem', display: 'flex', gap: '0.3rem', border: '1px solid #334155' }}>
-                                        {['Teachers', 'Classes'].map(type => (
-                                            <button
-                                                key={type}
-                                                onClick={() => setDptViewType(type)}
-                                                style={{
-                                                    padding: '0.4rem 1rem',
-                                                    background: dptViewType === type ? 'linear-gradient(135deg, #4f46e5, #4338ca)' : 'transparent',
-                                                    border: 'none',
-                                                    borderRadius: '0.5rem',
-                                                    color: dptViewType === type ? 'white' : '#94a3b8',
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: 800,
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                            >{type}</button>
-                                        ))}
-                                    </div>
-
-                                    {/* Legend */}
-                                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: '#94a3b8' }}>
-                                            <span style={{ display: 'inline-block', width: 14, height: 14, background: 'rgba(79,70,229,0.25)', border: '1px solid #4f46e5', borderRadius: 3 }}></span>
-                                            Busy
-                                        </span>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: '#94a3b8' }}>
-                                            <span style={{ display: 'inline-block', width: 14, height: 14, background: '#0f172a', border: '1px solid #1e293b', borderRadius: 3 }}></span>
-                                            Free
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Table */}
-                            <div style={{ overflowX: 'auto', borderRadius: '0.75rem', border: '1px solid #334155', maxHeight: '70vh' }}>
-                                <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', tableLayout: 'auto' }}>
-                                    <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-                                        {/* Row 1: Item Name + Day group headers */}
-                                        <tr>
-                                            <th rowSpan={2} style={{
-                                                position: 'sticky', left: 0, zIndex: 3,
-                                                background: '#0f172a', color: '#818cf8',
-                                                fontSize: '0.72rem', fontWeight: 800,
-                                                textTransform: 'uppercase', letterSpacing: '0.05em',
-                                                padding: '0.6rem 1rem', textAlign: 'left',
-                                                borderRight: '2px solid #334155', borderBottom: '2px solid #334155',
-                                                minWidth: '160px', whiteSpace: 'nowrap'
-                                            }}>
-                                                {dptViewType === 'Teachers' ? 'Teacher' : 'Class'}
-                                            </th>
-                                            <th rowSpan={2} style={{
-                                                background: '#0f172a', color: '#64748b',
-                                                fontSize: '0.65rem', fontWeight: 700,
-                                                padding: '0.4rem 0.5rem', textAlign: 'center',
-                                                borderRight: '1px solid #334155', borderBottom: '2px solid #334155',
-                                                whiteSpace: 'nowrap'
-                                            }}>Total</th>
-                                            {DPT_DAYS.map(day => (
-                                                <th key={day} colSpan={11} style={{
-                                                    background: '#1e293b', color: '#a5b4fc',
-                                                    fontSize: '0.7rem', fontWeight: 800,
-                                                    padding: '0.4rem 0', textAlign: 'center',
-                                                    borderLeft: '2px solid #334155',
-                                                    borderBottom: '1px solid #334155',
-                                                    letterSpacing: '0.07em'
-                                                }}>
-                                                    {DPT_DAY_SHORT[day]}
-                                                </th>
-                                            ))}
-                                        </tr>
-                                        {/* Row 2: P1–P8 sub-headers per day */}
-                                        <tr>
-                                            {DPT_DAYS.map(day => (
-                                                DPT_PERIODS.map((p, pi) => (
-                                                    <th key={`${day}-${p}`} style={{
-                                                        background: '#0f172a', color: '#475569',
-                                                        fontSize: '0.6rem', fontWeight: 700,
-                                                        padding: '0.3rem 0', textAlign: 'center',
-                                                        borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
-                                                        borderBottom: '2px solid #334155',
-                                                        width: '42px', minWidth: '42px'
-                                                    }}>
-                                                        {p}
-                                                    </th>
-                                                ))
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {rowItems.map((item, ti) => {
-                                            const details = getBusyDetails(item, dptViewType);
-                                            return (
-                                                <tr key={item} style={{ borderBottom: '1px solid #1e293b' }}>
-                                                    {/* Item name — sticky */}
-                                                    <td style={{
-                                                        position: 'sticky', left: 0, zIndex: 2,
-                                                        background: ti % 2 === 0 ? '#111827' : '#0f172a',
-                                                        color: '#f1f5f9', fontSize: '0.72rem', fontWeight: 700,
-                                                        padding: '0.5rem 1rem', borderRight: '2px solid #334155',
-                                                        whiteSpace: 'nowrap'
-                                                    }}>
-                                                        {item}
-                                                    </td>
-                                                    {/* Busy count */}
-                                                    <td style={{
-                                                        background: ti % 2 === 0 ? '#111827' : '#0f172a',
-                                                        color: '#94a3b8', fontSize: '0.75rem', fontWeight: 900,
-                                                        textAlign: 'center', borderRight: '1px solid #334155'
-                                                    }}>
-                                                        {details.total > 0 ? (
-                                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                                                                <span style={{ color: '#fff' }}>{details.total}</span>
-                                                                {details.stream > 0 && (
-                                                                    <span style={{ fontSize: '0.6rem', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', padding: '1px 4px', borderRadius: '4px' }}>
-                                                                        incl. {details.stream} [S]
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        ) : '—'}
-                                                    </td>
-                                                    {/* Period cells */}
-                                                    {DPT_DAYS.map((day, di) => (
-                                                        DPT_PERIODS.map((p, pi) => {
-                                                            let mapping;
-                                                            if (dptViewType === 'Teachers') {
-                                                                mapping = mappingRows.find(m => m.teacher === item);
-                                                            } else {
-                                                                // For classes, check grade level
-                                                                const grade = item.match(/\d+/)?.[0];
-                                                                mapping = { level: (grade >= 11) ? 'Senior' : 'Middle' };
-                                                            }
-
-                                                            const isMiddle = mapping?.level === 'Middle';
-                                                            const isBreak = p === 'S3' || p === 'S7';
-                                                            const isLunch = isMiddle ? p === 'S9' : p === 'S10';
-
-                                                            const eng = dptViewType === 'Teachers' ? getTeacherEngagement(item, day, p) : getClassEngagement(item, day, p);
-                                                            const content = isBreak ? 'BREAK' : (isLunch ? 'LUNCH' : (eng || ''));
-                                                            const isReserved = isBreak || isLunch;
-
-                                                            return (
-                                                                <td key={`${day}-${p}`} title={getTooltip(item, day, p, dptViewType)}
+                                                                        autoFocus
+                                                                    />
+                                                                </div>
+                                                            ) : (
+                                                                <div
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        // if previous mousedown triggered ctrl-selection, do not start edit
+                                                                        if (ctrlSelecting.current) {
+                                                                            ctrlSelecting.current = false;
+                                                                            return;
+                                                                        }
+                                                                        if (e.ctrlKey || e.metaKey) {
+                                                                            // ignore ctrl-clicks to avoid toggling edit mode
+                                                                            return;
+                                                                        }
+                                                                        if (isMerged && !isFirst) return; // don't edit non-first merged cells
+                                                                        // normal click goes into edit mode; selection handled separately on mouseDown
+                                                                        setSelectedClasses([]);
+                                                                        selectedCellsRef.current = [];
+                                                                        setSelectedCells([]);
+                                                                        setEditingCell(cellKey);
+                                                                        setEditValue(rawValue);
+                                                                        setCurrentBulkSubject(subject);
+                                                                    }}
                                                                     style={{
-                                                                        ...cellBase,
-                                                                        borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
-                                                                        background: eng ? 'rgba(79,70,229,0.22)' : (isBreak ? 'rgba(251,191,36,0.03)' : (isLunch ? 'rgba(56,189,248,0.03)' : '#0f172a')),
-                                                                        color: eng ? '#a5b4fc' : (isBreak ? 'rgba(251,191,36,0.2)' : (isLunch ? 'rgba(56,189,248,0.2)' : '#1e293b')),
-                                                                        fontSize: isReserved ? '0.5rem' : '0.62rem',
-                                                                        opacity: isReserved ? 0.6 : 1,
+                                                                        padding: '0.5rem 0.25rem',
+                                                                        background: bgColor,
+                                                                        color: textColor,
+                                                                        borderRadius: '0.25rem',
+                                                                        fontWeight: isMerged || rawValue > 0 ? '600' : '400',
+                                                                        transition: 'all 0.1s',
+                                                                        width: '100%',
+                                                                        textAlign: 'center',
                                                                         position: 'relative'
                                                                     }}
+                                                                    onMouseEnter={(e) => {
+                                                                        if (!isMerged && rawValue === 0) {
+                                                                            e.target.style.background = '#334155';
+                                                                        }
+                                                                    }}
+                                                                    onMouseLeave={(e) => {
+                                                                        if (!isMerged && rawValue === 0) {
+                                                                            e.target.style.background = 'transparent';
+                                                                        }
+                                                                    }}
                                                                 >
-                                                                    {content}
-                                                                </td>
-                                                            );
-                                                        })
-                                                    ))}
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            {/* Summary footer */}
-                            <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#475569', textAlign: 'right' }}>
-                                {rowItems.length} {dptViewType} · {DPT_DAYS.length} days · {DPT_PERIODS.length} periods/day
-                            </div>
-                        </div>
-                    );
-                })()}
-
-                {/* Tab 5: TeacherTT (Teacher Timetables) */}
-                {activeTab === 5 && (() => {
-                    const teacherTTDict = generatedTimetable?.teacherTimetables || {};
-                    // Filter teachers based on their "level" field in the teachers array (Tab 0)
-                    const categoryTeachers = (teachers || [])
-                        .filter(t => {
-                            if (!t?.name) return false;
-                            const levelMatch = t.level || '';
-                            if (teacherTTSubTab === 'Middle') {
-                                return levelMatch === 'Middle';
-                            } else {
-                                // Main level teachers go to Senior School sub-tab
-                                return levelMatch === 'Main' || levelMatch === 'Senior';
-                            }
-                        })
-                        .map(t => t.name)
-                        .sort();
-
-
-
-                    const PAGE_SIZE = 4;
-                    const totalPages = Math.max(1, Math.ceil(categoryTeachers.length / PAGE_SIZE));
-                    const currentPageTeachers = categoryTeachers.slice((teacherTTPage - 1) * PAGE_SIZE, teacherTTPage * PAGE_SIZE);
-
-                    // Fill remaining slots to ALWAYS show 4 templates
-                    const displayList = [...currentPageTeachers];
-                    while (displayList.length < PAGE_SIZE) {
-                        displayList.push(null);
-                    }
-
-                    const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                    const PERIODS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
-
-                    // Inner component to render a single teacher's TT
-                    const TeacherCard = ({ teacher }) => {
-                        const tTT = (teacher && teacherTTDict?.[teacher]) ? teacherTTDict[teacher] : null;
-                        const isMiddle = teacherTTSubTab === 'Middle';
-
-                        return (
-                            <div style={{
-                                background: 'white',
-                                border: '1px solid black',
-                                padding: '12px',
-                                borderRadius: '0',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                width: '100%',
-                                height: '100%',
-                                overflow: 'hidden'
-                            }}>
-                                <div style={{ textAlign: 'center', marginBottom: '8px', borderBottom: '2px solid black', paddingBottom: '4px', minHeight: '30px' }}>
-                                    <span style={{ fontSize: '1rem', fontWeight: 900, color: 'black', letterSpacing: '0.05em' }}>
-                                        {teacher ? teacher.toUpperCase() : 'EMPTY TEMPLATE'}
-                                    </span>
-                                </div>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', border: '1px solid black' }}>
-                                    <thead>
-                                        <tr style={{ background: 'white' }}>
-                                            <th style={{ border: '1px solid black', width: '35px', fontSize: '0.65rem', padding: '4px', color: 'black' }}>DAY</th>
-                                            {PERIODS.map(p => (
-                                                <th key={p} style={{ border: '1px solid black', fontSize: '0.6rem', padding: '2px', color: 'black' }}>{p}</th>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {DAYS.map((day, di) => (
-                                            <tr key={day}>
-                                                <td style={{ border: '1px solid black', fontSize: '0.6rem', fontWeight: 900, textAlign: 'center', background: 'white', padding: '4px', color: 'black' }}>
-                                                    {day.substring(0, 3).toUpperCase()}
-                                                </td>
-                                                {PERIODS.map((p, pi) => {
-                                                    const isBreak = p === 'S3' || p === 'S7';
-                                                    const isLunch = isMiddle ? p === 'S9' : p === 'S10';
-
-                                                    if (isBreak) {
-                                                        if (di !== 0) return null; // Only render for first row with rowSpan
-                                                        return (
-                                                            <td key={p} rowSpan={6} style={{
-                                                                border: '1px solid black',
-                                                                background: 'white',
-                                                                color: 'black',
-                                                                writingMode: 'vertical-lr',
-                                                                textAlign: 'center',
-                                                                fontSize: '0.55rem',
-                                                                fontWeight: 900,
-                                                                letterSpacing: '0.2em'
-                                                            }}>
-                                                                BREAK
-                                                            </td>
-                                                        );
-                                                    }
-
-                                                    if (isLunch) {
-                                                        if (di !== 0) return null;
-                                                        return (
-                                                            <td key={p} rowSpan={6} style={{
-                                                                border: '1px solid black',
-                                                                background: 'white',
-                                                                color: 'black',
-                                                                writingMode: 'vertical-lr',
-                                                                textAlign: 'center',
-                                                                fontSize: '0.55rem',
-                                                                fontWeight: 900,
-                                                                letterSpacing: '0.2em'
-                                                            }}>
-                                                                LUNCH
-                                                            </td>
-                                                        );
-                                                    }
-
-                                                    const slot = tTT?.[day]?.[p];
-                                                    let displayClass = (slot && typeof slot === 'object') ? slot.className : '-';
-                                                    let displaySub = (slot && typeof slot === 'object') ? (slot.subject || '') : '';
-
-                                                    if (slot?.isStream) {
-                                                        displayClass = slot.groupName ? `${slot.className}-${slot.groupName}` : slot.className;
-                                                        // For streams, the subject is specific to the teacher
-                                                        displaySub = slot.subject || '';
-                                                    }
-
-                                                    return (
-                                                        <td key={p} style={{
-                                                            border: '1px solid black',
-                                                            textAlign: 'center',
-                                                            height: '42px',
-                                                            background: 'white',
-                                                            padding: '2px',
-                                                            color: 'black'
-                                                        }}>
-                                                            <div style={{ fontSize: '0.75rem', fontWeight: 900, color: 'black' }}>
-                                                                {displayClass}{slot?.isTBlock ? ' [T]' : (slot?.isLBlock ? ' [L]' : '')}
-                                                            </div>
-                                                            <div style={{ fontSize: '0.5rem', color: 'black', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displaySub}</div>
+                                                                    {displayValue}
+                                                                    {/* demerge button on first cell */}
+                                                                    {isMerged && isFirst && (
+                                                                        <button
+                                                                            onClick={(ev) => {
+                                                                                ev.stopPropagation();
+                                                                                if (confirm('Remove merged group?')) {
+                                                                                    const grp = getGroupForClass(distribution47, subject, className);
+                                                                                    let updated = { ...distribution47 };
+                                                                                    updated = removeMergedGroup(updated, subject, grp.id);
+                                                                                    // reset individual values to zero
+                                                                                    grp.classes.forEach(cl => {
+                                                                                        updated[cl][subject] = 0;
+                                                                                    });
+                                                                                    setDistribution47(updated);
+                                                                                    saveDistribution(updated);
+                                                                                    setSelectedClasses([]);
+                                                                                }
+                                                                            }}
+                                                                            style={{
+                                                                                position: 'absolute',
+                                                                                top: '2px',
+                                                                                right: '2px',
+                                                                                background: 'transparent',
+                                                                                color: 'white',
+                                                                                border: 'none',
+                                                                                fontSize: '0.7rem',
+                                                                                cursor: 'pointer',
+                                                                                padding: '0',
+                                                                                lineHeight: '1'
+                                                                            }}
+                                                                            title="Demerge group"
+                                                                        >
+                                                                            ×
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                         </td>
                                                     );
                                                 })}
+
+                                                {/* Actions Cell */}
+                                                <td style={{
+                                                    padding: '0.75rem',
+                                                    textAlign: 'center',
+                                                    borderLeft: '1px solid #334155'
+                                                }}>
+                                                    <button
+                                                        onClick={() => {
+                                                            setCurrentBulkSubject(subject);
+                                                            addToast(`Selected subject: ${subject}. Use bulk edit toolbar to set periods.`, 'success');
+                                                        }}
+                                                        style={{
+                                                            padding: '0.4rem 0.8rem',
+                                                            background: currentBulkSubject === subject ? '#4f46e5' : '#334155',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            borderRadius: '0.375rem',
+                                                            fontSize: '0.75rem',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        ✎ Bulk
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
-                                <div style={{ marginTop: 'auto', textAlign: 'right', padding: '4px 0 0 0' }}>
-                                    <span style={{ fontSize: '8px', color: 'black', fontStyle: 'italic', opacity: 0.6 }}>jkrdomain</span>
+
+                                {getAllSubjects(distribution47).length === 0 && (
+                                    <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+                                        <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>No subjects yet</p>
+                                        <p style={{ fontSize: '0.95rem' }}>Add subjects from Tab 3 or click "ADD NEW SUBJECT" above</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Legend and Stats */}
+                            <div style={{
+                                marginTop: '1.5rem',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                color: '#94a3b8',
+                                fontSize: '0.85rem',
+                                borderTop: '1px solid #334155',
+                                paddingTop: '1rem'
+                            }}>
+                                <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                                    <span>📘 <span style={{ color: '#4f46e5' }}>Blue cells</span> = Subject taught</span>
+                                    <span>📗 <span style={{ color: '#06b6d4' }}>Teal headers</span> = Grades 6-10</span>
+                                    <span>📙 <span style={{ color: '#d97706' }}>Orange headers</span> = Grades 11-12</span>
+                                    <span>✅ <span style={{ color: '#10b981' }}>Bulk edit</span> = Select classes → Set value → Apply</span>
+                                    <span>🔗 <span style={{ color: '#9333ea' }}>Purple cells</span> = Merged group</span>
+                                </div>
+                                <div>
+                                    Total subjects: {getAllSubjects(distribution47).length} | Total classes: 47
+                                </div>
+                            </div>
+                            {/* Merge summary list */}
+                            {Object.keys(getMergedGroups(distribution47)).length > 0 && (
+                                <div style={{ marginTop: '1rem', color: '#d1d5db', fontSize: '0.9rem' }}>
+                                    <strong>Combined groups:</strong>
+                                    <ul style={{ marginLeft: '1rem', marginTop: '0.25rem' }}>
+                                        {Object.entries(getMergedGroups(distribution47)).map(([subject, groups]) =>
+                                            groups.map(g => (
+                                                <li key={g.id}>
+                                                    {subject}: {g.classes.join(' + ')} = {g.total} periods/week
+                                                </li>
+                                            ))
+                                        )}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+                    )
+                }
+
+                {/* Tab 3: DPT (Day, Period, Time) */}
+                {
+                    activeTab === 3 && (() => {
+                        const DPT_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                        const DPT_PERIODS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+                        const DPT_DAY_SHORT = { Monday: 'MON', Tuesday: 'TUE', Wednesday: 'WED', Thursday: 'THU', Friday: 'FRI', Saturday: 'SAT' };
+
+                        if (!generatedTimetable) {
+                            return (
+                                <div style={{ animation: 'fadeIn 0.3s ease-out', textAlign: 'center', padding: '5rem 2rem' }}>
+                                    <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🕒</div>
+                                    <h2 style={{ color: '#f1f5f9', fontSize: '1.8rem', fontWeight: 800, marginBottom: '0.75rem' }}>DPT — Availability & Engagement</h2>
+                                    <p style={{ color: '#64748b', fontSize: '1rem' }}>Generate a timetable first to see the DPT view.</p>
+                                </div>
+                            );
+                        }
+
+                        const teacherNames = Object.keys(generatedTimetable.teacherTimetables || {}).sort();
+                        const classNames = Object.keys(generatedTimetable.classTimetables || {}).sort((a, b) => {
+                            const numA = parseInt(a) || 0;
+                            const numB = parseInt(b) || 0;
+                            if (numA !== numB) return numA - numB;
+                            return a.localeCompare(b);
+                        });
+
+                        // For each teacher/day/period → get className or null
+                        const getTeacherEngagement = (teacher, day, period) => {
+                            const slot = generatedTimetable.teacherTimetables?.[teacher]?.[day]?.[period];
+                            if (!slot || !slot.className) return null;
+                            let tag = '';
+                            if (slot.isStream) tag = ' [S]';
+                            else if (slot.isTBlock) tag = ' [T]';
+                            else if (slot.isLBlock) tag = ' [L]';
+                            return slot.className + tag;
+                        };
+
+                        const getClassEngagement = (clsName, day, period) => {
+                            const slot = generatedTimetable.classTimetables?.[clsName]?.[day]?.[period];
+                            if (!slot || !slot.subject) return null;
+                            const label = slot.isStream ? (slot.streamName || slot.subject) : slot.subject;
+                            let tag = '';
+                            if (slot.isStream) tag = ' [S]';
+                            else if (slot.isTBlock) tag = ' [T]';
+                            else if (slot.isLBlock) tag = ' [L]';
+                            const labelAbbr = getAbbreviation(label);
+                            return labelAbbr + tag;
+                        };
+
+                        const getTooltip = (item, day, period, type) => {
+                            if (type === 'Teachers') {
+                                const slot = generatedTimetable.teacherTimetables?.[item]?.[day]?.[period];
+                                if (!slot) return `${item} FREE (${day} ${period})`;
+                                if (slot.isStream) {
+                                    return `[STREAM] ${item} teaching ${slot.subject} for Group: ${slot.groupName || 'N/A'} in Class ${slot.className}`;
+                                }
+                                return `${item} teaching ${slot.subject} in Class ${slot.className}`;
+                            } else {
+                                const slot = generatedTimetable.classTimetables?.[item]?.[day]?.[period];
+                                if (!slot) return `${item} FREE (${day} ${period})`;
+                                if (slot.isStream) {
+                                    let details = (slot.subjects || []).map(s => `${s.groupName || s.subject}: ${s.teacher}`).join('\n');
+                                    return `${slot.streamName || slot.subject} Period\n${details}`;
+                                }
+                                return `${slot.subject} by ${slot.teacher}`;
+                            }
+                        };
+
+                        // Count busy periods with breakdown
+                        const getBusyDetails = (item, type) => {
+                            let normal = 0;
+                            let stream = 0;
+                            DPT_DAYS.forEach(day => {
+                                DPT_PERIODS.forEach(p => {
+                                    if (type === 'Teachers') {
+                                        const slot = generatedTimetable.teacherTimetables?.[item]?.[day]?.[p];
+                                        if (slot && slot.className) {
+                                            if (slot.isStream) stream++;
+                                            else normal++;
+                                        }
+                                    } else {
+                                        const slot = generatedTimetable.classTimetables?.[item]?.[day]?.[p];
+                                        if (slot && slot.subject) {
+                                            if (slot.isStream) stream++;
+                                            else normal++;
+                                        }
+                                    }
+                                });
+                            });
+                            return { total: normal + stream, normal, stream };
+                        };
+
+                        const rowItems = dptViewType === 'Teachers' ? teacherNames : classNames;
+
+                        const cellBase = {
+                            width: '42px', minWidth: '42px', height: '38px',
+                            textAlign: 'center', verticalAlign: 'middle',
+                            fontSize: '0.62rem', fontWeight: 700,
+                            border: '1px solid #1e293b',
+                            borderRadius: '4px',
+                            padding: '2px',
+                            transition: 'background 0.15s',
+                            cursor: 'help'
+                        };
+
+                        return (
+                            <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                                {/* Header */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                                    <div>
+                                        <h2 style={{ color: '#f1f5f9', fontSize: '1.4rem', fontWeight: 900, margin: 0 }}>🕒 DPT — {dptViewType} View</h2>
+                                        <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
+                                            {dptViewType === 'Teachers' ? 'Showing class engagement per teacher.' : 'Showing subject engagement per class.'}
+                                        </p>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                        {/* View Toggle */}
+                                        <div style={{ background: '#1e293b', padding: '0.3rem', borderRadius: '0.75rem', display: 'flex', gap: '0.3rem', border: '1px solid #334155' }}>
+                                            {['Teachers', 'Classes'].map(type => (
+                                                <button
+                                                    key={type}
+                                                    onClick={() => setDptViewType(type)}
+                                                    style={{
+                                                        padding: '0.4rem 1rem',
+                                                        background: dptViewType === type ? 'linear-gradient(135deg, #4f46e5, #4338ca)' : 'transparent',
+                                                        border: 'none',
+                                                        borderRadius: '0.5rem',
+                                                        color: dptViewType === type ? 'white' : '#94a3b8',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 800,
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                >{type}</button>
+                                            ))}
+                                        </div>
+
+                                        {/* Legend */}
+                                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: '#94a3b8' }}>
+                                                <span style={{ display: 'inline-block', width: 14, height: 14, background: 'rgba(79,70,229,0.25)', border: '1px solid #4f46e5', borderRadius: 3 }}></span>
+                                                Busy
+                                            </span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: '#94a3b8' }}>
+                                                <span style={{ display: 'inline-block', width: 14, height: 14, background: '#0f172a', border: '1px solid #1e293b', borderRadius: 3 }}></span>
+                                                Free
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Table */}
+                                <div style={{ overflowX: 'auto', borderRadius: '0.75rem', border: '1px solid #334155', maxHeight: '70vh' }}>
+                                    <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', tableLayout: 'auto' }}>
+                                        <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                                            {/* Row 1: Item Name + Day group headers */}
+                                            <tr>
+                                                <th rowSpan={2} style={{
+                                                    position: 'sticky', left: 0, zIndex: 3,
+                                                    background: '#0f172a', color: '#818cf8',
+                                                    fontSize: '0.72rem', fontWeight: 800,
+                                                    textTransform: 'uppercase', letterSpacing: '0.05em',
+                                                    padding: '0.6rem 1rem', textAlign: 'left',
+                                                    borderRight: '2px solid #334155', borderBottom: '2px solid #334155',
+                                                    minWidth: '160px', whiteSpace: 'nowrap'
+                                                }}>
+                                                    {dptViewType === 'Teachers' ? 'Teacher' : 'Class'}
+                                                </th>
+                                                <th rowSpan={2} style={{
+                                                    background: '#0f172a', color: '#64748b',
+                                                    fontSize: '0.65rem', fontWeight: 700,
+                                                    padding: '0.4rem 0.5rem', textAlign: 'center',
+                                                    borderRight: '1px solid #334155', borderBottom: '2px solid #334155',
+                                                    whiteSpace: 'nowrap'
+                                                }}>Total</th>
+                                                {DPT_DAYS.map(day => (
+                                                    <th key={day} colSpan={11} style={{
+                                                        background: '#1e293b', color: '#a5b4fc',
+                                                        fontSize: '0.7rem', fontWeight: 800,
+                                                        padding: '0.4rem 0', textAlign: 'center',
+                                                        borderLeft: '2px solid #334155',
+                                                        borderBottom: '1px solid #334155',
+                                                        letterSpacing: '0.07em'
+                                                    }}>
+                                                        {DPT_DAY_SHORT[day]}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                            {/* Row 2: P1–P8 sub-headers per day */}
+                                            <tr>
+                                                {DPT_DAYS.map(day => (
+                                                    DPT_PERIODS.map((p, pi) => (
+                                                        <th key={`${day}-${p}`} style={{
+                                                            background: '#0f172a', color: '#475569',
+                                                            fontSize: '0.6rem', fontWeight: 700,
+                                                            padding: '0.3rem 0', textAlign: 'center',
+                                                            borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
+                                                            borderBottom: '2px solid #334155',
+                                                            width: '42px', minWidth: '42px'
+                                                        }}>
+                                                            {p}
+                                                        </th>
+                                                    ))
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {rowItems.map((item, ti) => {
+                                                const details = getBusyDetails(item, dptViewType);
+                                                return (
+                                                    <tr key={item} style={{ borderBottom: '1px solid #1e293b' }}>
+                                                        {/* Item name — sticky */}
+                                                        <td style={{
+                                                            position: 'sticky', left: 0, zIndex: 2,
+                                                            background: ti % 2 === 0 ? '#111827' : '#0f172a',
+                                                            color: '#f1f5f9', fontSize: '0.72rem', fontWeight: 700,
+                                                            padding: '0.5rem 1rem', borderRight: '2px solid #334155',
+                                                            whiteSpace: 'nowrap'
+                                                        }}>
+                                                            {item}
+                                                        </td>
+                                                        {/* Busy count */}
+                                                        <td style={{
+                                                            background: ti % 2 === 0 ? '#111827' : '#0f172a',
+                                                            color: '#94a3b8', fontSize: '0.75rem', fontWeight: 900,
+                                                            textAlign: 'center', borderRight: '1px solid #334155'
+                                                        }}>
+                                                            {details.total > 0 ? (
+                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                                                    <span style={{ color: '#fff' }}>{details.total}</span>
+                                                                    {details.stream > 0 && (
+                                                                        <span style={{ fontSize: '0.6rem', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', padding: '1px 4px', borderRadius: '4px' }}>
+                                                                            incl. {details.stream} [S]
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            ) : '—'}
+                                                        </td>
+                                                        {/* Period cells */}
+                                                        {DPT_DAYS.map((day, di) => (
+                                                            DPT_PERIODS.map((p, pi) => {
+                                                                let mapping;
+                                                                if (dptViewType === 'Teachers') {
+                                                                    mapping = mappingRows.find(m => m.teacher === item);
+                                                                } else {
+                                                                    // For classes, check grade level
+                                                                    const grade = item.match(/\d+/)?.[0];
+                                                                    mapping = { level: (grade >= 11) ? 'Senior' : 'Middle' };
+                                                                }
+
+                                                                const isMiddle = mapping?.level === 'Middle';
+                                                                const isBreak = p === 'S3' || p === 'S7';
+                                                                const isLunch = isMiddle ? p === 'S9' : p === 'S10';
+
+                                                                const eng = dptViewType === 'Teachers' ? getTeacherEngagement(item, day, p) : getClassEngagement(item, day, p);
+                                                                const content = isBreak ? 'BREAK' : (isLunch ? 'LUNCH' : (eng || ''));
+                                                                const isReserved = isBreak || isLunch;
+
+                                                                return (
+                                                                    <td key={`${day}-${p}`} title={getTooltip(item, day, p, dptViewType)}
+                                                                        style={{
+                                                                            ...cellBase,
+                                                                            borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
+                                                                            background: eng ? 'rgba(79,70,229,0.22)' : (isBreak ? 'rgba(251,191,36,0.03)' : (isLunch ? 'rgba(56,189,248,0.03)' : '#0f172a')),
+                                                                            color: eng ? '#a5b4fc' : (isBreak ? 'rgba(251,191,36,0.2)' : (isLunch ? 'rgba(56,189,248,0.2)' : '#1e293b')),
+                                                                            fontSize: isReserved ? '0.5rem' : '0.62rem',
+                                                                            opacity: isReserved ? 0.6 : 1,
+                                                                            position: 'relative'
+                                                                        }}
+                                                                    >
+                                                                        {content}
+                                                                    </td>
+                                                                );
+                                                            })
+                                                        ))}
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Summary footer */}
+                                <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#475569', textAlign: 'right' }}>
+                                    {rowItems.length} {dptViewType} · {DPT_DAYS.length} days · {DPT_PERIODS.length} periods/day
                                 </div>
                             </div>
                         );
-                    };
+                    })()
+                }
 
-                    return (
-                        <div style={{ animation: 'fadeIn 0.3s ease-out', maxWidth: '1440px', margin: '0 auto' }}>
-                            {/* Sub-tab Headers */}
-                            <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.5rem', background: '#1e293b', padding: '0.8rem', borderRadius: '1rem', border: '1px solid #334155' }}>
-                                {['Middle', 'Senior'].map(m => (
-                                    <button
-                                        key={m}
-                                        onClick={() => { setTeacherTTSubTab(m); setTeacherTTPage(1); }}
-                                        style={{
-                                            padding: '0.7rem 1.4rem',
-                                            background: teacherTTSubTab === m ? '#4f46e5' : '#334155',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: '0.7rem',
-                                            cursor: 'pointer',
-                                            fontWeight: '800',
-                                            fontSize: '0.9rem',
-                                            transition: 'all 0.2s',
-                                            boxShadow: teacherTTSubTab === m ? '0 4px 12px rgba(79, 70, 229, 0.4)' : 'none'
-                                        }}
-                                    >
-                                        {m} School TT
-                                    </button>
-                                ))}
-                            </div>
+                {/* Tab 5: TeacherTT (Teacher Timetables) */}
+                {
+                    activeTab === 5 && (() => {
+                        const teacherTTDict = generatedTimetable?.teacherTimetables || {};
+                        // Filter teachers based on their "level" field in the teachers array (Tab 0)
+                        const categoryTeachers = (teachers || [])
+                            .filter(t => {
+                                if (!t?.name) return false;
+                                const levelMatch = t.level || '';
+                                if (teacherTTSubTab === 'Middle') {
+                                    return levelMatch === 'Middle';
+                                } else {
+                                    // Main level teachers go to Senior School sub-tab
+                                    return levelMatch === 'Main' || levelMatch === 'Senior';
+                                }
+                            })
+                            .map(t => t.name)
+                            .sort();
 
-                            {/* Pagination Controls */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f172a', padding: '1rem 1.5rem', borderRadius: '1rem', marginBottom: '1.5rem', border: '1px solid #334155' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                    <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600 }}>
-                                        PAGE <b style={{ color: 'white', fontSize: '1rem' }}>{teacherTTPage}</b> OF <b>{totalPages || 1}</b>
-                                    </span>
-                                    <span style={{ width: '1px', height: '1rem', background: '#334155' }} />
-                                    <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found</span>
+
+
+                        const PAGE_SIZE = 4;
+                        const totalPages = Math.max(1, Math.ceil(categoryTeachers.length / PAGE_SIZE));
+                        const currentPageTeachers = categoryTeachers.slice((teacherTTPage - 1) * PAGE_SIZE, teacherTTPage * PAGE_SIZE);
+
+                        // Fill remaining slots to ALWAYS show 4 templates
+                        const displayList = [...currentPageTeachers];
+                        while (displayList.length < PAGE_SIZE) {
+                            displayList.push(null);
+                        }
+
+                        const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                        const PERIODS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+
+                        // Inner component to render a single teacher's TT
+                        const TeacherCard = ({ teacher }) => {
+                            const tTT = (teacher && teacherTTDict?.[teacher]) ? teacherTTDict[teacher] : null;
+                            const isMiddle = teacherTTSubTab === 'Middle';
+
+                            return (
+                                <div style={{
+                                    background: 'white',
+                                    border: '1px solid black',
+                                    padding: '12px',
+                                    borderRadius: '0',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    width: '100%',
+                                    height: '100%',
+                                    overflow: 'hidden'
+                                }}>
+                                    <div style={{ textAlign: 'center', marginBottom: '8px', borderBottom: '2px solid black', paddingBottom: '4px', minHeight: '30px' }}>
+                                        <span style={{ fontSize: '1rem', fontWeight: 900, color: 'black', letterSpacing: '0.05em' }}>
+                                            {teacher ? teacher.toUpperCase() : 'EMPTY TEMPLATE'}
+                                        </span>
+                                    </div>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', border: '1px solid black' }}>
+                                        <thead>
+                                            <tr style={{ background: 'white' }}>
+                                                <th style={{ border: '1px solid black', width: '35px', fontSize: '0.65rem', padding: '4px', color: 'black' }}>DAY</th>
+                                                {PERIODS.map(p => (
+                                                    <th key={p} style={{ border: '1px solid black', fontSize: '0.6rem', padding: '2px', color: 'black' }}>{p}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {DAYS.map((day, di) => (
+                                                <tr key={day}>
+                                                    <td style={{ border: '1px solid black', fontSize: '0.6rem', fontWeight: 900, textAlign: 'center', background: 'white', padding: '4px', color: 'black' }}>
+                                                        {day.substring(0, 3).toUpperCase()}
+                                                    </td>
+                                                    {PERIODS.map((p, pi) => {
+                                                        const isBreak = p === 'S3' || p === 'S7';
+                                                        const isLunch = isMiddle ? p === 'S9' : p === 'S10';
+
+                                                        if (isBreak) {
+                                                            if (di !== 0) return null; // Only render for first row with rowSpan
+                                                            return (
+                                                                <td key={p} rowSpan={6} style={{
+                                                                    border: '1px solid black',
+                                                                    background: 'white',
+                                                                    color: 'black',
+                                                                    writingMode: 'vertical-lr',
+                                                                    textAlign: 'center',
+                                                                    fontSize: '0.55rem',
+                                                                    fontWeight: 900,
+                                                                    letterSpacing: '0.2em'
+                                                                }}>
+                                                                    BREAK
+                                                                </td>
+                                                            );
+                                                        }
+
+                                                        if (isLunch) {
+                                                            if (di !== 0) return null;
+                                                            return (
+                                                                <td key={p} rowSpan={6} style={{
+                                                                    border: '1px solid black',
+                                                                    background: 'white',
+                                                                    color: 'black',
+                                                                    writingMode: 'vertical-lr',
+                                                                    textAlign: 'center',
+                                                                    fontSize: '0.55rem',
+                                                                    fontWeight: 900,
+                                                                    letterSpacing: '0.2em'
+                                                                }}>
+                                                                    LUNCH
+                                                                </td>
+                                                            );
+                                                        }
+
+                                                        const slot = tTT?.[day]?.[p];
+                                                        let displayClass = (slot && typeof slot === 'object') ? slot.className : '-';
+                                                        let displaySub = (slot && typeof slot === 'object') ? (slot.subject || '') : '';
+
+                                                        if (slot?.isStream) {
+                                                            displayClass = slot.groupName ? `${slot.className}-${slot.groupName}` : slot.className;
+                                                            // For streams, the subject is specific to the teacher
+                                                            displaySub = slot.subject || '';
+                                                        }
+
+                                                        return (
+                                                            <td key={p} style={{
+                                                                border: '1px solid black',
+                                                                textAlign: 'center',
+                                                                height: '42px',
+                                                                background: 'white',
+                                                                padding: '2px',
+                                                                color: 'black'
+                                                            }}>
+                                                                <div style={{ fontSize: '0.75rem', fontWeight: 900, color: 'black' }}>
+                                                                    {displayClass}{slot?.isTBlock ? ' [T]' : (slot?.isLBlock ? ' [L]' : '')}
+                                                                </div>
+                                                                <div style={{ fontSize: '0.5rem', color: 'black', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displaySub}</div>
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    <div style={{ marginTop: 'auto', textAlign: 'right', padding: '4px 0 0 0' }}>
+                                        <span style={{ fontSize: '8px', color: 'black', fontStyle: 'italic', opacity: 0.6 }}>jkrdomain</span>
+                                    </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: '0.8rem' }}>
-                                    <button
-                                        disabled={teacherTTPage === 1}
-                                        onClick={() => setTeacherTTPage(p => p - 1)}
-                                        style={{ padding: '0.5rem 1.2rem', background: '#334155', color: 'white', border: 'none', borderRadius: '0.6rem', cursor: teacherTTPage === 1 ? 'not-allowed' : 'pointer', opacity: teacherTTPage === 1 ? 0.5 : 1, fontWeight: '700' }}
-                                    >Previous</button>
-                                    <button
-                                        disabled={teacherTTPage === totalPages || totalPages === 0}
-                                        onClick={() => setTeacherTTPage(p => p + 1)}
-                                        style={{ padding: '0.5rem 1.2rem', background: '#334155', color: 'white', border: 'none', borderRadius: '0.6rem', cursor: (teacherTTPage === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer', opacity: (teacherTTPage === totalPages || totalPages === 0) ? 0.5 : 1, fontWeight: '700' }}
-                                    >Next</button>
+                            );
+                        };
+
+                        return (
+                            <div style={{ animation: 'fadeIn 0.3s ease-out', maxWidth: '1440px', margin: '0 auto' }}>
+                                {/* Sub-tab Headers */}
+                                <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.5rem', background: '#1e293b', padding: '0.8rem', borderRadius: '1rem', border: '1px solid #334155' }}>
+                                    {['Middle', 'Senior'].map(m => (
+                                        <button
+                                            key={m}
+                                            onClick={() => { setTeacherTTSubTab(m); setTeacherTTPage(1); }}
+                                            style={{
+                                                padding: '0.7rem 1.4rem',
+                                                background: teacherTTSubTab === m ? '#4f46e5' : '#334155',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '0.7rem',
+                                                cursor: 'pointer',
+                                                fontWeight: '800',
+                                                fontSize: '0.9rem',
+                                                transition: 'all 0.2s',
+                                                boxShadow: teacherTTSubTab === m ? '0 4px 12px rgba(79, 70, 229, 0.4)' : 'none'
+                                            }}
+                                        >
+                                            {m} School TT
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Pagination Controls */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f172a', padding: '1rem 1.5rem', borderRadius: '1rem', marginBottom: '1.5rem', border: '1px solid #334155' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600 }}>
+                                            PAGE <b style={{ color: 'white', fontSize: '1rem' }}>{teacherTTPage}</b> OF <b>{totalPages || 1}</b>
+                                        </span>
+                                        <span style={{ width: '1px', height: '1rem', background: '#334155' }} />
+                                        <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found</span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '0.8rem' }}>
+                                        <button
+                                            disabled={teacherTTPage === 1}
+                                            onClick={() => setTeacherTTPage(p => p - 1)}
+                                            style={{ padding: '0.5rem 1.2rem', background: '#334155', color: 'white', border: 'none', borderRadius: '0.6rem', cursor: teacherTTPage === 1 ? 'not-allowed' : 'pointer', opacity: teacherTTPage === 1 ? 0.5 : 1, fontWeight: '700' }}
+                                        >Previous</button>
+                                        <button
+                                            disabled={teacherTTPage === totalPages || totalPages === 0}
+                                            onClick={() => setTeacherTTPage(p => p + 1)}
+                                            style={{ padding: '0.5rem 1.2rem', background: '#334155', color: 'white', border: 'none', borderRadius: '0.6rem', cursor: (teacherTTPage === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer', opacity: (teacherTTPage === totalPages || totalPages === 0) ? 0.5 : 1, fontWeight: '700' }}
+                                        >Next</button>
+                                    </div>
+                                </div>
+
+                                {/* A4 Landscape Simulation Grid (2x2) */}
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(2, 1fr)',
+                                    gridTemplateRows: 'repeat(2, 1fr)',
+                                    gap: '20px',
+                                    background: 'white',
+                                    padding: '20px',
+                                    borderRadius: '0',
+                                    minHeight: '850px',
+                                    border: '1px solid black'
+                                }}>
+                                    {displayList.map((teacher, idx) => (
+                                        <TeacherCard key={teacher || `blank-${idx}`} teacher={teacher} />
+                                    ))}
                                 </div>
                             </div>
-
-                            {/* A4 Landscape Simulation Grid (2x2) */}
-                            <div style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(2, 1fr)',
-                                gridTemplateRows: 'repeat(2, 1fr)',
-                                gap: '20px',
-                                background: 'white',
-                                padding: '20px',
-                                borderRadius: '0',
-                                minHeight: '850px',
-                                border: '1px solid black'
-                            }}>
-                                {displayList.map((teacher, idx) => (
-                                    <TeacherCard key={teacher || `blank-${idx}`} teacher={teacher} />
-                                ))}
-                            </div>
-                        </div>
-                    );
-                })()}
+                        );
+                    })()
+                }
 
                 {/* Tab 6: Generate */}
                 {
@@ -6175,286 +6146,290 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             </div >
 
             {/* ─────────── Fixed bottom status ribbon ─────────── */}
-            {creationStatus && (
-                <div style={{
-                    position: 'fixed', bottom: 0, left: 0, right: 0,
-                    zIndex: 1000,
-                    background: creationStatus.isError ? '#1a0a0a' : '#0d1117',
-                    borderTop: `3px solid ${creationStatus.isError ? '#ef4444' : '#3b82f6'}`,
-                    boxShadow: '0 -4px 24px rgba(0,0,0,0.5)',
-                    animation: 'slideUp 0.3s cubic-bezier(0.4,0,0.2,1)',
-                    fontFamily: 'monospace',
-                }}>
-                    {/* Top bar: teacher name + subject + dismiss */}
+            {
+                creationStatus && (
                     <div style={{
-                        display: 'flex', alignItems: 'center', gap: '0.75rem',
-                        padding: '0.45rem 1rem 0.3rem',
-                        borderBottom: '1px solid #1e293b',
+                        position: 'fixed', bottom: 0, left: 0, right: 0,
+                        zIndex: 1000,
+                        background: creationStatus.isError ? '#1a0a0a' : '#0d1117',
+                        borderTop: `3px solid ${creationStatus.isError ? '#ef4444' : '#3b82f6'}`,
+                        boxShadow: '0 -4px 24px rgba(0,0,0,0.5)',
+                        animation: 'slideUp 0.3s cubic-bezier(0.4,0,0.2,1)',
+                        fontFamily: 'monospace',
                     }}>
-                        <span style={{ fontSize: '1rem' }}>{creationStatus.isError ? '❌' : '⚙️'}</span>
-                        <span style={{ fontWeight: 800, fontSize: '0.85rem', color: creationStatus.isError ? '#fca5a5' : '#93c5fd', letterSpacing: '0.04em', fontFamily: 'inherit' }}>
-                            {creationStatus.isError ? 'ERROR' : 'BUILDING'}: {creationStatus.teacher}
-                        </span>
-                        <span style={{ color: '#475569', fontSize: '0.75rem', fontFamily: 'inherit' }}>· {creationStatus.subject}</span>
-                        <div style={{ flex: 1 }} />
-                        {/* Progress bar */}
-                        {!creationStatus.isError && (
-                            <div style={{ width: 120, height: 5, background: '#1e293b', borderRadius: 99, overflow: 'hidden', marginRight: '0.5rem' }}>
-                                <div style={{
-                                    height: '100%',
-                                    width: `${Math.min(100, (creationStatus.completedCount / 8) * 100)}%`,
-                                    background: 'linear-gradient(90deg,#3b82f6,#06b6d4)',
-                                    borderRadius: 99,
-                                    transition: 'width 0.4s ease'
-                                }} />
-                            </div>
-                        )}
-                        <button
-                            onClick={() => setCreationStatus(null)}
-                            title="Dismiss"
-                            style={{ background: 'transparent', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0 0.25rem' }}
-                        >✕</button>
-                    </div>
-
-                    {/* Log lines — last 5, newest at bottom */}
-                    <div
-                        ref={el => { statusScrollRef.current = el; if (el) el.scrollTop = el.scrollHeight; }}
-                        style={{
-                            padding: '0.35rem 1rem 0.45rem',
-                            maxHeight: 110,
-                            overflowY: 'auto',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.15rem',
-                        }}
-                    >
-                        {creationStatus.messages.slice(-6).map((m, idx, arr) => {
-                            const isSuccess = m.startsWith('✓') || m.startsWith('✅');
-                            const isError = m.startsWith('✗') || m.startsWith('❌');
-                            const isSep = m.startsWith('═');
-                            return (
-                                <div key={idx} style={{
-                                    fontSize: '0.78rem',
-                                    lineHeight: 1.55,
-                                    color: isSep ? '#334155' : isError ? '#fca5a5' : isSuccess ? '#86efac' : '#94a3b8',
-                                    opacity: idx === arr.length - 1 ? 1 : 0.6,
-                                    letterSpacing: '0.01em',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                }}>{m}</div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-
-            {/* Subject Stream Modal (Parallel Classes) */}
-            {showStreamModal && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'rgba(2, 6, 23, 0.85)',
-                    backdropFilter: 'blur(12px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 2000,
-                    animation: 'fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-                }}>
-                    <div style={{
-                        background: '#1e293b',
-                        borderRadius: '1.5rem',
-                        width: '95%',
-                        maxWidth: '850px',
-                        maxHeight: '90vh',
-                        overflow: 'hidden',
-                        padding: '2.5rem',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        position: 'relative'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                            <div>
-                                <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 900, color: '#f1f5f9', letterSpacing: '-0.02em' }}>
-                                    {editingStreamId ? 'Edit Parallel Stream' : 'Create New Parallel Stream'}
-                                </h2>
-                                <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '0.25rem' }}>Configure subjects that run simultaneously for the same class</p>
-                            </div>
+                        {/* Top bar: teacher name + subject + dismiss */}
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '0.75rem',
+                            padding: '0.45rem 1rem 0.3rem',
+                            borderBottom: '1px solid #1e293b',
+                        }}>
+                            <span style={{ fontSize: '1rem' }}>{creationStatus.isError ? '❌' : '⚙️'}</span>
+                            <span style={{ fontWeight: 800, fontSize: '0.85rem', color: creationStatus.isError ? '#fca5a5' : '#93c5fd', letterSpacing: '0.04em', fontFamily: 'inherit' }}>
+                                {creationStatus.isError ? 'ERROR' : 'BUILDING'}: {creationStatus.teacher}
+                            </span>
+                            <span style={{ color: '#475569', fontSize: '0.75rem', fontFamily: 'inherit' }}>· {creationStatus.subject}</span>
+                            <div style={{ flex: 1 }} />
+                            {/* Progress bar */}
+                            {!creationStatus.isError && (
+                                <div style={{ width: 120, height: 5, background: '#1e293b', borderRadius: 99, overflow: 'hidden', marginRight: '0.5rem' }}>
+                                    <div style={{
+                                        height: '100%',
+                                        width: `${Math.min(100, (creationStatus.completedCount / 8) * 100)}%`,
+                                        background: 'linear-gradient(90deg,#3b82f6,#06b6d4)',
+                                        borderRadius: 99,
+                                        transition: 'width 0.4s ease'
+                                    }} />
+                                </div>
+                            )}
                             <button
-                                onClick={() => setShowStreamModal(false)}
-                                style={{
-                                    background: '#334155',
-                                    border: 'none',
-                                    color: '#94a3b8',
-                                    width: '32px',
-                                    height: '32px',
-                                    borderRadius: '50%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s'
-                                }}
-                                onMouseEnter={(e) => { e.target.style.background = '#475569'; e.target.style.color = '#f1f5f9'; }}
-                                onMouseLeave={(e) => { e.target.style.background = '#334155'; e.target.style.color = '#94a3b8'; }}
+                                onClick={() => setCreationStatus(null)}
+                                title="Dismiss"
+                                style={{ background: 'transparent', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0 0.25rem' }}
                             >✕</button>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: '1.25rem', marginBottom: '2.5rem', background: 'rgba(15, 23, 42, 0.3)', padding: '1.5rem', borderRadius: '1rem', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Stream Identifier</label>
-                                <input
-                                    type="text"
-                                    value={streamForm.name}
-                                    onChange={e => setStreamForm({ ...streamForm, name: e.target.value.toUpperCase() })}
-                                    placeholder="e.g. 2ND LANGUAGE"
-                                    style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
-                                />
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Abbreviation</label>
-                                <input
-                                    type="text"
-                                    value={streamForm.abbreviation}
-                                    onChange={e => setStreamForm({ ...streamForm, abbreviation: e.target.value })}
-                                    placeholder="e.g. 2ndLang"
-                                    maxLength={8}
-                                    style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: '#10b981', fontSize: '0.95rem', fontWeight: 700 }}
-                                />
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Target Class</label>
-                                <select
-                                    value={streamForm.className}
-                                    onChange={e => setStreamForm({ ...streamForm, className: e.target.value })}
-                                    style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
-                                >
-                                    {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Weekly Load</label>
-                                <select
-                                    value={streamForm.periods}
-                                    onChange={e => setStreamForm({ ...streamForm, periods: Number(e.target.value) })}
-                                    style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
-                                >
-                                    {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n} value={n}>{n} Periods</option>)}
-                                </select>
-                            </div>
-                        </div>
-
-                        <div style={{ flex: 1, overflowY: 'auto', marginBottom: '2rem', paddingRight: '0.5rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                                <label style={{ color: '#818cf8', fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Parallel Group Assignments</label>
-                                <button
-                                    onClick={addSubjectToStream}
-                                    style={{
-                                        padding: '0.5rem 1rem',
-                                        background: 'rgba(79, 70, 229, 0.1)',
-                                        border: '1px solid #4f46e5',
-                                        borderRadius: '0.5rem',
-                                        color: '#818cf8',
-                                        fontWeight: 800,
-                                        cursor: 'pointer',
-                                        fontSize: '0.75rem',
-                                        transition: 'all 0.2s',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.4rem'
-                                    }}
-                                    onMouseEnter={(e) => { e.target.style.background = 'rgba(79, 70, 229, 0.2)'; }}
-                                    onMouseLeave={(e) => { e.target.style.background = 'rgba(79, 70, 229, 0.1)'; }}
-                                ><span>＋</span> Add New Group</button>
-                            </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                {streamForm.subjects.map((sub, idx) => (
+                        {/* Log lines — last 5, newest at bottom */}
+                        <div
+                            ref={el => { statusScrollRef.current = el; if (el) el.scrollTop = el.scrollHeight; }}
+                            style={{
+                                padding: '0.35rem 1rem 0.45rem',
+                                maxHeight: 110,
+                                overflowY: 'auto',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.15rem',
+                            }}
+                        >
+                            {creationStatus.messages.slice(-6).map((m, idx, arr) => {
+                                const isSuccess = m.startsWith('✓') || m.startsWith('✅');
+                                const isError = m.startsWith('✗') || m.startsWith('❌');
+                                const isSep = m.startsWith('═');
+                                return (
                                     <div key={idx} style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: '1fr 1fr 1fr 40px',
-                                        gap: '0.75rem',
-                                        alignItems: 'center',
-                                        background: 'rgba(30, 41, 59, 0.5)',
-                                        padding: '0.75rem',
-                                        borderRadius: '0.85rem',
-                                        border: '1px solid rgba(255, 255, 255, 0.03)'
-                                    }}>
-                                        <div>
-                                            <select
-                                                value={sub.subject}
-                                                onChange={e => updateStreamSubject(idx, 'subject', e.target.value)}
-                                                style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
-                                            >
-                                                <option value="">-- select subject --</option>
-                                                {[...subjects].sort().map(s => <option key={s} value={s}>{s}</option>)}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <select
-                                                value={sub.teacher}
-                                                onChange={e => updateStreamSubject(idx, 'teacher', e.target.value)}
-                                                style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
-                                            >
-                                                <option value="">-- select teacher --</option>
-                                                {teachers.filter(t => !sub.subject || mappingRows.some(m => m.teacher === t && m.subject === sub.subject)).sort().map(t => <option key={t} value={t}>{t}</option>)}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <input
-                                                type="text"
-                                                value={sub.groupName}
-                                                onChange={e => updateStreamSubject(idx, 'groupName', e.target.value)}
-                                                placeholder="Group Name (e.g. Hindi)"
-                                                style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
-                                            />
-                                        </div>
-                                        <button
-                                            onClick={() => removeSubjectFromStream(idx)}
-                                            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.1rem' }}
-                                            onMouseEnter={(e) => { e.target.style.color = '#ef4444'; }}
-                                            onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; }}
-                                        >✕</button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', borderTop: '1px solid #334155', paddingTop: '1.75rem', marginTop: 'auto' }}>
-                            <button
-                                onClick={() => setShowStreamModal(false)}
-                                style={{ padding: '0.85rem 1.75rem', background: 'transparent', border: '1px solid #475569', borderRadius: '0.85rem', color: '#94a3b8', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s' }}
-                                onMouseEnter={(e) => { e.target.style.color = '#f1f5f9'; e.target.style.borderColor = '#94a3b8'; }}
-                                onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; e.target.style.borderColor = '#475569'; }}
-                            >Cancel</button>
-                            <button
-                                onClick={handleSaveStream}
-                                style={{
-                                    padding: '0.85rem 2rem',
-                                    background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
-                                    border: 'none',
-                                    borderRadius: '0.85rem',
-                                    color: 'white',
-                                    fontWeight: 800,
-                                    cursor: 'pointer',
-                                    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.4)',
-                                    transition: 'all 0.2s'
-                                }}
-                                onMouseEnter={(e) => { e.target.style.transform = 'translateY(-2px)'; e.target.style.boxShadow = '0 6px 15px rgba(79, 70, 229, 0.5)'; }}
-                                onMouseLeave={(e) => { e.target.style.transform = 'translateY(0)'; e.target.style.boxShadow = '0 4px 12px rgba(79, 70, 229, 0.4)'; }}
-                            >
-                                {editingStreamId ? 'Update Stream' : 'Deploy Stream'}
-                            </button>
+                                        fontSize: '0.78rem',
+                                        lineHeight: 1.55,
+                                        color: isSep ? '#334155' : isError ? '#fca5a5' : isSuccess ? '#86efac' : '#94a3b8',
+                                        opacity: idx === arr.length - 1 ? 1 : 0.6,
+                                        letterSpacing: '0.01em',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                    }}>{m}</div>
+                                );
+                            })}
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
+
+            {/* Subject Stream Modal (Parallel Classes) */}
+            {
+                showStreamModal && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(2, 6, 23, 0.85)',
+                        backdropFilter: 'blur(12px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 2000,
+                        animation: 'fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}>
+                        <div style={{
+                            background: '#1e293b',
+                            borderRadius: '1.5rem',
+                            width: '95%',
+                            maxWidth: '850px',
+                            maxHeight: '90vh',
+                            overflow: 'hidden',
+                            padding: '2.5rem',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            position: 'relative'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 900, color: '#f1f5f9', letterSpacing: '-0.02em' }}>
+                                        {editingStreamId ? 'Edit Parallel Stream' : 'Create New Parallel Stream'}
+                                    </h2>
+                                    <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '0.25rem' }}>Configure subjects that run simultaneously for the same class</p>
+                                </div>
+                                <button
+                                    onClick={() => setShowStreamModal(false)}
+                                    style={{
+                                        background: '#334155',
+                                        border: 'none',
+                                        color: '#94a3b8',
+                                        width: '32px',
+                                        height: '32px',
+                                        borderRadius: '50%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => { e.target.style.background = '#475569'; e.target.style.color = '#f1f5f9'; }}
+                                    onMouseLeave={(e) => { e.target.style.background = '#334155'; e.target.style.color = '#94a3b8'; }}
+                                >✕</button>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: '1.25rem', marginBottom: '2.5rem', background: 'rgba(15, 23, 42, 0.3)', padding: '1.5rem', borderRadius: '1rem', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Stream Identifier</label>
+                                    <input
+                                        type="text"
+                                        value={streamForm.name}
+                                        onChange={e => setStreamForm({ ...streamForm, name: e.target.value.toUpperCase() })}
+                                        placeholder="e.g. 2ND LANGUAGE"
+                                        style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Abbreviation</label>
+                                    <input
+                                        type="text"
+                                        value={streamForm.abbreviation}
+                                        onChange={e => setStreamForm({ ...streamForm, abbreviation: e.target.value })}
+                                        placeholder="e.g. 2ndLang"
+                                        maxLength={8}
+                                        style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: '#10b981', fontSize: '0.95rem', fontWeight: 700 }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Target Class</label>
+                                    <select
+                                        value={streamForm.className}
+                                        onChange={e => setStreamForm({ ...streamForm, className: e.target.value })}
+                                        style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
+                                    >
+                                        {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Weekly Load</label>
+                                    <select
+                                        value={streamForm.periods}
+                                        onChange={e => setStreamForm({ ...streamForm, periods: Number(e.target.value) })}
+                                        style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
+                                    >
+                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n} value={n}>{n} Periods</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style={{ flex: 1, overflowY: 'auto', marginBottom: '2rem', paddingRight: '0.5rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                                    <label style={{ color: '#818cf8', fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Parallel Group Assignments</label>
+                                    <button
+                                        onClick={addSubjectToStream}
+                                        style={{
+                                            padding: '0.5rem 1rem',
+                                            background: 'rgba(79, 70, 229, 0.1)',
+                                            border: '1px solid #4f46e5',
+                                            borderRadius: '0.5rem',
+                                            color: '#818cf8',
+                                            fontWeight: 800,
+                                            cursor: 'pointer',
+                                            fontSize: '0.75rem',
+                                            transition: 'all 0.2s',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.4rem'
+                                        }}
+                                        onMouseEnter={(e) => { e.target.style.background = 'rgba(79, 70, 229, 0.2)'; }}
+                                        onMouseLeave={(e) => { e.target.style.background = 'rgba(79, 70, 229, 0.1)'; }}
+                                    ><span>＋</span> Add New Group</button>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                    {streamForm.subjects.map((sub, idx) => (
+                                        <div key={idx} style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '1fr 1fr 1fr 40px',
+                                            gap: '0.75rem',
+                                            alignItems: 'center',
+                                            background: 'rgba(30, 41, 59, 0.5)',
+                                            padding: '0.75rem',
+                                            borderRadius: '0.85rem',
+                                            border: '1px solid rgba(255, 255, 255, 0.03)'
+                                        }}>
+                                            <div>
+                                                <select
+                                                    value={sub.subject}
+                                                    onChange={e => updateStreamSubject(idx, 'subject', e.target.value)}
+                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
+                                                >
+                                                    <option value="">-- select subject --</option>
+                                                    {[...subjects].sort().map(s => <option key={s} value={s}>{s}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <select
+                                                    value={sub.teacher}
+                                                    onChange={e => updateStreamSubject(idx, 'teacher', e.target.value)}
+                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
+                                                >
+                                                    <option value="">-- select teacher --</option>
+                                                    {teachers.filter(t => !sub.subject || mappingRows.some(m => m.teacher === t && m.subject === sub.subject)).sort().map(t => <option key={t} value={t}>{t}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <input
+                                                    type="text"
+                                                    value={sub.groupName}
+                                                    onChange={e => updateStreamSubject(idx, 'groupName', e.target.value)}
+                                                    placeholder="Group Name (e.g. Hindi)"
+                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={() => removeSubjectFromStream(idx)}
+                                                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.1rem' }}
+                                                onMouseEnter={(e) => { e.target.style.color = '#ef4444'; }}
+                                                onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; }}
+                                            >✕</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', borderTop: '1px solid #334155', paddingTop: '1.75rem', marginTop: 'auto' }}>
+                                <button
+                                    onClick={() => setShowStreamModal(false)}
+                                    style={{ padding: '0.85rem 1.75rem', background: 'transparent', border: '1px solid #475569', borderRadius: '0.85rem', color: '#94a3b8', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s' }}
+                                    onMouseEnter={(e) => { e.target.style.color = '#f1f5f9'; e.target.style.borderColor = '#94a3b8'; }}
+                                    onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; e.target.style.borderColor = '#475569'; }}
+                                >Cancel</button>
+                                <button
+                                    onClick={handleSaveStream}
+                                    style={{
+                                        padding: '0.85rem 2rem',
+                                        background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
+                                        border: 'none',
+                                        borderRadius: '0.85rem',
+                                        color: 'white',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                        boxShadow: '0 4px 12px rgba(79, 70, 229, 0.4)',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => { e.target.style.transform = 'translateY(-2px)'; e.target.style.boxShadow = '0 6px 15px rgba(79, 70, 229, 0.5)'; }}
+                                    onMouseLeave={(e) => { e.target.style.transform = 'translateY(0)'; e.target.style.boxShadow = '0 4px 12px rgba(79, 70, 229, 0.4)'; }}
+                                >
+                                    {editingStreamId ? 'Update Stream' : 'Deploy Stream'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
 
             {/* Dropdown */}
             {
@@ -6540,6 +6515,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             <footer style={{ marginTop: '3rem', textAlign: 'center', opacity: 0.5, fontSize: '0.9rem', color: '#94a3b8', fontWeight: '600' }}>
                 created by @jayankrtripunithura 2026
             </footer>
-        </div>
+        </div >
     );
 }
