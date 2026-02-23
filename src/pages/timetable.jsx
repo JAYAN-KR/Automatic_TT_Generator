@@ -2474,7 +2474,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
             // Progress update for ribbon
             setCreationStatus(prev => ({
-                ...prev,
+                ...(prev || { messages: [], teacher: 'Batch', subject: label }),
                 batchProgress: `Processing stream ${i + 1} of ${totalToProcess}...`
             }));
 
@@ -2495,7 +2495,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                 // Real-time progress update for ribbon
                 setCreationStatus(prev => ({
-                    ...prev,
+                    ...(prev || { messages: [], teacher: 'Batch', subject: label }),
                     batchProgress: `Processing teacher ${i + streamOffset + 1} of ${totalToProcess}... (${skippedRows.length} skipped)`
                 }));
 
@@ -2504,6 +2504,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                 if (tasksCount === 0) {
                     console.warn(`Teacher ${row.teacher} skipped - no class allotments`);
+                    setCreationStatus(prev => ({
+                        ...(prev || { messages: [], teacher: 'Batch', subject: label }),
+                        messages: [...(prev?.messages || []), `⚠️ Skipping ${row.teacher}: No class allotments found.`]
+                    }));
                     skippedRows.push(row.teacher);
                     continue;
                 }
@@ -5768,6 +5772,36 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             return map[upper] || (sub.length > 4 ? sub.substring(0, 3) : sub);
                         };
 
+                        const getFormattedClass = (className) => {
+                            if (!className || className === '-' || className === 'EMPTY TEMPLATE') return { num: className, div: '' };
+                            // Handle cases like "10E/10F", "9A, 9B", or "12A,12B,12C"
+                            const parts = className.split(/[\/,]/).map(p => p.trim()).filter(Boolean);
+                            if (parts.length > 1) {
+                                let commonNum = '';
+                                let allDivs = '';
+                                let consistent = true;
+                                parts.forEach((p, idx) => {
+                                    const match = p.match(/^(\d+)([A-Z])$/);
+                                    if (match) {
+                                        if (idx === 0) commonNum = match[1];
+                                        else if (commonNum !== match[1]) consistent = false;
+                                        allDivs += match[2];
+                                    } else {
+                                        consistent = false;
+                                    }
+                                });
+                                if (consistent && commonNum) {
+                                    return { num: commonNum, div: allDivs };
+                                }
+                            }
+                            // Single class like "10E"
+                            const singleMatch = className.match(/^(\d+)([A-Z])$/);
+                            if (singleMatch) {
+                                return { num: singleMatch[1], div: singleMatch[2] };
+                            }
+                            return { num: className, div: '' };
+                        };
+
                         const handlePrintAll = () => {
                             if (!generatedTimetable) return;
                             const cards = categoryTeachers.map(t => generateTeacherTimetableHTML(
@@ -5902,23 +5936,42 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             displaySub = getSubAbbr(displaySub);
                                                         }
 
+                                                        const { num, div } = getFormattedClass(displayClass);
+                                                        const suffix = slot?.isTBlock ? ' [T]' : (slot?.isLBlock ? ' [L]' : '');
+
                                                         return (
                                                             <td key={p} style={{
                                                                 border: '1px solid black',
                                                                 textAlign: 'center',
                                                                 height: '42px',
                                                                 background: 'white',
-                                                                padding: '2px',
-                                                                color: 'black'
+                                                                padding: '1px',
+                                                                color: 'black',
+                                                                verticalAlign: 'middle'
                                                             }}>
-                                                                <div style={{ fontSize: '1rem', fontWeight: 900, color: 'black', lineHeight: '1.2' }}>
-                                                                    {displayClass}{slot?.isTBlock ? ' [T]' : (slot?.isLBlock ? ' [L]' : '')}
-                                                                </div>
-                                                                {displaySub && (
-                                                                    <div style={{ fontSize: '0.6rem', fontWeight: 600, color: 'black', lineHeight: '1' }}>
-                                                                        {displaySub}
+                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px' }}>
+                                                                    <div style={{ fontSize: '14px', fontWeight: 900, color: 'black', lineHeight: '1.1' }}>
+                                                                        {num}{suffix}
                                                                     </div>
-                                                                )}
+                                                                    {div && (
+                                                                        <div style={{
+                                                                            fontSize: '10px',
+                                                                            fontWeight: 800,
+                                                                            color: 'black',
+                                                                            lineHeight: '1',
+                                                                            maxWidth: '45px',
+                                                                            wordBreak: 'break-all',
+                                                                            textAlign: 'center'
+                                                                        }}>
+                                                                            {div}
+                                                                        </div>
+                                                                    )}
+                                                                    {displaySub && (
+                                                                        <div style={{ fontSize: '0.55rem', fontWeight: 600, color: 'black', lineHeight: '1', marginTop: '1px' }}>
+                                                                            ({displaySub})
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                             </td>
                                                         );
                                                     })}
@@ -6373,7 +6426,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 gap: '0.15rem',
                             }}
                         >
-                            {creationStatus.messages.slice(-6).map((m, idx, arr) => {
+                            {(creationStatus.messages || []).slice(-6).map((m, idx, arr) => {
                                 const isSuccess = m.startsWith('✓') || m.startsWith('✅');
                                 const isError = m.startsWith('✗') || m.startsWith('❌');
                                 const isSep = m.startsWith('═');

@@ -77,22 +77,49 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
             return map[upper] || (sub.length > 4 ? sub.substring(0, 3) : sub);
         };
 
+        const getFormattedClass = (className) => {
+            if (!className || className === '-' || className === 'EMPTY TEMPLATE') return { num: className, div: '' };
+            const parts = className.split(/[\/,]/).map(p => p.trim()).filter(Boolean);
+            if (parts.length > 1) {
+                let commonNum = '';
+                let allDivs = '';
+                let consistent = true;
+                parts.forEach((p, idx) => {
+                    const match = p.match(/^(\d+)([A-Z])$/);
+                    if (match) {
+                        if (idx === 0) commonNum = match[1];
+                        else if (commonNum !== match[1]) consistent = false;
+                        allDivs += match[2];
+                    } else {
+                        consistent = false;
+                    }
+                });
+                if (consistent && commonNum) return { num: commonNum, div: allDivs };
+            }
+            const singleMatch = className.match(/^(\d+)([A-Z])$/);
+            if (singleMatch) return { num: singleMatch[1], div: singleMatch[2] };
+            return { num: className, div: '' };
+        };
+
         const renderTeacherCell = (period) => {
             const entry = schedule[period];
             if (!entry) return '&nbsp;';
 
             const isObj = typeof entry === 'object' && entry !== null;
-            const className = isObj ? entry.className : entry;
+            const classNameVal = isObj ? entry.className : entry;
             const subjectOrig = isObj ? (entry.subject || '') : '';
             const subject = getSubAbbr(subjectOrig);
             const isBlock = isObj && (entry.isBlock || entry.type === 'BLOCK');
             const badge = isBlock ? '<div class="block-badge">BLOCK</div>' : '';
             const groupSuffix = (isObj && entry.isStream && entry.groupName) ? `-${entry.groupName}` : '';
 
+            const { num, div } = getFormattedClass(classNameVal + groupSuffix);
+
             return `
                 ${badge}
-                <div style="font-size: 9.5pt; font-weight: 900; line-height: 1.1;">${className}${groupSuffix}</div>
-                ${subject ? `<div style="font-size: 7.5pt; font-weight: 800; line-height: 1;">${subject}</div>` : ''}
+                <div style="font-size: 11pt; font-weight: 900; line-height: 1.1;">${num}</div>
+                ${div ? `<div style="font-size: 8pt; font-weight: 800; line-height: 1; max-width: 10mm; word-break: break-all; margin: 0 auto;">${div}</div>` : ''}
+                ${subject ? `<div style="font-size: 7.5pt; font-weight: 800; line-height: 1;">(${subject})</div>` : ''}
             `;
         };
 
