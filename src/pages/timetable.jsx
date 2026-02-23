@@ -324,6 +324,10 @@ export default function TimetablePage() {
     const [activeGradeSubTab, setActiveGradeSubTab] = useState('6');
     const [activeClassSubTab, setActiveClassSubTab] = useState('6A');
 
+    // Teacher TT Tab State
+    const [teacherTTSubTab, setTeacherTTSubTab] = useState('Middle');
+    const [teacherTTPage, setTeacherTTPage] = useState(1);
+
     // Tab 2 (Teachers) State
     const [teachers, setTeachers] = useState(() => {
         const saved = localStorage.getItem('tt_teachers');
@@ -684,7 +688,7 @@ export default function TimetablePage() {
                 setGeneratedTimetable(tt);
                 setReassignWizard(null);
                 addToast(`Grade ${affectedGrade} cleared. Recommended: Regenerate Grade ${affectedGrade}.`, 'info');
-                setActiveTab(5); // Go to generate tab
+                setActiveTab(6); // Go to generate tab
             } else {
                 // Minimal Scope: Clear only the current row's old slots
                 analysis.assignments.forEach(asgn => {
@@ -701,7 +705,7 @@ export default function TimetablePage() {
             }
         } else if (strategy === 'FULL') {
             setReassignWizard(null);
-            setTimeout(() => setActiveTab(5), 100);
+            setTimeout(() => setActiveTab(6), 100);
             addToast('Target teacher updated. Recommended: Trigger Full Regeneration.', 'info');
         }
     };
@@ -995,11 +999,17 @@ export default function TimetablePage() {
     const [isLoading, setIsLoading] = useState(false);
     const [isPublishing, setIsPublishing] = useState(false);
     const [currentVersion, setCurrentVersion] = useState(null);
-    const [generatedTimetable, setGeneratedTimetable] = useState(null);
+    const [generatedTimetable, setGeneratedTimetable] = useState(() => {
+        const saved = localStorage.getItem('tt_generated_timetable');
+        return saved ? JSON.parse(saved) : null;
+    });
     const [isGenerating, setIsGenerating] = useState(false);
 
     // --- Change Tracking State ---
-    const [baselineTimetable, setBaselineTimetable] = useState(null);
+    const [baselineTimetable, setBaselineTimetable] = useState(() => {
+        const saved = localStorage.getItem('tt_baseline_timetable');
+        return saved ? JSON.parse(saved) : (localStorage.getItem('tt_generated_timetable') ? JSON.parse(localStorage.getItem('tt_generated_timetable')) : null);
+    });
     const [timetableChanges, setTimetableChanges] = useState({ diffs: [], count: 0 });
     const [showChangesOnly, setShowChangesOnly] = useState(false);
     const [highlightTeacher, setHighlightTeacher] = useState(null);
@@ -2242,6 +2252,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
             console.log('Generation result:', timetable);
             setGeneratedTimetable(timetable);
+            localStorage.setItem('tt_generated_timetable', JSON.stringify(timetable));
+            if (!baselineTimetable) {
+                setBaselineTimetable(timetable);
+                localStorage.setItem('tt_baseline_timetable', JSON.stringify(timetable));
+            }
 
             addToast(`✅ Timetable generated!
             
@@ -2263,7 +2278,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         { id: 2, label: '📊 Distribution' },
         { id: 3, label: '🕒 DPT' },
         { id: 4, label: '🎓 Format TT' },
-        { id: 5, label: '⚙️ Generate' }
+        { id: 5, label: '👩‍🏫 TeacherTT' },
+        { id: 6, label: '⚙️ Generate' }
     ];
 
     return (
@@ -5077,9 +5093,217 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     );
                 })()}
 
-                {/* Tab 5: Generate */}
+                {/* Tab 5: TeacherTT (Teacher Timetables) */}
+                {activeTab === 5 && (() => {
+                    const teacherTTDict = generatedTimetable?.teacherTimetables || {};
+                    // Filter teachers based on their "level" field in the teachers array (Tab 0)
+                    const categoryTeachers = (teachers || [])
+                        .filter(t => {
+                            if (!t?.name) return false;
+                            const levelMatch = t.level || '';
+                            if (teacherTTSubTab === 'Middle') {
+                                return levelMatch === 'Middle';
+                            } else {
+                                // Main level teachers go to Senior School sub-tab
+                                return levelMatch === 'Main' || levelMatch === 'Senior';
+                            }
+                        })
+                        .map(t => t.name)
+                        .sort();
+
+
+
+                    const PAGE_SIZE = 4;
+                    const totalPages = Math.max(1, Math.ceil(categoryTeachers.length / PAGE_SIZE));
+                    const currentPageTeachers = categoryTeachers.slice((teacherTTPage - 1) * PAGE_SIZE, teacherTTPage * PAGE_SIZE);
+
+                    // Fill remaining slots to ALWAYS show 4 templates
+                    const displayList = [...currentPageTeachers];
+                    while (displayList.length < PAGE_SIZE) {
+                        displayList.push(null);
+                    }
+
+                    const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                    const PERIODS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+
+                    // Inner component to render a single teacher's TT
+                    const TeacherCard = ({ teacher }) => {
+                        const tTT = (teacher && teacherTTDict?.[teacher]) ? teacherTTDict[teacher] : null;
+                        const isMiddle = teacherTTSubTab === 'Middle';
+
+                        return (
+                            <div style={{
+                                background: 'white',
+                                border: '1px solid black',
+                                padding: '12px',
+                                borderRadius: '0',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                width: '100%',
+                                height: '100%',
+                                overflow: 'hidden'
+                            }}>
+                                <div style={{ textAlign: 'center', marginBottom: '8px', borderBottom: '2px solid black', paddingBottom: '4px', minHeight: '30px' }}>
+                                    <span style={{ fontSize: '1rem', fontWeight: 900, color: 'black', letterSpacing: '0.05em' }}>
+                                        {teacher ? teacher.toUpperCase() : 'EMPTY TEMPLATE'}
+                                    </span>
+                                </div>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', border: '1px solid black' }}>
+                                    <thead>
+                                        <tr style={{ background: 'white' }}>
+                                            <th style={{ border: '1px solid black', width: '35px', fontSize: '0.65rem', padding: '4px', color: 'black' }}>DAY</th>
+                                            {PERIODS.map(p => (
+                                                <th key={p} style={{ border: '1px solid black', fontSize: '0.6rem', padding: '2px', color: 'black' }}>{p}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {DAYS.map((day, di) => (
+                                            <tr key={day}>
+                                                <td style={{ border: '1px solid black', fontSize: '0.6rem', fontWeight: 900, textAlign: 'center', background: 'white', padding: '4px', color: 'black' }}>
+                                                    {day.substring(0, 3).toUpperCase()}
+                                                </td>
+                                                {PERIODS.map((p, pi) => {
+                                                    const isBreak = p === 'S3' || p === 'S7';
+                                                    const isLunch = isMiddle ? p === 'S9' : p === 'S10';
+
+                                                    if (isBreak) {
+                                                        if (di !== 0) return null; // Only render for first row with rowSpan
+                                                        return (
+                                                            <td key={p} rowSpan={6} style={{
+                                                                border: '1px solid black',
+                                                                background: 'white',
+                                                                color: 'black',
+                                                                writingMode: 'vertical-lr',
+                                                                textAlign: 'center',
+                                                                fontSize: '0.55rem',
+                                                                fontWeight: 900,
+                                                                letterSpacing: '0.2em'
+                                                            }}>
+                                                                BREAK
+                                                            </td>
+                                                        );
+                                                    }
+
+                                                    if (isLunch) {
+                                                        if (di !== 0) return null;
+                                                        return (
+                                                            <td key={p} rowSpan={6} style={{
+                                                                border: '1px solid black',
+                                                                background: 'white',
+                                                                color: 'black',
+                                                                writingMode: 'vertical-lr',
+                                                                textAlign: 'center',
+                                                                fontSize: '0.55rem',
+                                                                fontWeight: 900,
+                                                                letterSpacing: '0.2em'
+                                                            }}>
+                                                                LUNCH
+                                                            </td>
+                                                        );
+                                                    }
+
+                                                    const slot = tTT?.[day]?.[p];
+                                                    const displayClass = (slot && typeof slot === 'object') ? slot.className : '-';
+                                                    const displaySub = (slot && typeof slot === 'object') ? slot.subject : '';
+
+                                                    return (
+                                                        <td key={p} style={{
+                                                            border: '1px solid black',
+                                                            textAlign: 'center',
+                                                            height: '42px',
+                                                            background: 'white',
+                                                            padding: '2px',
+                                                            color: 'black'
+                                                        }}>
+                                                            <div style={{ fontSize: '0.75rem', fontWeight: 900, color: 'black' }}>{displayClass}</div>
+                                                            <div style={{ fontSize: '0.5rem', color: 'black', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displaySub}</div>
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                <div style={{ marginTop: 'auto', textAlign: 'right', padding: '4px 0 0 0' }}>
+                                    <span style={{ fontSize: '8px', color: 'black', fontStyle: 'italic', opacity: 0.6 }}>jkrdomain</span>
+                                </div>
+                            </div>
+                        );
+                    };
+
+                    return (
+                        <div style={{ animation: 'fadeIn 0.3s ease-out', maxWidth: '1440px', margin: '0 auto' }}>
+                            {/* Sub-tab Headers */}
+                            <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.5rem', background: '#1e293b', padding: '0.8rem', borderRadius: '1rem', border: '1px solid #334155' }}>
+                                {['Middle', 'Senior'].map(m => (
+                                    <button
+                                        key={m}
+                                        onClick={() => { setTeacherTTSubTab(m); setTeacherTTPage(1); }}
+                                        style={{
+                                            padding: '0.7rem 1.4rem',
+                                            background: teacherTTSubTab === m ? '#4f46e5' : '#334155',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '0.7rem',
+                                            cursor: 'pointer',
+                                            fontWeight: '800',
+                                            fontSize: '0.9rem',
+                                            transition: 'all 0.2s',
+                                            boxShadow: teacherTTSubTab === m ? '0 4px 12px rgba(79, 70, 229, 0.4)' : 'none'
+                                        }}
+                                    >
+                                        {m} School TT
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Pagination Controls */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f172a', padding: '1rem 1.5rem', borderRadius: '1rem', marginBottom: '1.5rem', border: '1px solid #334155' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                    <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600 }}>
+                                        PAGE <b style={{ color: 'white', fontSize: '1rem' }}>{teacherTTPage}</b> OF <b>{totalPages || 1}</b>
+                                    </span>
+                                    <span style={{ width: '1px', height: '1rem', background: '#334155' }} />
+                                    <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found</span>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.8rem' }}>
+                                    <button
+                                        disabled={teacherTTPage === 1}
+                                        onClick={() => setTeacherTTPage(p => p - 1)}
+                                        style={{ padding: '0.5rem 1.2rem', background: '#334155', color: 'white', border: 'none', borderRadius: '0.6rem', cursor: teacherTTPage === 1 ? 'not-allowed' : 'pointer', opacity: teacherTTPage === 1 ? 0.5 : 1, fontWeight: '700' }}
+                                    >Previous</button>
+                                    <button
+                                        disabled={teacherTTPage === totalPages || totalPages === 0}
+                                        onClick={() => setTeacherTTPage(p => p + 1)}
+                                        style={{ padding: '0.5rem 1.2rem', background: '#334155', color: 'white', border: 'none', borderRadius: '0.6rem', cursor: (teacherTTPage === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer', opacity: (teacherTTPage === totalPages || totalPages === 0) ? 0.5 : 1, fontWeight: '700' }}
+                                    >Next</button>
+                                </div>
+                            </div>
+
+                            {/* A4 Landscape Simulation Grid (2x2) */}
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(2, 1fr)',
+                                gridTemplateRows: 'repeat(2, 1fr)',
+                                gap: '20px',
+                                background: 'white',
+                                padding: '20px',
+                                borderRadius: '0',
+                                minHeight: '850px',
+                                border: '1px solid black'
+                            }}>
+                                {displayList.map((teacher, idx) => (
+                                    <TeacherCard key={teacher || `blank-${idx}`} teacher={teacher} />
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* Tab 6: Generate */}
                 {
-                    activeTab === 5 && (
+                    activeTab === 6 && (
                         <div style={{ animation: 'fadeIn 0.3s ease-out', padding: '2rem 0' }}>
                             <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
                                 <button
