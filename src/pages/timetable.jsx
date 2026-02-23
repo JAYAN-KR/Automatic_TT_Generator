@@ -338,6 +338,7 @@ export default function TimetablePage() {
 
     // Teacher TT Tab State
     const [teacherTTSubTab, setTeacherTTSubTab] = useState('Middle');
+    const [teacherTTPage, setTeacherTTPage] = useState(1);
 
     // Tab 2 (Teachers) State
     const [teachers, setTeachers] = useState(() => {
@@ -5725,6 +5726,17 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             })
                             .sort((a, b) => a.localeCompare(b));
 
+                        // Chunk teachers into groups of 4 for 2x2 grid pages
+                        const PAGE_SIZE = 4;
+                        const totalPages = Math.max(1, Math.ceil(categoryTeachers.length / PAGE_SIZE));
+                        const currentPageTeachers = categoryTeachers.slice((teacherTTPage - 1) * PAGE_SIZE, teacherTTPage * PAGE_SIZE);
+
+                        // Fill remaining slots to ALWAYS show 4 templates
+                        const pageList = [...currentPageTeachers];
+                        while (pageList.length < PAGE_SIZE) {
+                            pageList.push(null);
+                        }
+
 
 
                         const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -5892,7 +5904,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     {['Middle', 'Senior'].map(m => (
                                         <button
                                             key={m}
-                                            onClick={() => { setTeacherTTSubTab(m); }}
+                                            onClick={() => { setTeacherTTSubTab(m); setTeacherTTPage(1); }}
                                             style={{
                                                 padding: '0.7rem 1.4rem',
                                                 background: teacherTTSubTab === m ? '#4f46e5' : '#334155',
@@ -5911,12 +5923,34 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     ))}
                                 </div>
 
-                                {/* Header with Print Button */}
+                                {/* Header with Page Controls & Print Button */}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f172a', padding: '1rem 1.5rem', borderRadius: '1rem', marginBottom: '1.5rem', border: '1px solid #334155' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                        <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600 }}>
-                                            LEVEL: <b style={{ color: 'white', fontSize: '1rem' }}>{teacherTTSubTab.toUpperCase()} SCHOOL</b>
-                                        </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                                            <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600 }}>PAGE</span>
+                                            <select
+                                                value={teacherTTPage}
+                                                onChange={(e) => setTeacherTTPage(Number(e.target.value))}
+                                                style={{ background: '#1e293b', color: 'white', border: '1px solid #334155', borderRadius: '0.4rem', padding: '0.2rem 0.5rem', fontWeight: '700' }}
+                                            >
+                                                {Array.from({ length: totalPages }, (_, i) => (
+                                                    <option key={i + 1} value={i + 1}>{i + 1}</option>
+                                                ))}
+                                            </select>
+                                            <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600 }}>OF {totalPages}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <button
+                                                disabled={teacherTTPage === 1}
+                                                onClick={() => setTeacherTTPage(p => p - 1)}
+                                                style={{ padding: '0.4rem 0.8rem', background: '#334155', color: 'white', border: 'none', borderRadius: '0.4rem', cursor: teacherTTPage === 1 ? 'not-allowed' : 'pointer', opacity: teacherTTPage === 1 ? 0.5 : 1, fontWeight: '700' }}
+                                            >Prev</button>
+                                            <button
+                                                disabled={teacherTTPage === totalPages}
+                                                onClick={() => setTeacherTTPage(p => p + 1)}
+                                                style={{ padding: '0.4rem 0.8rem', background: '#334155', color: 'white', border: 'none', borderRadius: '0.4rem', cursor: teacherTTPage === totalPages ? 'not-allowed' : 'pointer', opacity: teacherTTPage === totalPages ? 0.5 : 1, fontWeight: '700' }}
+                                            >Next</button>
+                                        </div>
                                         <span style={{ width: '1px', height: '1rem', background: '#334155' }} />
                                         <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found</span>
                                     </div>
@@ -5941,15 +5975,24 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     </button>
                                 </div>
 
-                                {/* Continuous List of Teacher Timetables */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', paddingBottom: '2rem' }}>
-                                    {categoryTeachers.map((teacher, idx) => (
-                                        <div key={teacher || idx} style={{ width: '100%', maxWidth: '1100px', margin: '0 auto' }}>
-                                            <TeacherCard teacher={teacher} />
-                                        </div>
+                                {/* A4 Landscape Page Simulation (2x2 Grid) */}
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(2, 1fr)',
+                                    gridTemplateRows: 'repeat(2, 1fr)',
+                                    gap: '20px',
+                                    background: 'white',
+                                    padding: '20px',
+                                    borderRadius: '0',
+                                    minHeight: '850px',
+                                    border: '1px solid black',
+                                    position: 'relative'
+                                }}>
+                                    {pageList.map((teacher, idx) => (
+                                        <TeacherCard key={teacher || `blank-${idx}`} teacher={teacher} />
                                     ))}
-                                    <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem', color: '#94a3b8', fontStyle: 'italic' }}>
-                                        jkrdomain — End of {teacherTTSubTab} School List
+                                    <div style={{ position: 'absolute', bottom: '5px', right: '10px', fontSize: '10px', color: 'black', fontStyle: 'italic', opacity: 0.5 }}>
+                                        jkrdomain — Page {teacherTTPage}/{totalPages}
                                     </div>
                                 </div>
                             </div>
