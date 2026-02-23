@@ -2027,9 +2027,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             });
 
             if (tasks.length === 0) {
-                addMessage('→ No periods set. Please update PPS first.');
-                setCreationStatus(prev => ({ ...prev, isError: true }));
-                return;
+                addMessage(`→ No periods set for ${row.teacher} (${row.subject}). Skipping.`);
+                await sleep(500);
+                return currentTT; // Return existing TT to continue batch
             }
 
             const tBlockTasks = tasks.filter(t => t.type === 'TBLOCK');
@@ -2429,6 +2429,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
     const handleBatchGenerate = async (label, criteria) => {
         const rowsToProcess = allotmentRows.filter(row => {
             if (!row.teacher || !row.subject) return false;
+            // Only process rows that haven't been completed yet
             if (completedCreations.has(row.id)) return false;
 
             const allClasses = row.allotments.flatMap(a => a.classes);
@@ -2446,7 +2447,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             return st.className.startsWith(criteria);
         });
 
-        if (rowsToProcess.length === 0 && streamsToProcess.length === 0) {
+        const totalToProcess = rowsToProcess.length + streamsToProcess.length;
+
+        if (totalToProcess === 0) {
             addToast(`No pending items found for ${label}`, 'info');
             return;
         }
@@ -2460,12 +2463,25 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         addToast(`Starting batch generation for ${label}...`, 'info');
 
         let currentTT = generatedTimetable;
+        let skippedRows = [];
+        let generatedCount = 0;
 
         // Process streams first (they are harder to place)
         for (let i = 0; i < streamsToProcess.length; i++) {
-            currentTT = await handleCreateStreamSpecific(streamsToProcess[i], currentTT);
-            if (!currentTT) {
-                addToast(`Batch stopped at stream ${streamsToProcess[i].name} due to an error.`, 'error');
+            const stream = streamsToProcess[i];
+
+            // Progress update for ribbon
+            setCreationStatus(prev => ({
+                ...prev,
+                batchProgress: `Processing stream ${i + 1} of ${totalToProcess}...`
+            }));
+
+            const result = await handleCreateStreamSpecific(stream, currentTT);
+            if (result) {
+                currentTT = result;
+                generatedCount++;
+            } else {
+                addToast(`Batch stopped at stream ${stream.name} due to an error.`, 'error');
                 break;
             }
         }
@@ -2473,15 +2489,43 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         if (currentTT) {
             for (let i = 0; i < rowsToProcess.length; i++) {
                 const row = rowsToProcess[i];
-                currentTT = await handleCreateSpecific(row, currentTT);
-                if (!currentTT) {
+                const streamOffset = streamsToProcess.length;
+
+                // Real-time progress update for ribbon
+                setCreationStatus(prev => ({
+                    ...prev,
+                    batchProgress: `Processing teacher ${i + streamOffset + 1} of ${totalToProcess}... (${skippedRows.length} skipped)`
+                }));
+
+                // Pre-check for allotments/tasks
+                const tasksCount = row.allotments.reduce((sum, g) => sum + (Number(g.periods) || 0), 0);
+
+                if (tasksCount === 0) {
+                    console.warn(`Teacher ${row.teacher} skipped - no class allotments`);
+                    skippedRows.push(row.teacher);
+                    continue;
+                }
+
+                const result = await handleCreateSpecific(row, currentTT);
+                if (result) {
+                    currentTT = result;
+                    generatedCount++;
+                } else {
                     addToast(`Batch stopped at ${row.teacher} due to an error.`, 'error');
                     break;
                 }
             }
         }
 
-        addToast(`✅ Batch generation for ${label} completed!`, 'success');
+        // Final summary
+        const skippedCount = skippedRows.length;
+        addToast(`✅ Batch generation completed!\n\nGenerated: ${generatedCount}\nSkipped: ${skippedCount} (No allotments)`, 'success');
+
+        if (skippedCount > 0) {
+            setTimeout(() => {
+                addToast(`⚠️ Skipped (${skippedCount}): ${skippedRows.join(', ')}`, 'warning');
+            }, 1000);
+        }
     };
 
 
@@ -2935,12 +2979,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             borderRadius: '0.4rem'
                                                         }}
                                                     >
-                                                        <option value="">-- select teacher --</option>
+                                                        <option value="" style={{ color: '#000', background: '#fff' }}>-- select teacher --</option>
                                                         {[...teachers].sort().map(t => (
-                                                            <option key={t} value={t}>{t}</option>
+                                                            <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>{t}</option>
                                                         ))}
-                                                        <option disabled>──────────────</option>
-                                                        <option value="_type_new">✏️ Type New Teacher</option>
+                                                        <option disabled style={{ color: '#000', background: '#fff' }}>──────────────</option>
+                                                        <option value="_type_new" style={{ color: '#000', background: '#fff' }}>✏️ Type New Teacher</option>
                                                     </select>
                                                 )}
                                             </td>
@@ -3022,12 +3066,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             borderRadius: '0.4rem'
                                                         }}
                                                     >
-                                                        <option value="">-- select subject --</option>
+                                                        <option value="" style={{ color: '#000', background: '#fff' }}>-- select subject --</option>
                                                         {[...subjects].sort().map(s => (
-                                                            <option key={s} value={s}>{s}</option>
+                                                            <option key={s} value={s} style={{ color: '#000', background: '#fff' }}>{s}</option>
                                                         ))}
-                                                        <option disabled>──────────────</option>
-                                                        <option value="_type_new">✏️ Type New Subject</option>
+                                                        <option disabled style={{ color: '#000', background: '#fff' }}>──────────────</option>
+                                                        <option value="_type_new" style={{ color: '#000', background: '#fff' }}>✏️ Type New Subject</option>
                                                     </select>
                                                 )}
                                             </td>
@@ -3051,13 +3095,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         borderRadius: '0.4rem'
                                                     }}
                                                 >
-                                                    <option value="Main">Main</option>
-                                                    <option value="Middle">Middle</option>
-                                                    <option value="Senior">Senior</option>
-                                                    <option value="Middle&Main">Middle & Main</option>
-                                                    <option value="Main&Senior">Main & Senior</option>
-                                                    <option value="Middle&Senior">Middle & Senior</option>
-                                                    <option value="Middle,Main&Senior">Middle, Main & Senior</option>
+                                                    {['Main', 'Middle', 'Senior', 'Middle&Main', 'Main&Senior', 'Middle&Senior', 'Middle,Main&Senior'].map(lv => (
+                                                        <option key={lv} value={lv} style={{ color: '#000', background: '#fff' }}>{lv.replace(/&/g, ' & ')}</option>
+                                                    ))}
                                                 </select>
                                             </td>
                                             <td style={{ padding: '0.8rem', textAlign: 'center' }}>
@@ -3431,8 +3471,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         }}
                                                                         style={{
                                                                             padding: '0.4rem 0.8rem',
-                                                                            background: isSelected ? '#fbbf24' : (group.isMerged ? 'linear-gradient(135deg, #4f46e5, #4338ca)' : '#f8fafc'),
-                                                                            color: isSelected ? '#000' : (group.isMerged ? '#fff' : '#1e293b'),
+                                                                            background: isSelected ? '#fbbf24' : (group.isMerged ? 'linear-gradient(135deg, #4f46e5, #4338ca)' : '#1e293b'),
+                                                                            color: isSelected ? '#000' : '#fff',
                                                                             borderRadius: '0.5rem',
                                                                             fontSize: '0.85rem',
                                                                             fontWeight: '900',
@@ -3440,8 +3480,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                             display: 'flex',
                                                                             alignItems: 'center',
                                                                             gap: '0.6rem',
-                                                                            border: isGrpExpanded ? '2px solid #38bdf8' : '1px solid #e2e8f0',
-                                                                            boxShadow: isGrpExpanded ? '0 0 12px rgba(56, 189, 248, 0.25)' : '0 1px 2px rgba(0,0,0,0.05)',
+                                                                            border: isGrpExpanded ? '2px solid #38bdf8' : '1px solid #334155',
+                                                                            boxShadow: isGrpExpanded ? '0 0 12px rgba(56, 189, 248, 0.25)' : '0 1px 2px rgba(0,0,0,0.2)',
                                                                             zIndex: 2,
                                                                             transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                                                                             height: '34px',
@@ -3458,7 +3498,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 style={{
                                                                                     background: 'transparent',
                                                                                     border: 'none',
-                                                                                    color: '#1e293b',
+                                                                                    color: '#fff',
                                                                                     fontWeight: '900',
                                                                                     fontSize: '0.85rem',
                                                                                     cursor: 'pointer',
@@ -3466,7 +3506,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                     padding: 0
                                                                                 }}
                                                                             >
-                                                                                {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                                                                                {CLASS_OPTIONS.map(c => <option key={c} value={c} style={{ color: '#000', background: '#fff' }}>{c}</option>)}
                                                                             </select>
                                                                         ) : (
                                                                             <span style={{ letterSpacing: '0.02em' }}>{formatClasses(group.classes)}</span>
@@ -3478,7 +3518,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                             transform: isGrpExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
                                                                             display: 'inline-block',
                                                                             transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                                                            color: (isSelected || group.isMerged) ? 'inherit' : '#64748b'
+                                                                            color: '#94a3b8'
                                                                         }}>{isGrpExpanded ? '▼' : '▶'}</span>
                                                                     </div>
 
@@ -3488,18 +3528,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         maxWidth: isGrpExpanded ? '700px' : '0px',
                                                                         opacity: isGrpExpanded ? 1 : 0,
                                                                         transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                                                                        background: '#ffffff',
+                                                                        background: '#cbd5e1',
                                                                         color: '#1e293b',
                                                                         borderRadius: '0.5rem',
                                                                         marginLeft: isGrpExpanded ? '0.6rem' : '0px',
                                                                         whiteSpace: 'nowrap',
                                                                         boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                                                                        border: isGrpExpanded ? '1px solid #cbd5e1' : 'none',
+                                                                        border: isGrpExpanded ? '1px solid #94a3b8' : 'none',
                                                                         alignItems: 'center',
                                                                         height: '34px',
                                                                         boxSizing: 'border-box'
                                                                     }}>
-                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
                                                                             <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>PPS</span>
                                                                             <select
                                                                                 value={group.periods || 0}
@@ -3509,31 +3549,25 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
                                                                             </select>
                                                                         </div>
-                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
-                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b' }}>T</span>
+                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b' }}>TB</span>
                                                                             <select
                                                                                 value={group.tBlock || 0}
                                                                                 onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
                                                                                 style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
                                                                             >
-                                                                                <option value={0}>0</option>
-                                                                                <option value={2}>2</option>
-                                                                                <option value={4}>4</option>
+                                                                                {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
                                                                             </select>
                                                                         </div>
-                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
-                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#10b981' }}>L</span>
+                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#10b981' }}>LB</span>
                                                                             <select
                                                                                 value={group.lBlock || 0}
                                                                                 onChange={e => updateAllotmentGroup(row.id, gIdx, 'lBlock', e.target.value)}
                                                                                 style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
                                                                             >
-                                                                                {[0, 2, 4, 6].map(n => <option key={n} value={n}>{n}</option>)}
+                                                                                {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
                                                                             </select>
-                                                                        </div>
-                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
-                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>REM</span>
-                                                                            <span style={{ fontWeight: 900, fontSize: '0.85rem', color: '#64748b' }}>{Math.max(0, (group.periods || 0) - (group.tBlock || 0) - (group.lBlock || 0))}</span>
                                                                         </div>
                                                                         <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
                                                                             <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#3b82f6' }}>DAY</span>
@@ -6165,7 +6199,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         }}>
                             <span style={{ fontSize: '1rem' }}>{creationStatus.isError ? '❌' : '⚙️'}</span>
                             <span style={{ fontWeight: 800, fontSize: '0.85rem', color: creationStatus.isError ? '#fca5a5' : '#93c5fd', letterSpacing: '0.04em', fontFamily: 'inherit' }}>
-                                {creationStatus.isError ? 'ERROR' : 'BUILDING'}: {creationStatus.teacher}
+                                {creationStatus.isError ? 'ERROR' : (creationStatus.batchProgress ? creationStatus.batchProgress : 'BUILDING')}: {creationStatus.teacher}
                             </span>
                             <span style={{ color: '#475569', fontSize: '0.75rem', fontFamily: 'inherit' }}>· {creationStatus.subject}</span>
                             <div style={{ flex: 1 }} />
@@ -6309,7 +6343,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         onChange={e => setStreamForm({ ...streamForm, className: e.target.value })}
                                         style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
                                     >
-                                        {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                                        {CLASS_OPTIONS.map(c => <option key={c} value={c} style={{ color: '#000', background: '#fff' }}>{c}</option>)}
                                     </select>
                                 </div>
                                 <div>
@@ -6319,7 +6353,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         onChange={e => setStreamForm({ ...streamForm, periods: Number(e.target.value) })}
                                         style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
                                     >
-                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n} value={n}>{n} Periods</option>)}
+                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n} value={n} style={{ color: '#000', background: '#fff' }}>{n} Periods</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -6366,8 +6400,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     onChange={e => updateStreamSubject(idx, 'subject', e.target.value)}
                                                     style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
                                                 >
-                                                    <option value="">-- select subject --</option>
-                                                    {[...subjects].sort().map(s => <option key={s} value={s}>{s}</option>)}
+                                                    <option value="" style={{ color: '#000', background: '#fff' }}>-- select subject --</option>
+                                                    {[...subjects].sort().map(s => <option key={s} value={s} style={{ color: '#000', background: '#fff' }}>{s}</option>)}
                                                 </select>
                                             </div>
                                             <div>
@@ -6376,8 +6410,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     onChange={e => updateStreamSubject(idx, 'teacher', e.target.value)}
                                                     style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
                                                 >
-                                                    <option value="">-- select teacher --</option>
-                                                    {teachers.filter(t => !sub.subject || mappingRows.some(m => m.teacher === t && m.subject === sub.subject)).sort().map(t => <option key={t} value={t}>{t}</option>)}
+                                                    <option value="" style={{ color: '#000', background: '#fff' }}>-- select teacher --</option>
+                                                    {teachers.filter(t => !sub.subject || mappingRows.some(m => m.teacher === t && m.subject === sub.subject)).sort().map(t => <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>{t}</option>)}
                                                 </select>
                                             </div>
                                             <div>
