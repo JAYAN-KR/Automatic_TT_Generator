@@ -11,17 +11,17 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
             <tr>
                 <th rowspan="2" class="day-col">Day</th>
                 <th>CT</th>
-                <th>1</th>
-                <th>2</th>
+                <th>P1</th>
+                <th>P2</th>
                 <th class="v-break-head">BRK 1</th>
-                <th>3</th>
-                <th>4</th>
-                <th>5</th>
+                <th>P3</th>
+                <th>P4</th>
+                <th>P5</th>
                 <th class="v-break-head">BRK 2</th>
-                <th>6</th>
+                <th>P6</th>
                 <th class="v-break-head">LUNCH</th>
-                <th>7</th>
-                <th>8</th>
+                <th>P7</th>
+                <th>P8</th>
             </tr>
             <tr class="time-row">
                 <th>${mt.CT || '8:00-8:35'}</th>
@@ -70,17 +70,17 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
         const cells = [
             `<td class="day-cell">${days[idx]}</td>`,
             `<td class="period-cell">${renderTeacherCell('CT')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P1')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P2')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('S1')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('S2')}</td>`,
             // BREAK 1 index would be here
-            `<td class="period-cell">${renderTeacherCell('P3')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P4')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P5')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('S4')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('S5')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('S6')}</td>`,
             // BREAK 2 index would be here
-            `<td class="period-cell">${renderTeacherCell('P6')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('S8')}</td>`,
             // LUNCH index would be here
-            `<td class="period-cell">${renderTeacherCell('P7')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P8')}</td>`
+            `<td class="period-cell">${renderTeacherCell('S9')}</td>`, // Adjust based on Middle/Main? 
+            `<td class="period-cell">${renderTeacherCell('S11')}</td>`
         ];
 
         // Insert break cells only into the first row
@@ -155,17 +155,17 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
             <tr>
                 <th rowspan="2" class="day-col">Day</th>
                 <th>CT</th>
-                <th>1</th>
-                <th>2</th>
+                <th>P1</th>
+                <th>P2</th>
                 <th class="v-break-head">BRK 1</th>
-                <th>3</th>
-                <th>4</th>
-                <th>5</th>
+                <th>P3</th>
+                <th>P4</th>
+                <th>P5</th>
                 <th class="v-break-head">BRK 2</th>
-                <th>6</th>
+                <th>P6</th>
                 <th class="v-break-head">LUNCH</th>
-                <th>7</th>
-                <th>8</th>
+                <th>P7</th>
+                <th>P8</th>
             </tr>
             <tr class="time-row">
                 <th>${mt.CT || '8:00-8:35'}</th>
@@ -204,14 +204,14 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
         const cells = [
             `<td class="day-cell">${days[idx]}</td>`,
             `<td class="period-cell">${renderCell('CT')}</td>`,
-            `<td class="period-cell">${renderCell('P1')}</td>`,
-            `<td class="period-cell">${renderCell('P2')}</td>`,
-            `<td class="period-cell">${renderCell('P3')}</td>`,
-            `<td class="period-cell">${renderCell('P4')}</td>`,
-            `<td class="period-cell">${renderCell('P5')}</td>`,
-            `<td class="period-cell">${renderCell('P6')}</td>`,
-            `<td class="period-cell">${renderCell('P7')}</td>`,
-            `<td class="period-cell">${renderCell('P8')}</td>`
+            `<td class="period-cell">${renderCell('S1')}</td>`,
+            `<td class="period-cell">${renderCell('S2')}</td>`,
+            `<td class="period-cell">${renderCell('S4')}</td>`,
+            `<td class="period-cell">${renderCell('S5')}</td>`,
+            `<td class="period-cell">${renderCell('S6')}</td>`,
+            `<td class="period-cell">${renderCell('S8')}</td>`,
+            `<td class="period-cell">${renderCell('S9')}</td>`,
+            `<td class="period-cell">${renderCell('S11')}</td>`
         ];
 
         if (idx === 0) {

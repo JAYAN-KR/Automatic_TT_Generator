@@ -1268,6 +1268,7 @@ export default function TimetablePage() {
     // Tab 5 (Bell Timings) State
     const [bellTimings, setBellTimings] = useState({
         middleSchool: {
+            CT: '8:00-8:35',
             S1: '8:35-9:15',
             S2: '9:15-9:55',
             S3: '9:55-10:10', // Break 1
@@ -1281,6 +1282,7 @@ export default function TimetablePage() {
             S11: '14:05-14:55'
         },
         seniorSchool: {
+            CT: '8:00-8:35',
             S1: '8:35-9:15',
             S2: '9:15-9:55',
             S3: '9:55-10:10', // Break 1
@@ -1778,7 +1780,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         let currentTT = baseTT || generatedTimetable;
         if (!currentTT) {
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            const initPeriods = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+            const initPeriods = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
             const cTimetables = {};
             const tTimetables = {};
 
@@ -1794,7 +1796,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             allTeachers.forEach(t => {
                 tTimetables[t] = {};
                 days.forEach(d => {
-                    tTimetables[t][d] = { S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
+                    tTimetables[t][d] = { CT: 'CT', S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
                 });
                 tTimetables[t].weeklyPeriods = 0;
             });
@@ -1820,7 +1822,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         try {
             const tt = JSON.parse(JSON.stringify(currentTT));
             const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            const PRDS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+            const PRDS = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
 
             // Level determination
             const isMiddle = parseInt(stream.className) < 11;
@@ -1832,7 +1834,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 if (!tt.teacherTimetables[teacher]) {
                     tt.teacherTimetables[teacher] = { weeklyPeriods: 0 };
                     DAYS.forEach(day => {
-                        tt.teacherTimetables[teacher][day] = { S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
+                        tt.teacherTimetables[teacher][day] = { CT: 'CT', S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
                     });
                 }
                 const sl = tt.teacherTimetables[teacher][d][p];
@@ -1964,7 +1966,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         console.log('🟡 [CREATE] Existing generatedTimetable:', currentTT ? 'exists' : 'null - building fresh');
         if (!currentTT) {
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            const initPeriods = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+            const initPeriods = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
             const cTimetables = {};
             const tTimetables = {};
             const allTeachers = [...new Set(allotmentRows.map(r => r.teacher).filter(Boolean))];
@@ -1980,7 +1982,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             allTeachers.forEach(t => {
                 tTimetables[t] = {};
                 days.forEach(d => {
-                    tTimetables[t][d] = { S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
+                    tTimetables[t][d] = { CT: 'CT', S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
                 });
                 tTimetables[t].weeklyPeriods = 0;
             });
@@ -2046,7 +2048,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             const DMAP = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday' };
             const SHORT = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat' };
-            const PRDS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+            const PRDS = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
 
             // ── Teacher Availability Logic ────────────────────────────────────
             const mapping = mappingRows.find(m => m.teacher === teacher && m.subject === subject);
@@ -2070,7 +2072,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (!tt.teacherTimetables[teacher]) {
                 tt.teacherTimetables[teacher] = { weeklyPeriods: 0 };
                 DAYS.forEach(d => {
-                    tt.teacherTimetables[teacher][d] = { S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
+                    tt.teacherTimetables[teacher][d] = { CT: 'CT', S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
                 });
             }
 
@@ -4432,33 +4434,39 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 <th style={ttCellHeader({})}></th>
                                                                 {(() => {
                                                                     const isMiddle = ['6', '7', '8'].includes(activeGradeSubTab);
+                                                                    const bell = bellTimings[isMiddle ? 'middleSchool' : 'seniorSchool'];
                                                                     const headers = [
-                                                                        { l: '1', t: '8:35-9:15' }, { l: '2', t: '9:15-9:55' },
-                                                                        { l: 'BREAK-I', t: '9:55-10:10', b: true },
-                                                                        { l: '3', t: '10:10-10:50' }, { l: '4', t: '10:50-11:30' }, { l: '5', t: '11:30-12:10' },
-                                                                        { l: 'BREAK-II', t: '12:10-12:20', b: true },
-                                                                        { l: '6', t: '12:20-13:00' },
-                                                                        { l: isMiddle ? 'LUNCH' : '7', t: '13:00-13:30', lu: isMiddle },
-                                                                        { l: isMiddle ? '8' : 'LUNCH', t: '13:30-14:05', lu: !isMiddle },
-                                                                        { l: '9', t: '14:05-14:55' }
+                                                                        { label: 'CT', time: '8:00-8:35' },
+                                                                        { label: 'P1', time: bell?.S1 || '8:35-9:15' },
+                                                                        { label: 'P2', time: bell?.S2 || '9:15-9:55' },
+                                                                        { label: 'BRK', time: bell?.S3 || '9:55-10:10' },
+                                                                        { label: 'P3', time: bell?.S4 || '10:10-10:50' },
+                                                                        { label: 'P4', time: bell?.S5 || '10:50-11:30' },
+                                                                        { label: 'P5', time: bell?.S6 || '11:30-12:10' },
+                                                                        { label: 'BRK', time: bell?.S7 || '12:10-12:20' },
+                                                                        { label: 'P6', time: bell?.S8 || '12:20-13:00' },
+                                                                        { label: isMiddle ? 'LUNCH' : 'P7', time: bell?.S9 || '13:00-13:30' },
+                                                                        { label: isMiddle ? 'P7' : 'LUNCH', time: bell?.S10 || '13:30-14:05' },
+                                                                        { label: 'P8', time: bell?.S11 || '14:05-14:55' }
                                                                     ];
                                                                     return headers.map((h, hi) => (
                                                                         <th key={hi} style={ttCellHeader({
-                                                                            background: h.b ? 'rgba(251,191,36,0.1)' : (h.lu ? 'rgba(56,189,248,0.1)' : 'transparent'),
-                                                                            color: h.b ? '#fbbf24' : (h.lu ? '#38bdf8' : '#f1f5f9')
+                                                                            background: h.label === 'BRK' ? 'rgba(251,191,36,0.1)' : (h.label === 'LUNCH' ? 'rgba(56,189,248,0.1)' : 'transparent'),
+                                                                            color: h.label === 'BRK' ? '#fbbf24' : (h.label === 'LUNCH' ? '#38bdf8' : '#f1f5f9')
                                                                         })}>
-                                                                            {h.l}<br /><span style={{ fontWeight: 400, fontSize: '0.8em', color: '#94a3b8' }}>{h.t}</span>
+                                                                            {h.label}<br /><span style={{ fontWeight: 400, fontSize: '0.8em', color: '#94a3b8' }}>{h.time}</span>
                                                                         </th>
                                                                     ));
                                                                 })()}
                                                             </tr>
                                                         </thead>
                                                         <tbody>
-                                                            {DAYS.map(([label, dayKey], i) => (
-                                                                <tr key={label}>
-                                                                    <th style={ttCellDay()}>{label}</th>
-                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S1')}</td>
-                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S2')}</td>
+                                                            {DAYS.map((day, i) => (
+                                                                <tr key={day[1]}>
+                                                                    <th style={ttCellDay()}>{day[0]}</th>
+                                                                    <td style={ttCell()}>{renderCell(day[1], 'CT')}</td>
+                                                                    <td style={ttCell()}>{renderCell(day[1], 'S1')}</td>
+                                                                    <td style={ttCell()}>{renderCell(day[1], 'S2')}</td>
 
                                                                     {/* S3: BREAK I merged vertically */}
                                                                     {i === 0 ? (
@@ -4467,9 +4475,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         </td>
                                                                     ) : null}
 
-                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S4')}</td>
-                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S5')}</td>
-                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S6')}</td>
+                                                                    <td style={ttCell()}>{renderCell(day[1], 'S4')}</td>
+                                                                    <td style={ttCell()}>{renderCell(day[1], 'S5')}</td>
+                                                                    <td style={ttCell()}>{renderCell(day[1], 'S6')}</td>
 
                                                                     {/* S7: BREAK II merged vertically */}
                                                                     {i === 0 ? (
@@ -4478,7 +4486,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         </td>
                                                                     ) : null}
 
-                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S8')}</td>
+                                                                    <td style={ttCell()}>{renderCell(day[1], 'S8')}</td>
 
                                                                     {/* S9 & S10: Dynamic Periodic/Lunch merged vertically */}
                                                                     {(() => {
@@ -4491,13 +4499,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                             <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
                                                                                         </td>
                                                                                     ) : null}
-                                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S10')}</td>
+                                                                                    <td style={ttCell()}>{renderCell(day[1], 'S10')}</td>
                                                                                 </>
                                                                             );
                                                                         } else {
                                                                             return (
                                                                                 <>
-                                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S9')}</td>
+                                                                                    <td style={ttCell()}>{renderCell(day[1], 'S9')}</td>
                                                                                     {i === 0 ? (
                                                                                         <td rowSpan={DAYS.length} style={ttCellBreak('LUNCH', DAYS.length)}>
                                                                                             <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
@@ -4508,7 +4516,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         }
                                                                     })()}
 
-                                                                    <td style={ttCell()}>{renderCell(dayKey, 'S11')}</td>
+                                                                    <td style={ttCell()}>{renderCell(day[1], 'S11')}</td>
                                                                 </tr>
                                                             ))}
                                                         </tbody>
@@ -5389,7 +5397,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 {
                     activeTab === 3 && (() => {
                         const DPT_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                        const DPT_PERIODS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+                        const DPT_PERIODS = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
                         const DPT_DAY_SHORT = { Monday: 'MON', Tuesday: 'TUE', Wednesday: 'WED', Thursday: 'THU', Friday: 'FRI', Saturday: 'SAT' };
 
                         if (!generatedTimetable) {
@@ -5561,7 +5569,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     whiteSpace: 'nowrap'
                                                 }}>Total</th>
                                                 {DPT_DAYS.map(day => (
-                                                    <th key={day} colSpan={11} style={{
+                                                    <th key={day} colSpan={12} style={{
                                                         background: '#1e293b', color: '#a5b4fc',
                                                         fontSize: '0.7rem', fontWeight: 800,
                                                         padding: '0.4rem 0', textAlign: 'center',
@@ -5576,18 +5584,33 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             {/* Row 2: P1–P8 sub-headers per day */}
                                             <tr>
                                                 {DPT_DAYS.map(day => (
-                                                    DPT_PERIODS.map((p, pi) => (
-                                                        <th key={`${day}-${p}`} style={{
-                                                            background: '#0f172a', color: '#475569',
-                                                            fontSize: '0.6rem', fontWeight: 700,
-                                                            padding: '0.3rem 0', textAlign: 'center',
-                                                            borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
-                                                            borderBottom: '2px solid #334155',
-                                                            width: '42px', minWidth: '42px'
-                                                        }}>
-                                                            {p}
-                                                        </th>
-                                                    ))
+                                                    DPT_PERIODS.map((p, pi) => {
+                                                        let label = p;
+                                                        if (p === 'S1') label = 'P1';
+                                                        else if (p === 'S2') label = 'P2';
+                                                        else if (p === 'S3') label = 'BRK';
+                                                        else if (p === 'S4') label = 'P3';
+                                                        else if (p === 'S5') label = 'P4';
+                                                        else if (p === 'S6') label = 'P5';
+                                                        else if (p === 'S7') label = 'BRK';
+                                                        else if (p === 'S8') label = 'P6';
+                                                        else if (p === 'S9') label = 'P7/L';
+                                                        else if (p === 'S10') label = 'L/P7';
+                                                        else if (p === 'S11') label = 'P8';
+
+                                                        return (
+                                                            <th key={`${day}-${p}`} style={{
+                                                                background: '#0f172a', color: '#475569',
+                                                                fontSize: '0.6rem', fontWeight: 700,
+                                                                padding: '0.3rem 0', textAlign: 'center',
+                                                                borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
+                                                                borderBottom: '2px solid #334155',
+                                                                width: '42px', minWidth: '42px'
+                                                            }}>
+                                                                {label}
+                                                            </th>
+                                                        );
+                                                    })
                                                 ))}
                                             </tr>
                                         </thead>
@@ -5636,20 +5659,21 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 }
 
                                                                 const isMiddle = mapping?.level === 'Middle';
+                                                                const isCT = p === 'CT';
                                                                 const isBreak = p === 'S3' || p === 'S7';
                                                                 const isLunch = isMiddle ? p === 'S9' : p === 'S10';
 
                                                                 const eng = dptViewType === 'Teachers' ? getTeacherEngagement(item, day, p) : getClassEngagement(item, day, p);
-                                                                const content = isBreak ? 'BREAK' : (isLunch ? 'LUNCH' : (eng || ''));
-                                                                const isReserved = isBreak || isLunch;
+                                                                const content = isCT ? 'CT' : (isBreak ? 'BREAK' : (isLunch ? 'LUNCH' : (eng || '')));
+                                                                const isReserved = isCT || isBreak || isLunch;
 
                                                                 return (
                                                                     <td key={`${day}-${p}`} title={getTooltip(item, day, p, dptViewType)}
                                                                         style={{
                                                                             ...cellBase,
                                                                             borderLeft: pi === 0 ? '2px solid #334155' : '1px solid #1e293b',
-                                                                            background: eng ? 'rgba(79,70,229,0.22)' : (isBreak ? 'rgba(251,191,36,0.03)' : (isLunch ? 'rgba(56,189,248,0.03)' : '#0f172a')),
-                                                                            color: eng ? '#a5b4fc' : (isBreak ? 'rgba(251,191,36,0.2)' : (isLunch ? 'rgba(56,189,248,0.2)' : '#1e293b')),
+                                                                            background: eng ? 'rgba(79,70,229,0.22)' : (isCT ? 'rgba(129,140,248,0.03)' : (isBreak ? 'rgba(251,191,36,0.03)' : (isLunch ? 'rgba(56,189,248,0.03)' : '#0f172a'))),
+                                                                            color: eng ? '#a5b4fc' : (isCT ? 'rgba(129,140,248,0.2)' : (isBreak ? 'rgba(251,191,36,0.2)' : (isLunch ? 'rgba(56,189,248,0.2)' : '#1e293b'))),
                                                                             fontSize: isReserved ? '0.5rem' : '0.62rem',
                                                                             opacity: isReserved ? 0.6 : 1,
                                                                             position: 'relative'
@@ -5680,35 +5704,55 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 {
                     activeTab === 5 && (() => {
                         const teacherTTDict = generatedTimetable?.teacherTimetables || {};
-                        // Filter teachers based on their "level" field in the teachers array (Tab 0)
-                        const categoryTeachers = (teachers || [])
-                            .filter(t => {
-                                if (!t?.name) return false;
-                                const levelMatch = t.level || '';
+                        // Map teacher names to their levels from mappingRows
+                        const teacherLevelMap = new Map();
+                        mappingRows.forEach(r => {
+                            if (!r.teacher) return;
+                            if (!teacherLevelMap.has(r.teacher)) {
+                                teacherLevelMap.set(r.teacher, new Set());
+                            }
+                            if (r.level) teacherLevelMap.get(r.teacher).add(r.level);
+                        });
+
+                        // Filter and sort teachers for the active sub-tab
+                        const categoryTeachers = Array.from(teacherLevelMap.keys())
+                            .filter(name => {
+                                const levels = teacherLevelMap.get(name);
                                 if (teacherTTSubTab === 'Middle') {
-                                    return levelMatch === 'Middle';
+                                    return Array.from(levels).some(lv => lv && lv.includes('Middle'));
                                 } else {
-                                    // Main level teachers go to Senior School sub-tab
-                                    return levelMatch === 'Main' || levelMatch === 'Senior';
+                                    // Main or Senior teachers go to Senior sub-tab
+                                    return Array.from(levels).some(lv => lv && (lv.includes('Main') || lv.includes('Senior')));
                                 }
                             })
-                            .map(t => t.name)
-                            .sort();
+                            .sort((a, b) => a.localeCompare(b));
 
-
-
-                        const PAGE_SIZE = 4;
-                        const totalPages = Math.max(1, Math.ceil(categoryTeachers.length / PAGE_SIZE));
-                        const currentPageTeachers = categoryTeachers.slice((teacherTTPage - 1) * PAGE_SIZE, teacherTTPage * PAGE_SIZE);
-
-                        // Fill remaining slots to ALWAYS show 4 templates
-                        const displayList = [...currentPageTeachers];
-                        while (displayList.length < PAGE_SIZE) {
-                            displayList.push(null);
+                        // Chunk teachers into groups of 4 for 2x2 grid pages
+                        const pages = [];
+                        for (let i = 0; i < categoryTeachers.length; i += 4) {
+                            const chunk = categoryTeachers.slice(i, i + 4);
+                            while (chunk.length < 4) chunk.push(null);
+                            pages.push(chunk);
                         }
 
+
+
                         const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                        const PERIODS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+                        const PERIODS = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+
+                        const handlePrintAll = () => {
+                            if (!generatedTimetable) return;
+                            const cards = categoryTeachers.map(t => generateTeacherTimetableHTML(
+                                generatedTimetable.teacherTimetables,
+                                t,
+                                '2026-2027',
+                                generatedTimetable.bellTimings
+                            ));
+                            const html = generateFullPrintHTML(cards, 'teacher', '2026-2027', generatedTimetable.bellTimings);
+                            const win = window.open('', '_blank');
+                            win.document.write(html);
+                            win.document.close();
+                        };
 
                         // Inner component to render a single teacher's TT
                         const TeacherCard = ({ teacher }) => {
@@ -5736,9 +5780,24 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         <thead>
                                             <tr style={{ background: 'white' }}>
                                                 <th style={{ border: '1px solid black', width: '35px', fontSize: '0.65rem', padding: '4px', color: 'black' }}>DAY</th>
-                                                {PERIODS.map(p => (
-                                                    <th key={p} style={{ border: '1px solid black', fontSize: '0.6rem', padding: '2px', color: 'black' }}>{p}</th>
-                                                ))}
+                                                {PERIODS.map(p => {
+                                                    let label = p;
+                                                    if (p === 'S1') label = 'P1';
+                                                    else if (p === 'S2') label = 'P2';
+                                                    else if (p === 'S3') label = 'BRK';
+                                                    else if (p === 'S4') label = 'P3';
+                                                    else if (p === 'S5') label = 'P4';
+                                                    else if (p === 'S6') label = 'P5';
+                                                    else if (p === 'S7') label = 'BRK';
+                                                    else if (p === 'S8') label = 'P6';
+                                                    else if (p === 'S9') label = isMiddle ? 'LUNCH' : 'P7';
+                                                    else if (p === 'S10') label = isMiddle ? 'P7' : 'LUNCH';
+                                                    else if (p === 'S11') label = 'P8';
+
+                                                    return (
+                                                        <th key={p} style={{ border: '1px solid black', fontSize: '0.6rem', padding: '2px', color: 'black' }}>{label}</th>
+                                                    );
+                                                })}
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -5748,8 +5807,24 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         {day.substring(0, 3).toUpperCase()}
                                                     </td>
                                                     {PERIODS.map((p, pi) => {
+                                                        const isCT = p === 'CT';
                                                         const isBreak = p === 'S3' || p === 'S7';
                                                         const isLunch = isMiddle ? p === 'S9' : p === 'S10';
+
+                                                        if (isCT) {
+                                                            return (
+                                                                <td key={p} style={{
+                                                                    border: '1px solid black',
+                                                                    background: '#f1f5f9',
+                                                                    color: '#64748b',
+                                                                    textAlign: 'center',
+                                                                    fontSize: '0.6rem',
+                                                                    fontWeight: 900
+                                                                }}>
+                                                                    CT
+                                                                </td>
+                                                            );
+                                                        }
 
                                                         if (isBreak) {
                                                             if (di !== 0) return null; // Only render for first row with rowSpan
@@ -5806,10 +5881,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 padding: '2px',
                                                                 color: 'black'
                                                             }}>
-                                                                <div style={{ fontSize: '0.75rem', fontWeight: 900, color: 'black' }}>
+                                                                <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'black' }}>
                                                                     {displayClass}{slot?.isTBlock ? ' [T]' : (slot?.isLBlock ? ' [L]' : '')}
                                                                 </div>
-                                                                <div style={{ fontSize: '0.5rem', color: 'black', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displaySub}</div>
                                                             </td>
                                                         );
                                                     })}
@@ -5817,9 +5891,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             ))}
                                         </tbody>
                                     </table>
-                                    <div style={{ marginTop: 'auto', textAlign: 'right', padding: '4px 0 0 0' }}>
-                                        <span style={{ fontSize: '8px', color: 'black', fontStyle: 'italic', opacity: 0.6 }}>jkrdomain</span>
-                                    </div>
                                 </div>
                             );
                         };
@@ -5850,43 +5921,58 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     ))}
                                 </div>
 
-                                {/* Pagination Controls */}
+                                {/* Header with Print Button */}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f172a', padding: '1rem 1.5rem', borderRadius: '1rem', marginBottom: '1.5rem', border: '1px solid #334155' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                                         <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600 }}>
-                                            PAGE <b style={{ color: 'white', fontSize: '1rem' }}>{teacherTTPage}</b> OF <b>{totalPages || 1}</b>
+                                            LEVEL: <b style={{ color: 'white', fontSize: '1rem' }}>{teacherTTSubTab.toUpperCase()} SCHOOL</b>
                                         </span>
                                         <span style={{ width: '1px', height: '1rem', background: '#334155' }} />
-                                        <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found</span>
+                                        <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found ({pages.length} pages)</span>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '0.8rem' }}>
-                                        <button
-                                            disabled={teacherTTPage === 1}
-                                            onClick={() => setTeacherTTPage(p => p - 1)}
-                                            style={{ padding: '0.5rem 1.2rem', background: '#334155', color: 'white', border: 'none', borderRadius: '0.6rem', cursor: teacherTTPage === 1 ? 'not-allowed' : 'pointer', opacity: teacherTTPage === 1 ? 0.5 : 1, fontWeight: '700' }}
-                                        >Previous</button>
-                                        <button
-                                            disabled={teacherTTPage === totalPages || totalPages === 0}
-                                            onClick={() => setTeacherTTPage(p => p + 1)}
-                                            style={{ padding: '0.5rem 1.2rem', background: '#334155', color: 'white', border: 'none', borderRadius: '0.6rem', cursor: (teacherTTPage === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer', opacity: (teacherTTPage === totalPages || totalPages === 0) ? 0.5 : 1, fontWeight: '700' }}
-                                        >Next</button>
-                                    </div>
+                                    <button
+                                        onClick={handlePrintAll}
+                                        style={{
+                                            padding: '0.7rem 1.5rem',
+                                            background: '#10b981',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '0.75rem',
+                                            cursor: 'pointer',
+                                            fontWeight: '800',
+                                            fontSize: '0.9rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)'
+                                        }}
+                                    >
+                                        <span>🖨️</span> Print All {teacherTTSubTab} Timetables
+                                    </button>
                                 </div>
 
-                                {/* A4 Landscape Simulation Grid (2x2) */}
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(2, 1fr)',
-                                    gridTemplateRows: 'repeat(2, 1fr)',
-                                    gap: '20px',
-                                    background: 'white',
-                                    padding: '20px',
-                                    borderRadius: '0',
-                                    minHeight: '850px',
-                                    border: '1px solid black'
-                                }}>
-                                    {displayList.map((teacher, idx) => (
-                                        <TeacherCard key={teacher || `blank-${idx}`} teacher={teacher} />
+                                {/* Continuous List of A4 Pages */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem' }}>
+                                    {pages.map((pageTeachers, pIdx) => (
+                                        <div key={pIdx} style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: 'repeat(2, 1fr)',
+                                            gridTemplateRows: 'repeat(2, 1fr)',
+                                            gap: '20px',
+                                            background: 'white',
+                                            padding: '20px',
+                                            borderRadius: '0',
+                                            minHeight: '850px',
+                                            border: '1px solid black',
+                                            position: 'relative'
+                                        }}>
+                                            {pageTeachers.map((teacher, idx) => (
+                                                <TeacherCard key={teacher || `blank-${pIdx}-${idx}`} teacher={teacher} />
+                                            ))}
+                                            <div style={{ position: 'absolute', bottom: '5px', right: '10px', fontSize: '9px', color: 'black', fontStyle: 'italic', opacity: 0.5 }}>
+                                                jkrdomain - Page {pIdx + 1}/{pages.length}
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
                             </div>
