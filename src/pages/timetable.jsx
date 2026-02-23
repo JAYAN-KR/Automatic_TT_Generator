@@ -338,7 +338,6 @@ export default function TimetablePage() {
 
     // Teacher TT Tab State
     const [teacherTTSubTab, setTeacherTTSubTab] = useState('Middle');
-    const [teacherTTPage, setTeacherTTPage] = useState(1);
 
     // Tab 2 (Teachers) State
     const [teachers, setTeachers] = useState(() => {
@@ -5714,7 +5713,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             if (r.level) teacherLevelMap.get(r.teacher).add(r.level);
                         });
 
-                        // Filter and sort teachers for the active sub-tab
                         const categoryTeachers = Array.from(teacherLevelMap.keys())
                             .filter(name => {
                                 const levels = teacherLevelMap.get(name);
@@ -5726,14 +5724,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 }
                             })
                             .sort((a, b) => a.localeCompare(b));
-
-                        // Chunk teachers into groups of 4 for 2x2 grid pages
-                        const pages = [];
-                        for (let i = 0; i < categoryTeachers.length; i += 4) {
-                            const chunk = categoryTeachers.slice(i, i + 4);
-                            while (chunk.length < 4) chunk.push(null);
-                            pages.push(chunk);
-                        }
 
 
 
@@ -5902,7 +5892,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     {['Middle', 'Senior'].map(m => (
                                         <button
                                             key={m}
-                                            onClick={() => { setTeacherTTSubTab(m); setTeacherTTPage(1); }}
+                                            onClick={() => { setTeacherTTSubTab(m); }}
                                             style={{
                                                 padding: '0.7rem 1.4rem',
                                                 background: teacherTTSubTab === m ? '#4f46e5' : '#334155',
@@ -5928,7 +5918,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             LEVEL: <b style={{ color: 'white', fontSize: '1rem' }}>{teacherTTSubTab.toUpperCase()} SCHOOL</b>
                                         </span>
                                         <span style={{ width: '1px', height: '1rem', background: '#334155' }} />
-                                        <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found ({pages.length} pages)</span>
+                                        <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found</span>
                                     </div>
                                     <button
                                         onClick={handlePrintAll}
@@ -5951,29 +5941,16 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     </button>
                                 </div>
 
-                                {/* Continuous List of A4 Pages */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem' }}>
-                                    {pages.map((pageTeachers, pIdx) => (
-                                        <div key={pIdx} style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(2, 1fr)',
-                                            gridTemplateRows: 'repeat(2, 1fr)',
-                                            gap: '20px',
-                                            background: 'white',
-                                            padding: '20px',
-                                            borderRadius: '0',
-                                            minHeight: '850px',
-                                            border: '1px solid black',
-                                            position: 'relative'
-                                        }}>
-                                            {pageTeachers.map((teacher, idx) => (
-                                                <TeacherCard key={teacher || `blank-${pIdx}-${idx}`} teacher={teacher} />
-                                            ))}
-                                            <div style={{ position: 'absolute', bottom: '5px', right: '10px', fontSize: '9px', color: 'black', fontStyle: 'italic', opacity: 0.5 }}>
-                                                jkrdomain - Page {pIdx + 1}/{pages.length}
-                                            </div>
+                                {/* Continuous List of Teacher Timetables */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', paddingBottom: '2rem' }}>
+                                    {categoryTeachers.map((teacher, idx) => (
+                                        <div key={teacher || idx} style={{ width: '100%', maxWidth: '1100px', margin: '0 auto' }}>
+                                            <TeacherCard teacher={teacher} />
                                         </div>
                                     ))}
+                                    <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                                        jkrdomain — End of {teacherTTSubTab} School List
+                                    </div>
                                 </div>
                             </div>
                         );

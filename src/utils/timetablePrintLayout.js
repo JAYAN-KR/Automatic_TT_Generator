@@ -139,7 +139,7 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
         </table>
         <div class="card-footer">
             <span>Academic Year ${academicYear}</span>
-            <span>&nbsp;</span>
+            <span style="font-style: italic; opacity: 0.6;">jkrdomain</span>
         </div>
     </div>
     `;
@@ -269,7 +269,7 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
         </table>
         <div class="card-footer">
             <span>Academic Year ${academicYear}</span>
-            <span>&nbsp;</span>
+            <span style="font-style: italic; opacity: 0.6;">jkrdomain</span>
         </div>
     </div>
     `;
