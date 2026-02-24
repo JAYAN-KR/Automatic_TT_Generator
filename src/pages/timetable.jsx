@@ -7,6 +7,7 @@ import {
     generateFullPrintHTML
 } from '../utils/timetablePrintLayout';
 import { generateTimetable } from '../utils/timetableGenerator';
+import { detectLabConflict, determineLabStatus, LAB_GROUPS } from '../utils/labSharingValidation';
 import { saveTimetableMappings, loadTimetableMappings, publishTimetableVersion, publishTimetableToAPK } from '../services/timetableFirestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
@@ -422,7 +423,7 @@ export default function TimetablePage() {
                         id: `${p.teacher}||${p.subject}`,
                         teacher: p.teacher,
                         subject: p.subject,
-                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, preferredDay: 'Any', isMerged: false }],
+                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, preferredDay: 'Any', isMerged: false, labGroup: 'None' }],
                         total: 0
                     }));
                 }
@@ -434,7 +435,7 @@ export default function TimetablePage() {
             id: Date.now(),
             teacher: '',
             subject: '',
-            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
+            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false, labGroup: 'None' }],
             total: 0
         }];
     });
@@ -496,6 +497,8 @@ export default function TimetablePage() {
                 updatedGroup.lBlock = Number(value);
             } else if (field === 'preferredDay') {
                 updatedGroup.preferredDay = value;
+            } else if (field === 'labGroup') {
+                updatedGroup.labGroup = value;
             }
 
             newGroups[groupIndex] = updatedGroup;
@@ -511,7 +514,7 @@ export default function TimetablePage() {
             if (r.id !== rowId) return r;
             return {
                 ...r,
-                allotments: [...r.allotments, { id: Date.now() + Math.random(), subject: '', classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }]
+                allotments: [...r.allotments, { id: Date.now() + Math.random(), subject: '', classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false, labGroup: 'None' }]
             };
         }));
     };
@@ -691,7 +694,7 @@ export default function TimetablePage() {
     const addSubjectToStream = () => {
         setStreamForm(prev => ({
             ...prev,
-            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '' }]
+            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '', labGroup: 'None' }]
         }));
     };
 
@@ -2002,7 +2005,19 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const streamFree = (d, p) => {
                 const classFree = (tt.classTimetables[stream.className]?.[d]?.[p]?.subject ?? '') === '';
                 const teachersFree = stream.subjects.every(s => tFree(s.teacher, d, p));
-                return classFree && teachersFree;
+
+                // Lab conflict check (Global)
+                let labConflict = false;
+                for (const s of stream.subjects) {
+                    if (s.labGroup && s.labGroup !== 'None') {
+                        if (detectLabConflict(tt.classTimetables, stream.className, d, p, s.labGroup)) {
+                            labConflict = true;
+                            break;
+                        }
+                    }
+                }
+
+                return classFree && teachersFree && !labConflict;
             };
 
             const periodsToPlace = Number(stream.periods) || 0;
@@ -2074,13 +2089,31 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     };
 
                     stream.subjects.forEach(s => {
+                        const labStatusData = {
+                            className: stream.className,
+                            subject: s.subject,
+                            labGroup: s.labGroup || 'None'
+                        };
+                        const isLab = determineLabStatus(tt.classTimetables, labStatusData, pick.d, pick.p);
+
                         tt.teacherTimetables[s.teacher][pick.d][pick.p] = {
                             className: stream.className,
                             subject: s.subject,
                             groupName: s.groupName,
                             isStream: true,
-                            streamName: stream.name
+                            streamName: stream.name,
+                            labGroup: s.labGroup || 'None',
+                            isLabPeriod: isLab
                         };
+
+                        // Also update class timetable slot with the first subject's lab info for display
+                        // In streams, all subjects usually share the same lab/theory status if they are in the same stream
+                        // but we'll store it on the class slot as well
+                        if (!tt.classTimetables[stream.className][pick.d][pick.p].labGroup) {
+                            tt.classTimetables[stream.className][pick.d][pick.p].labGroup = s.labGroup || 'None';
+                            tt.classTimetables[stream.className][pick.d][pick.p].isLabPeriod = isLab;
+                        }
+
                         tt.teacherTimetables[s.teacher][pick.d].periodCount++;
                         tt.teacherTimetables[s.teacher].weeklyPeriods++;
                     });
@@ -2171,19 +2204,29 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const tasks = [];
             row.allotments.forEach(group => {
                 const total = Number(group.periods) || 0;
-                const tb = Number(group.tBlock) || 0;
-                const lb = Number(group.lBlock) || 0;
+                const totalRequestedTB = Number(group.tBlock) || 0;
+                const totalRequestedLB = Number(group.lBlock) || 0;
 
-                // Blocks are pairs of 2
-                const tBlocksCount = Math.floor(tb / 2);
-                const lBlocksCount = Math.floor(lb / 2);
+                // Calculate blocks based on requested periods (e.g. 2 periods = 1 block)
+                const tBlocksCount = Math.floor(totalRequestedTB / 2);
+                const lBlocksCount = Math.floor(totalRequestedLB / 2);
                 const singles = Math.max(0, total - (tBlocksCount * 2) - (lBlocksCount * 2));
 
                 const pDay = group.preferredDay || 'Any';
 
-                for (let i = 0; i < tBlocksCount; i++) tasks.push({ type: 'TBLOCK', teacher, subject: group.subject, classes: group.classes, preferredDay: pDay });
-                for (let i = 0; i < lBlocksCount; i++) tasks.push({ type: 'LBLOCK', teacher, subject: group.subject, classes: group.classes, preferredDay: 'Any' }); // Lab blocks usually flexible
-                for (let i = 0; i < singles; i++) tasks.push({ type: 'SINGLE', teacher, subject: group.subject, classes: group.classes, preferredDay: pDay });
+                // When creating tasks, we pass the totalRequestedLB to the engine
+                const taskMetadata = {
+                    teacher,
+                    subject: group.subject,
+                    classes: group.classes,
+                    preferredDay: pDay,
+                    labGroup: group.labGroup || 'None',
+                    targetLabCount: totalRequestedLB
+                };
+
+                for (let i = 0; i < tBlocksCount; i++) tasks.push({ ...taskMetadata, type: 'TBLOCK' });
+                for (let i = 0; i < lBlocksCount; i++) tasks.push({ ...taskMetadata, type: 'LBLOCK', preferredDay: 'Any' });
+                for (let i = 0; i < singles; i++) tasks.push({ ...taskMetadata, type: 'SINGLE' });
             });
 
             if (tasks.length === 0) {
@@ -2243,7 +2286,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             };
             const cFree = (d, p, classes) =>
                 classes.every(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject ?? '') === '');
-            const slotFree = (d, p, classes) => AVAILABLE_SLOTS.includes(p) && tFree(d, p) && cFree(d, p, classes);
+
+            const labFree = (d, p, classes, labGroup) => {
+                if (labGroup === 'None') return true;
+                return !classes.some(cn => detectLabConflict(tt.classTimetables, cn, d, p, labGroup));
+            };
+
+            const slotFree = (d, p, classes, labGroup = 'None') => AVAILABLE_SLOTS.includes(p) && tFree(d, p) && cFree(d, p, classes) && labFree(d, p, classes, labGroup);
             const teacherDayLoad = (d) => AVAILABLE_SLOTS.filter(p => !tFree(d, p)).length;
 
             // Returns true if the given day already has ANY block period for these classes
@@ -2437,12 +2486,17 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     }
 
                     // Commit Lab Block
+                    const abbr = getAbbreviation(task.subject);
+                    const labStatusData = { className: task.classes[0], subject: task.subject, labGroup: task.labGroup, targetLabCount: task.targetLabCount };
+                    const isLab1 = determineLabStatus(tt.classTimetables, labStatusData, best.d, best.p1);
+                    const isLab2 = determineLabStatus(tt.classTimetables, labStatusData, best.d, best.p2);
+
                     task.classes.forEach(cn => {
-                        tt.classTimetables[cn][best.d][best.p1] = { subject: task.subject, teacher, isBlock: true, isLBlock: true };
-                        tt.classTimetables[cn][best.d][best.p2] = { subject: task.subject, teacher, isBlock: true, isLBlock: true };
+                        tt.classTimetables[cn][best.d][best.p1] = { subject: abbr, teacher, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab1 };
+                        tt.classTimetables[cn][best.d][best.p2] = { subject: abbr, teacher, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab2 };
                     });
-                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, isLBlock: true };
-                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, isLBlock: true };
+                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab1 };
+                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab2 };
                     tt.teacherTimetables[teacher][best.d].periodCount += 2;
                     tt.teacherTimetables[teacher].weeklyPeriods += 2;
 
@@ -2504,7 +2558,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         const { d, p } = orderedSlots[slotIdx];
                         if (taskDays.length > 0 && !taskDays.includes(d)) continue;
                         if (subjectCountOnDay(d) >= 1) continue; // First pass: prefer fresh days
-                        if (slotFree(d, p, task.classes)) {
+                        if (slotFree(d, p, task.classes, task.labGroup)) {
                             pick = { d, p, slotIdx };
                             break;
                         }
@@ -2517,7 +2571,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             const { d, p } = orderedSlots[slotIdx];
                             if (taskDays.length > 0 && !taskDays.includes(d)) continue;
                             if (subjectCountOnDay(d) >= 2) continue;
-                            if (slotFree(d, p, task.classes)) {
+                            if (slotFree(d, p, task.classes, task.labGroup)) {
                                 pick = { d, p, slotIdx };
                                 break;
                             }
@@ -2529,7 +2583,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         for (let attempt = 0; attempt < 100; attempt++) {
                             const slotIdx = (currentSlotIdx + attempt) % orderedSlots.length;
                             const { d, p } = orderedSlots[slotIdx];
-                            if (slotFree(d, p, task.classes)) {
+                            if (slotFree(d, p, task.classes, task.labGroup)) {
                                 pick = { d, p, slotIdx };
                                 break;
                             }
@@ -2542,11 +2596,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         return;
                     }
 
-                    // Commit pick
+                    const abbr = getAbbreviation(task.subject);
+                    const labStatusData = { className: task.classes[0], subject: task.subject, labGroup: task.labGroup, targetLabCount: task.targetLabCount };
+                    const isLab = determineLabStatus(tt.classTimetables, labStatusData, pick.d, pick.p);
+
                     task.classes.forEach(cn => {
-                        tt.classTimetables[cn][pick.d][pick.p] = { subject: task.subject, teacher, isBlock: false };
+                        tt.classTimetables[cn][pick.d][pick.p] = { subject: abbr, teacher, isBlock: false, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab };
                     });
-                    tt.teacherTimetables[teacher][pick.d][pick.p] = { className: task.classes.join('/'), subject: task.subject, isBlock: false };
+                    tt.teacherTimetables[teacher][pick.d][pick.p] = { className: task.classes.join('/'), subject: task.subject, isBlock: false, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab };
                     tt.teacherTimetables[teacher][pick.d].periodCount += 1;
                     tt.teacherTimetables[teacher].weeklyPeriods += 1;
 
@@ -2739,8 +2796,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             if (!legacyDistribution[cls]) legacyDistribution[cls] = {};
                             legacyDistribution[cls][sub] = groupPeriods;
 
+                            if (!legacyDistribution.__labGroups) legacyDistribution.__labGroups = {};
+                            if (!legacyDistribution.__labGroups[cls]) legacyDistribution.__labGroups[cls] = {};
+                            legacyDistribution.__labGroups[cls][sub] = { labGroup: group.labGroup || 'None', targetLabCount: Number(group.lBlock) || 0 };
+
                             if (!legacyDistribution.__blocks[cls]) legacyDistribution.__blocks[cls] = {};
-                            legacyDistribution.__blocks[cls][sub] = Number(group.blockPeriods) || 0;
+                            legacyDistribution.__blocks[cls][sub] = Math.floor((Number(group.tBlock) || 0) / 2) + Math.floor((Number(group.lBlock) || 0) / 2);
 
                             if (!legacyDistribution.__days[cls]) legacyDistribution.__days[cls] = {};
                             legacyDistribution.__days[cls][sub] = group.preferredDay || 'Any';
@@ -3552,6 +3613,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                             </select>
                                                                         </div>
                                                                         <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>LAB</span>
+                                                                            <select
+                                                                                value={group.labGroup || 'None'}
+                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'labGroup', e.target.value)}
+                                                                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}
+                                                                            >
+                                                                                <option value="None">None</option>
+                                                                                <option value="CSc Lab Group">CSc Group</option>
+                                                                                <option value="DS/AI Lab Group">DS/AI Group</option>
+                                                                            </select>
+                                                                        </div>
+                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
                                                                             <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>PPS</span>
                                                                             <select
                                                                                 value={group.periods || 0}
@@ -3568,7 +3641,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
                                                                                 style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
                                                                             >
-                                                                                {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+                                                                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
                                                                             </select>
                                                                         </div>
                                                                         <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
@@ -4458,7 +4531,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', justifyContent: 'center', maxWidth: '100%' }}>
                                                             {(cell.subjects || []).map((s, idx) => (
                                                                 <span key={idx} style={{ fontSize: '0.55em', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                                                                    {s.subject}{idx < (cell.subjects.length - 1) ? ',' : ''}
+                                                                    {s.subject}{s.isLabPeriod ? ' [LAB]' : (s.labGroup && s.labGroup !== 'None' ? ' [TH]' : '')}{idx < (cell.subjects.length - 1) ? ',' : ''}
                                                                 </span>
                                                             ))}
                                                         </div>
@@ -4478,7 +4551,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     height: '100%', width: '100%', minHeight: '40px'
                                                 }}>
                                                     <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>
-                                                        {abbr}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}
+                                                        {abbr}{cell.isLabPeriod ? ' [LAB]' : (cell.labGroup && cell.labGroup !== 'None' ? ' [TH]' : '')}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}
                                                     </span>
                                                     {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1 }}>{teacherFirst}</span>}
 
@@ -6091,9 +6164,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                                         if (slot?.isStream) {
                                                             displayClass = slot.groupName ? `${slot.className}-${slot.groupName}` : slot.className;
-                                                            displaySub = getSubAbbr(slot.subject || '');
+                                                            displaySub = getSubAbbr(slot.subject || '') + (slot.isLabPeriod ? ' [LAB]' : (slot.labGroup && slot.labGroup !== 'None' ? ' [TH]' : ''));
                                                         } else {
-                                                            displaySub = getSubAbbr(displaySub);
+                                                            displaySub = getSubAbbr(displaySub) + (slot?.isLabPeriod ? ' [LAB]' : (slot?.labGroup && slot?.labGroup !== 'None' ? ' [TH]' : ''));
                                                         }
 
                                                         const { num, div } = getFormattedClass(displayClass);
@@ -6745,7 +6818,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     {streamForm.subjects.map((sub, idx) => (
                                         <div key={idx} style={{
                                             display: 'grid',
-                                            gridTemplateColumns: '1fr 1fr 1fr 40px',
+                                            gridTemplateColumns: '1fr 1fr 1fr 120px 40px',
                                             gap: '0.75rem',
                                             alignItems: 'center',
                                             background: 'rgba(30, 41, 59, 0.5)',
@@ -6789,6 +6862,17 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     placeholder="Group Name (e.g. Hindi)"
                                                     style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
                                                 />
+                                            </div>
+                                            <div>
+                                                <select
+                                                    value={sub.labGroup || 'None'}
+                                                    onChange={e => updateStreamSubject(idx, 'labGroup', e.target.value)}
+                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#10b981', fontSize: '0.8rem', fontWeight: 800 }}
+                                                >
+                                                    <option value="None">No Lab</option>
+                                                    <option value="CSc Lab Group">CSc Group</option>
+                                                    <option value="DS/AI Lab Group">DS/AI Group</option>
+                                                </select>
                                             </div>
                                             <button
                                                 onClick={() => removeSubjectFromStream(idx)}
