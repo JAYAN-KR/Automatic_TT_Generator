@@ -276,6 +276,7 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
             teacherTimetables[s.teacher][day][period] = {
                 className: task.className,
                 subject: s.subject,
+                fullSubject: s.subject,
                 groupName: s.groupName,
                 isStream: true,
                 streamName: task.name,

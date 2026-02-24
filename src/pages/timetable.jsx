@@ -2092,17 +2092,20 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         const labStatusData = {
                             className: stream.className,
                             subject: s.subject,
-                            labGroup: s.labGroup || 'None'
+                            labGroup: s.labGroup || 'None',
+                            targetLabCount: s.targetLabCount
                         };
                         const isLab = determineLabStatus(tt.classTimetables, labStatusData, pick.d, pick.p);
 
                         tt.teacherTimetables[s.teacher][pick.d][pick.p] = {
                             className: stream.className,
                             subject: s.subject,
+                            fullSubject: s.subject,
                             groupName: s.groupName,
                             isStream: true,
                             streamName: stream.name,
                             labGroup: s.labGroup || 'None',
+                            targetLabCount: s.targetLabCount,
                             isLabPeriod: isLab
                         };
 
@@ -2492,11 +2495,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     const isLab2 = determineLabStatus(tt.classTimetables, labStatusData, best.d, best.p2);
 
                     task.classes.forEach(cn => {
-                        tt.classTimetables[cn][best.d][best.p1] = { subject: abbr, teacher, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab1 };
-                        tt.classTimetables[cn][best.d][best.p2] = { subject: abbr, teacher, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab2 };
+                        tt.classTimetables[cn][best.d][best.p1] = { subject: abbr, teacher, fullSubject: task.subject, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab1 };
+                        tt.classTimetables[cn][best.d][best.p2] = { subject: abbr, teacher, fullSubject: task.subject, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab2 };
                     });
-                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab1 };
-                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab2 };
+                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject: task.subject, fullSubject: task.subject, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab1 };
+                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject: task.subject, fullSubject: task.subject, isBlock: true, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab2 };
                     tt.teacherTimetables[teacher][best.d].periodCount += 2;
                     tt.teacherTimetables[teacher].weeklyPeriods += 2;
 
@@ -2601,9 +2604,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     const isLab = determineLabStatus(tt.classTimetables, labStatusData, pick.d, pick.p);
 
                     task.classes.forEach(cn => {
-                        tt.classTimetables[cn][pick.d][pick.p] = { subject: abbr, teacher, isBlock: false, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab };
+                        tt.classTimetables[cn][pick.d][pick.p] = { subject: abbr, teacher, fullSubject: task.subject, isBlock: false, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab };
                     });
-                    tt.teacherTimetables[teacher][pick.d][pick.p] = { className: task.classes.join('/'), subject: task.subject, isBlock: false, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab };
+                    tt.teacherTimetables[teacher][pick.d][pick.p] = { className: task.classes.join('/'), subject: task.subject, fullSubject: task.subject, isBlock: false, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab };
                     tt.teacherTimetables[teacher][pick.d].periodCount += 1;
                     tt.teacherTimetables[teacher].weeklyPeriods += 1;
 
@@ -5573,7 +5576,27 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             );
                         }
 
-                        const teacherNames = Object.keys(generatedTimetable.teacherTimetables || {}).sort();
+                        const teacherSubjectMap = {};
+                        mappingRows.forEach(m => {
+                            if (m.teacher) teacherSubjectMap[m.teacher.trim()] = m.subjects?.[0] || '';
+                        });
+                        allotmentRows.forEach(r => {
+                            if (r.teacher && !teacherSubjectMap[r.teacher.trim()]) {
+                                teacherSubjectMap[r.teacher.trim()] = r.subject || r.allotments?.[0]?.subject || '';
+                            }
+                        });
+
+                        const teacherNames = Object.keys(generatedTimetable.teacherTimetables || {}).sort((a, b) => {
+                            const subA = (teacherSubjectMap[a.trim()] || '').toUpperCase();
+                            const subB = (teacherSubjectMap[b.trim()] || '').toUpperCase();
+                            if (subA !== subB) {
+                                if (!subA) return 1;
+                                if (!subB) return -1;
+                                return subA.localeCompare(subB);
+                            }
+                            return a.trim().localeCompare(b.trim());
+                        });
+
                         const classNames = Object.keys(generatedTimetable.classTimetables || {}).sort((a, b) => {
                             const numA = parseInt(a) || 0;
                             const numB = parseInt(b) || 0;
@@ -5791,6 +5814,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             whiteSpace: 'nowrap'
                                                         }}>
                                                             {item}
+                                                            {dptViewType === 'Teachers' && teacherSubjectMap[item.trim()] && (
+                                                                <div style={{ fontSize: '0.62rem', color: '#64748b', marginTop: '2px', fontWeight: 600, letterSpacing: '0.01em' }}>
+                                                                    {teacherSubjectMap[item.trim()]}
+                                                                </div>
+                                                            )}
                                                         </td>
                                                         {/* Busy count */}
                                                         <td style={{
@@ -5871,67 +5899,37 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                         // Comprehensive teacher discovery: include from TT, mappings, and allotments
                         // 1. Discovery & Normalization
+                        // 1. Discovery
                         const allTeacherNames = new Set();
                         Object.keys(teacherTTDict).forEach(t => { if (t && t !== 'EMPTY TEMPLATE') allTeacherNames.add(t.trim()); });
                         mappingRows.forEach(r => { if (r.teacher && r.teacher !== 'EMPTY TEMPLATE') allTeacherNames.add(r.teacher.trim()); });
                         allotmentRows.forEach(r => { if (r.teacher && r.teacher !== 'EMPTY TEMPLATE') allTeacherNames.add(r.teacher.trim()); });
 
-                        const teacherLevelMap = new Map();
-                        const addLevel = (name, lv) => {
-                            if (!name || !lv) return;
-                            const n = name.trim();
-                            if (!teacherLevelMap.has(n)) teacherLevelMap.set(n, new Set());
-                            teacherLevelMap.get(n).add(lv);
-                        };
+                        const middleTeachers = [];
+                        const seniorTeachers = [];
 
-                        // Source 1: Explicit Mappings (Primary Truth)
-                        mappingRows.forEach(r => addLevel(r.teacher, r.level));
-
-                        // Source 2: Allotment Inference (Only if periods > 0)
-                        allotmentRows.forEach(r => {
-                            if (!r.teacher) return;
-                            (r.allotments || []).forEach(al => {
-                                if ((Number(al.periods) || 0) <= 0) return;
-                                (al.classes || []).forEach(cls => {
-                                    const grade = parseInt(cls);
-                                    if (!isNaN(grade)) {
-                                        if (grade <= 8) addLevel(r.teacher, 'Middle');
-                                        else addLevel(r.teacher, 'Senior');
-                                    }
-                                });
-                            });
-                        });
-
-                        // Source 3: Generated TT Inference (Actual Assignments)
-                        Object.entries(teacherTTDict).forEach(([tName, schedule]) => {
-                            Object.values(schedule).forEach(day => {
-                                if (!day || typeof day !== 'object') return;
-                                Object.values(day).forEach(slot => {
-                                    if (slot && typeof slot === 'object' && slot.className) {
-                                        const grade = parseInt(slot.className);
-                                        if (!isNaN(grade)) {
-                                            if (grade <= 8) addLevel(tName, 'Middle');
-                                            else addLevel(tName, 'Senior');
-                                        }
-                                    }
-                                });
-                            });
-                        });
-
-                        const categoryTeachers = Array.from(allTeacherNames)
-                            .filter(name => {
-                                const levels = teacherLevelMap.get(name);
-                                if (!levels || levels.size === 0) {
-                                    // Default to Senior sub-tab if no level found
-                                    return teacherTTSubTab === 'Senior';
-                                }
-                                if (teacherTTSubTab === 'Middle') {
-                                    return Array.from(levels).some(lv => lv && lv.includes('Middle'));
+                        Array.from(allTeacherNames).forEach(tName => {
+                            const mapping = mappingRows.find(m => (m.teacher || '').trim() === tName);
+                            if (mapping) {
+                                if (mapping.level === 'Middle') {
+                                    middleTeachers.push(tName);
                                 } else {
-                                    return Array.from(levels).some(lv => lv && (lv.includes('Main') || lv.includes('Senior')));
+                                    // Covers 'Main', 'Senior', and anything else
+                                    seniorTeachers.push(tName);
+                                    if (mapping.level !== 'Main' && mapping.level !== 'Senior') {
+                                        console.warn(`Teacher ${tName} has level "${mapping.level}". Defaulting to Senior.`);
+                                    }
                                 }
-                            })
-                            .sort((a, b) => a.localeCompare(b));
+                            } else {
+                                console.warn(`Teacher ${tName} not found in first tab. Defaulting to Senior.`);
+                                seniorTeachers.push(tName);
+                            }
+                        });
+
+                        const uniqueMiddle = [...new Set(middleTeachers)].sort((a, b) => a.localeCompare(b));
+                        const uniqueSenior = [...new Set(seniorTeachers)].sort((a, b) => a.localeCompare(b));
+
+                        const categoryTeachers = teacherTTSubTab === 'Middle' ? uniqueMiddle : uniqueSenior;
 
                         const emptyTeachers = Array.from(allTeacherNames).filter(name => {
                             const trimmedName = name.trim();
@@ -6085,8 +6083,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     else if (p === 'S10') label = isMiddle ? 'P7' : 'LUNCH';
                                                     else if (p === 'S11') label = 'P8';
 
+                                                    const timings = generatedTimetable?.bellTimings?.[isMiddle ? 'middleSchool' : 'seniorSchool'] || bellTimings?.[isMiddle ? 'middleSchool' : 'seniorSchool'];
+                                                    const timeStr = timings?.[p] || '';
+
                                                     return (
-                                                        <th key={p} style={{ border: '1px solid black', fontSize: '0.6rem', padding: '2px', color: 'black' }}>{label}</th>
+                                                        <th key={p} style={{ border: '1px solid black', fontSize: '0.6rem', padding: '1px', color: 'black', fontWeight: 900, textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.65rem', fontWeight: 900, color: 'black', borderBottom: timeStr ? '1px solid black' : 'none', marginBottom: '1px' }}>{label}</div>
+                                                            {timeStr && (
+                                                                <div style={{ fontSize: '0.45rem', fontWeight: 900, color: 'black', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
+                                                                    {timeStr}
+                                                                </div>
+                                                            )}
+                                                        </th>
                                                     );
                                                 })}
                                             </tr>
@@ -6136,11 +6144,32 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         }
 
                                                         if (isLunch) {
-                                                            const slot = tTT?.[day]?.[p];
-                                                            const hasPeriod = slot && (typeof slot === 'object' ? slot.className : slot);
+                                                            const lunchSlot = isMiddle ? 'S9' : 'S10';
+                                                            const isLunchColumnClear = DAYS.every(d => {
+                                                                const s = tTT?.[d]?.[lunchSlot];
+                                                                return !s || !(typeof s === 'object' ? s.className : s);
+                                                            });
 
-                                                            // If there's no period here, show LUNCH. 
-                                                            // If there IS a period, we'll let it render below but we might want a lunch background.
+                                                            if (isLunchColumnClear) {
+                                                                if (di !== 0) return null;
+                                                                return (
+                                                                    <td key={p} rowSpan={6} style={{
+                                                                        border: '1px solid black',
+                                                                        background: 'white',
+                                                                        color: 'black',
+                                                                        writingMode: 'vertical-lr',
+                                                                        textAlign: 'center',
+                                                                        fontSize: '0.55rem',
+                                                                        fontWeight: 900,
+                                                                        letterSpacing: '0.2em'
+                                                                    }}>
+                                                                        LUNCH
+                                                                    </td>
+                                                                );
+                                                            }
+
+                                                            const slot = tTT?.[day]?.[p];
+                                                            const hasPeriod = slot && (typeof slot === 'object' ? (slot.className || slot.subject) : slot);
                                                             if (!hasPeriod) {
                                                                 return (
                                                                     <td key={p} style={{
@@ -6155,19 +6184,20 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     </td>
                                                                 );
                                                             }
-                                                            // If hasPeriod, fall through to normal rendering but maybe with a light red tint
                                                         }
 
                                                         const slot = tTT?.[day]?.[p];
-                                                        let displayClass = (slot && typeof slot === 'object') ? slot.className : (slot || '-');
-                                                        let displaySub = (slot && typeof slot === 'object') ? (slot.subject || '') : '';
+                                                        const isObj = slot && typeof slot === 'object';
+                                                        let displayClass = isObj ? slot.className : (slot || '-');
+                                                        let displaySub = isObj ? (slot.subject || '') : '';
 
-                                                        if (slot?.isStream) {
-                                                            displayClass = slot.groupName ? `${slot.className}-${slot.groupName}` : slot.className;
-                                                            displaySub = getSubAbbr(slot.subject || '') + (slot.isLabPeriod ? ' [LAB]' : (slot.labGroup && slot.labGroup !== 'None' ? ' [TH]' : ''));
-                                                        } else {
-                                                            displaySub = getSubAbbr(displaySub) + (slot?.isLabPeriod ? ' [LAB]' : (slot?.labGroup && slot?.labGroup !== 'None' ? ' [TH]' : ''));
+                                                        // Extract Lab/Theory indicator
+                                                        let labType = '';
+                                                        if (isObj && slot.labGroup && slot.labGroup !== 'None') {
+                                                            labType = slot.isLabPeriod ? '(L)' : '(T)';
                                                         }
+
+                                                        displaySub = getSubAbbr(displaySub);
 
                                                         const { num, div } = getFormattedClass(displayClass);
                                                         const typeIndicator = slot?.isTBlock ? 'T' : (slot?.isLBlock ? 'L' : '');
@@ -6185,12 +6215,21 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 verticalAlign: 'middle'
                                                             }}>
                                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px' }}>
-                                                                    <div style={{ fontSize: '14px', fontWeight: 900, color: 'black', lineHeight: '1.1' }}>
-                                                                        {num}{isCombined ? <span style={{ fontSize: '0.6rem', fontWeight: 800 }}>{div}{indicatorSpan}</span> : (!div ? indicatorSpan : '')}
+                                                                    <div style={{ fontSize: '14px', color: 'black', lineHeight: '1.1' }}>
+                                                                        <span style={{ fontWeight: 400 }}>{num}</span>
+                                                                        {isCombined ? (
+                                                                            <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>
+                                                                                {div}{labType}{indicatorSpan}
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span style={{ fontWeight: 800 }}>
+                                                                                {labType}{indicatorSpan}
+                                                                            </span>
+                                                                        )}
                                                                     </div>
                                                                     {div && !isCombined && (
                                                                         <div style={{ fontSize: '10px', fontWeight: 800, color: 'black', lineHeight: '1', maxWidth: '45px', wordBreak: 'break-all', textAlign: 'center' }}>
-                                                                            {div}{indicatorSpan}
+                                                                            {div}{labType}{indicatorSpan}
                                                                         </div>
                                                                     )}
                                                                     {displaySub && (
@@ -6234,7 +6273,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 boxShadow: teacherTTSubTab === m ? '0 4px 12px rgba(79, 70, 229, 0.4)' : 'none'
                                             }}
                                         >
-                                            {m} School TT
+                                            {m} School TT ({m === 'Middle' ? uniqueMiddle.length : uniqueSenior.length} teachers)
                                         </button>
                                     ))}
                                 </div>
