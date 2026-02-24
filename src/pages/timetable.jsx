@@ -1407,6 +1407,7 @@ export default function TimetablePage() {
     const statusScrollRef = useRef(null); // ref for status panel auto-scroll
     const [editingSubjectName, setEditingSubjectName] = useState(null);
     const [subjectRenameValue, setSubjectRenameValue] = useState('');
+    const [allotmentFilterPriority, setAllotmentFilterPriority] = useState(false);
 
     // helper to toggle ctrl-selection (used by mouse events)
     const toggleCtrlSelect = (subject, className) => {
@@ -3446,6 +3447,27 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             <button onClick={() => handleBatchGenerate('Full School', 'FULL')} style={{ padding: '0.4rem 1.2rem', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 900, cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(245, 158, 11, 0.3)' }}>
                                 🚀 GenFull
                             </button>
+
+                            <div style={{ width: '1px', height: '1.2rem', background: '#334155', margin: '0 0.8rem' }} />
+
+                            <button
+                                onClick={() => setAllotmentFilterPriority(!allotmentFilterPriority)}
+                                style={{
+                                    padding: '0.4rem 1rem',
+                                    background: allotmentFilterPriority ? '#7c3aed' : '#334155',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '0.5rem',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 900,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.4rem'
+                                }}
+                            >
+                                🎯 {allotmentFilterPriority ? 'Sorted by Priority' : 'Sort by Priority'}
+                            </button>
                         </div>
 
                         <div style={{ overflowX: 'auto' }}>
@@ -3474,387 +3496,438 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {allotmentRows.map(row => {
-                                        const streamPeriods = (subjectStreams || []).reduce((acc, st) => {
-                                            if (st.subjects.some(s => s.teacher === row.teacher)) return acc + (Number(st.periods) || 0);
-                                            return acc;
-                                        }, 0);
-                                        const grandTotal = (row.total || 0) + streamPeriods;
+                                    {(() => {
+                                        let rows = [...allotmentRows];
+                                        if (allotmentFilterPriority) {
+                                            const getRowPriority = (row) => {
+                                                let highest = 4;
+                                                (row.allotments || []).forEach(a => {
+                                                    let p = 4;
+                                                    if (a.preferredDay && a.preferredDay !== 'Any') p = 1;
+                                                    else if (Number(a.tBlock) > 0 || Number(a.lBlock) > 0) p = 2;
+                                                    if (p < highest) highest = p;
+                                                });
+                                                return highest;
+                                            };
+                                            const getRowMaxGrade = (row) => {
+                                                let max = 0;
+                                                (row.allotments || []).forEach(a => {
+                                                    const g = parseInt(a.classes?.[0]) || 0;
+                                                    if (g > max) max = g;
+                                                });
+                                                return max;
+                                            };
+                                            rows.sort((a, b) => {
+                                                const pa = getRowPriority(a);
+                                                const pb = getRowPriority(b);
+                                                if (pa !== pb) return pa - pb;
+                                                // Tie-break with grade level descending
+                                                const ga = getRowMaxGrade(a);
+                                                const gb = getRowMaxGrade(b);
+                                                if (ga !== gb) return gb - ga;
+                                                return a.teacher.localeCompare(b.teacher);
+                                            });
+                                        }
+                                        return rows.map(row => {
+                                            const streamPeriods = (subjectStreams || []).reduce((acc, st) => {
+                                                if (st.subjects.some(s => s.teacher === row.teacher)) return acc + (Number(st.periods) || 0);
+                                                return acc;
+                                            }, 0);
+                                            const grandTotal = (row.total || 0) + streamPeriods;
 
-                                        return (
-                                            <tr key={row.id} style={{
-                                                borderBottom: '1px solid #334155',
-                                                transition: 'background 0.2s'
-                                            }}>
-                                                <td
-                                                    style={{
-                                                        padding: '0.8rem',
-                                                        color: '#f1f5f9',
-                                                        fontWeight: '700',
-                                                        textAlign: 'left',
-                                                        position: 'sticky',
-                                                        left: 0,
-                                                        background: '#1e293b',
-                                                        zIndex: 10,
-                                                        boxShadow: '4px 0 4px rgba(0,0,0,0.3)',
-                                                        borderRight: '1px solid #334155',
-                                                        userSelect: 'none'
-                                                    }}>
-                                                    <span style={{ color: '#f1f5f9' }}>{row.teacher || '(No Teacher)'}</span>
-                                                </td>
-                                                <td style={{ padding: '0.8rem', minWidth: '150px' }}>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                                                        {(mappingRows.find(m => (m.teacher || '').trim() === (row.teacher || '').trim())?.subjects || []).map(s => (
-                                                            <span key={s} style={{
-                                                                fontSize: '0.7rem',
-                                                                background: '#334155',
-                                                                padding: '0.1rem 0.4rem',
-                                                                borderRadius: '0.3rem',
-                                                                color: '#94a3b8',
-                                                                fontWeight: '800',
-                                                                border: '1px solid #475569'
-                                                            }}>
-                                                                {s}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: '0.6rem' }}>
-                                                    <div style={{
-                                                        display: 'flex',
-                                                        gap: '0.6rem',
-                                                        flexWrap: 'wrap',
-                                                        alignItems: 'center',
-                                                        maxWidth: '1000px'
-                                                    }}>
-                                                        {(row.allotments || []).map((group, gIdx) => {
-                                                            const isSelected = selectedGroups.some(s => s.rowId === row.id && s.groupIndex === gIdx);
-                                                            const isGrpExpanded = expandedGroup?.rowId === row.id && expandedGroup?.groupIndex === gIdx;
-                                                            const grade = group.classes[0]?.match(/\d+/)?.[0];
+                                            return (
+                                                <tr key={row.id} style={{
+                                                    borderBottom: '1px solid #334155',
+                                                    transition: 'background 0.2s'
+                                                }}>
+                                                    <td
+                                                        style={{
+                                                            padding: '0.8rem',
+                                                            color: '#f1f5f9',
+                                                            fontWeight: '700',
+                                                            textAlign: 'left',
+                                                            position: 'sticky',
+                                                            left: 0,
+                                                            background: '#1e293b',
+                                                            zIndex: 10,
+                                                            boxShadow: '4px 0 4px rgba(0,0,0,0.3)',
+                                                            borderRight: '1px solid #334155',
+                                                            userSelect: 'none'
+                                                        }}>
+                                                        <span style={{ color: '#f1f5f9' }}>{row.teacher || '(No Teacher)'}</span>
+                                                    </td>
+                                                    <td style={{ padding: '0.8rem', minWidth: '150px' }}>
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                                                            {(mappingRows.find(m => (m.teacher || '').trim() === (row.teacher || '').trim())?.subjects || []).map(s => (
+                                                                <span key={s} style={{
+                                                                    fontSize: '0.7rem',
+                                                                    background: '#334155',
+                                                                    padding: '0.1rem 0.4rem',
+                                                                    borderRadius: '0.3rem',
+                                                                    color: '#94a3b8',
+                                                                    fontWeight: '800',
+                                                                    border: '1px solid #475569'
+                                                                }}>
+                                                                    {s}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ padding: '0.6rem' }}>
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            gap: '0.6rem',
+                                                            flexWrap: 'wrap',
+                                                            alignItems: 'center',
+                                                            maxWidth: '1000px'
+                                                        }}>
+                                                            {(row.allotments || []).map((group, gIdx) => {
+                                                                const isSelected = selectedGroups.some(s => s.rowId === row.id && s.groupIndex === gIdx);
+                                                                const isGrpExpanded = expandedGroup?.rowId === row.id && expandedGroup?.groupIndex === gIdx;
+                                                                const grade = group.classes[0]?.match(/\d+/)?.[0];
 
-                                                            return (
-                                                                <div
-                                                                    key={group.id}
-                                                                    className="group-expansion-container"
-                                                                    style={{
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        background: 'transparent',
-                                                                        borderRadius: '0.6rem',
-                                                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                                                    }}
-                                                                >
-                                                                    {/* Group boxes rendering as before but without row expansion check */}
+                                                                return (
                                                                     <div
-                                                                        onClick={(e) => {
-                                                                            if (e.ctrlKey) {
-                                                                                const exists = selectedGroups.some(s => s.rowId === row.id && s.groupIndex === gIdx);
-                                                                                if (exists) setSelectedGroups(prev => prev.filter(s => !(s.rowId === row.id && s.groupIndex === gIdx)));
-                                                                                else {
-                                                                                    if (selectedGroups.length > 0) {
-                                                                                        const first = allotmentRows.find(r => r.id === selectedGroups[0].rowId);
-                                                                                        const firstGroup = first?.allotments[selectedGroups[0].groupIndex];
-                                                                                        const firstGrade = firstGroup?.classes[0]?.match(/\d+/)?.[0];
-                                                                                        if (selectedGroups[0].rowId !== row.id || firstGrade !== grade) {
-                                                                                            setSelectedGroups([{ rowId: row.id, groupIndex: gIdx }]);
-                                                                                        } else {
-                                                                                            setSelectedGroups(prev => [...prev, { rowId: row.id, groupIndex: gIdx }]);
-                                                                                        }
-                                                                                    } else {
-                                                                                        setSelectedGroups([{ rowId: row.id, groupIndex: gIdx }]);
-                                                                                    }
-                                                                                }
-                                                                            } else {
-                                                                                setExpandedGroup(isGrpExpanded ? null : { rowId: row.id, groupIndex: gIdx });
-                                                                            }
-                                                                        }}
-                                                                        onContextMenu={(e) => {
-                                                                            if (group.isMerged) {
-                                                                                e.preventDefault();
-                                                                                if (confirm(`Unmerge classes ${group.classes.join(', ')}?`)) {
-                                                                                    unmergeGroup(row.id, gIdx);
-                                                                                }
-                                                                            }
-                                                                        }}
+                                                                        key={group.id}
+                                                                        className="group-expansion-container"
                                                                         style={{
-                                                                            padding: '0.4rem 0.8rem',
-                                                                            background: isSelected ? '#fbbf24' : (group.isMerged ? 'linear-gradient(135deg, #4f46e5, #4338ca)' : '#1e293b'),
-                                                                            color: isSelected ? '#000' : '#fff',
-                                                                            borderRadius: '0.5rem',
-                                                                            fontSize: '0.85rem',
-                                                                            fontWeight: '900',
-                                                                            cursor: 'pointer',
                                                                             display: 'flex',
                                                                             alignItems: 'center',
-                                                                            gap: '0.6rem',
-                                                                            border: isGrpExpanded ? '2px solid #38bdf8' : '1px solid #334155',
-                                                                            boxShadow: isGrpExpanded ? '0 0 12px rgba(56, 189, 248, 0.25)' : '0 1px 2px rgba(0,0,0,0.2)',
-                                                                            zIndex: 2,
-                                                                            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                                                            height: '34px',
-                                                                            boxSizing: 'border-box'
+                                                                            background: 'transparent',
+                                                                            borderRadius: '0.6rem',
+                                                                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                                                                         }}
                                                                     >
-                                                                        {group.isMerged && <span title="Merged Group" style={{ fontSize: '0.8rem' }}>🔗</span>}
-
-                                                                        {(!group.isMerged && isGrpExpanded) ? (
-                                                                            <select
-                                                                                value={group.classes[0]}
-                                                                                onClick={(e) => e.stopPropagation()}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'class', e.target.value)}
-                                                                                style={{
-                                                                                    background: 'transparent',
-                                                                                    border: 'none',
-                                                                                    color: '#fff',
-                                                                                    fontWeight: '900',
-                                                                                    fontSize: '0.85rem',
-                                                                                    cursor: 'pointer',
-                                                                                    outline: 'none',
-                                                                                    padding: 0
-                                                                                }}
-                                                                            >
-                                                                                {CLASS_OPTIONS.map(c => <option key={c} value={c} style={{ color: '#000', background: '#fff' }}>{c}</option>)}
-                                                                            </select>
-                                                                        ) : (
-                                                                            <span style={{ letterSpacing: '0.02em' }}>{formatClasses(group.classes)}</span>
-                                                                        )}
-
-                                                                        <span style={{
-                                                                            fontSize: '0.7rem',
-                                                                            opacity: 0.6,
-                                                                            transform: isGrpExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                                                                            display: 'inline-block',
-                                                                            transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                                                            color: '#94a3b8'
-                                                                        }}>{isGrpExpanded ? '▼' : '▶'}</span>
-                                                                    </div>
-
-                                                                    <div style={{
-                                                                        display: 'flex',
-                                                                        overflow: 'hidden',
-                                                                        maxWidth: isGrpExpanded ? '700px' : '0px',
-                                                                        opacity: isGrpExpanded ? 1 : 0,
-                                                                        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                                                                        background: '#cbd5e1',
-                                                                        color: '#1e293b',
-                                                                        borderRadius: '0.5rem',
-                                                                        marginLeft: isGrpExpanded ? '0.6rem' : '0px',
-                                                                        whiteSpace: 'nowrap',
-                                                                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                                                                        border: isGrpExpanded ? '1px solid #94a3b8' : 'none',
-                                                                        alignItems: 'center',
-                                                                        height: '34px',
-                                                                        boxSizing: 'border-box'
-                                                                    }}>
-                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
-                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>SUB</span>
-                                                                            <select
-                                                                                value={group.subject || ''}
-                                                                                onClick={(e) => e.stopPropagation()}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'subject', e.target.value)}
-                                                                                style={{
-                                                                                    background: 'transparent',
-                                                                                    border: 'none',
-                                                                                    color: '#111827',
-                                                                                    fontWeight: '800',
-                                                                                    fontSize: '0.8rem',
-                                                                                    cursor: 'pointer',
-                                                                                    outline: 'none',
-                                                                                    padding: 0
-                                                                                }}
-                                                                            >
-                                                                                <option value="">-- sub --</option>
-                                                                                {(mappingRows.find(m => (m.teacher || '').trim() === (row.teacher || '').trim())?.subjects || []).map(s => (
-                                                                                    <option key={s} value={s}>{s}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
-                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
-                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>LAB</span>
-                                                                            <select
-                                                                                value={group.labGroup || 'None'}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'labGroup', e.target.value)}
-                                                                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}
-                                                                            >
-                                                                                <option value="None">None</option>
-                                                                                <option value="CSc Lab Group">CSc Group</option>
-                                                                                <option value="DS/AI Lab Group">DS/AI Group</option>
-                                                                            </select>
-                                                                        </div>
-                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
-                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>PPS</span>
-                                                                            <select
-                                                                                value={group.periods || 0}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'periods', e.target.value)}
-                                                                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
-                                                                            >
-                                                                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
-                                                                            </select>
-                                                                        </div>
-                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
-                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b' }}>TB</span>
-                                                                            <select
-                                                                                value={group.tBlock || 0}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
-                                                                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
-                                                                            >
-                                                                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
-                                                                            </select>
-                                                                        </div>
-                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
-                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#10b981' }}>LB</span>
-                                                                            <select
-                                                                                value={group.lBlock || 0}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'lBlock', e.target.value)}
-                                                                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
-                                                                            >
-                                                                                {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
-                                                                            </select>
-                                                                        </div>
-                                                                        <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
-                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#3b82f6' }}>DAY</span>
-                                                                            <select
-                                                                                value={group.preferredDay || 'Any'}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'preferredDay', e.target.value)}
-                                                                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
-                                                                            >
-                                                                                {['Any', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => <option key={d} value={d}>{d}</option>)}
-                                                                            </select>
-                                                                        </div>
+                                                                        {/* Group boxes rendering as before but without row expansion check */}
                                                                         <div
-                                                                            onClick={(e) => { e.stopPropagation(); deleteAllotmentGroup(row.id, gIdx); }}
+                                                                            onClick={(e) => {
+                                                                                if (e.ctrlKey) {
+                                                                                    const exists = selectedGroups.some(s => s.rowId === row.id && s.groupIndex === gIdx);
+                                                                                    if (exists) setSelectedGroups(prev => prev.filter(s => !(s.rowId === row.id && s.groupIndex === gIdx)));
+                                                                                    else {
+                                                                                        if (selectedGroups.length > 0) {
+                                                                                            const first = allotmentRows.find(r => r.id === selectedGroups[0].rowId);
+                                                                                            const firstGroup = first?.allotments[selectedGroups[0].groupIndex];
+                                                                                            const firstGrade = firstGroup?.classes[0]?.match(/\d+/)?.[0];
+                                                                                            if (selectedGroups[0].rowId !== row.id || firstGrade !== grade) {
+                                                                                                setSelectedGroups([{ rowId: row.id, groupIndex: gIdx }]);
+                                                                                            } else {
+                                                                                                setSelectedGroups(prev => [...prev, { rowId: row.id, groupIndex: gIdx }]);
+                                                                                            }
+                                                                                        } else {
+                                                                                            setSelectedGroups([{ rowId: row.id, groupIndex: gIdx }]);
+                                                                                        }
+                                                                                    }
+                                                                                } else {
+                                                                                    setExpandedGroup(isGrpExpanded ? null : { rowId: row.id, groupIndex: gIdx });
+                                                                                }
+                                                                            }}
+                                                                            onContextMenu={(e) => {
+                                                                                if (group.isMerged) {
+                                                                                    e.preventDefault();
+                                                                                    if (confirm(`Unmerge classes ${group.classes.join(', ')}?`)) {
+                                                                                        unmergeGroup(row.id, gIdx);
+                                                                                    }
+                                                                                }
+                                                                            }}
                                                                             style={{
-                                                                                padding: '0 1rem',
-                                                                                color: '#ef4444',
+                                                                                padding: '0.4rem 0.8rem',
+                                                                                background: isSelected ? '#fbbf24' : (group.isMerged ? 'linear-gradient(135deg, #4f46e5, #4338ca)' : '#1e293b'),
+                                                                                color: isSelected ? '#000' : '#fff',
+                                                                                borderRadius: '0.5rem',
+                                                                                fontSize: '0.85rem',
+                                                                                fontWeight: '900',
                                                                                 cursor: 'pointer',
-                                                                                fontWeight: 'bold',
-                                                                                height: '100%',
                                                                                 display: 'flex',
                                                                                 alignItems: 'center',
-                                                                                transition: 'background 0.2s'
+                                                                                gap: '0.6rem',
+                                                                                border: isGrpExpanded ? '2px solid #38bdf8' : '1px solid #334155',
+                                                                                boxShadow: isGrpExpanded ? '0 0 12px rgba(56, 189, 248, 0.25)' : '0 1px 2px rgba(0,0,0,0.2)',
+                                                                                zIndex: 2,
+                                                                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                                                height: '34px',
+                                                                                boxSizing: 'border-box'
                                                                             }}
-                                                                            onMouseOver={e => e.currentTarget.style.background = '#fef2f2'}
-                                                                            onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-                                                                            title="Delete Allotment"
-                                                                        >✕</div>
+                                                                        >
+                                                                            {(() => {
+                                                                                let p = 4;
+                                                                                if (group.preferredDay && group.preferredDay !== 'Any') p = 1;
+                                                                                else if (Number(group.tBlock) > 0 || Number(group.lBlock) > 0) p = 2;
+
+                                                                                if (p === 4) return null;
+                                                                                return (
+                                                                                    <span style={{
+                                                                                        fontSize: '0.65rem',
+                                                                                        background: p === 1 ? '#ef4444' : '#f59e0b',
+                                                                                        color: 'white',
+                                                                                        padding: '0.1rem 0.3rem',
+                                                                                        borderRadius: '0.3rem',
+                                                                                        fontWeight: 900,
+                                                                                        marginRight: '-0.2rem'
+                                                                                    }}>P{p}</span>
+                                                                                );
+                                                                            })()}
+                                                                            {group.isMerged && <span title="Merged Group" style={{ fontSize: '0.8rem' }}>🔗</span>}
+
+                                                                            {(!group.isMerged && isGrpExpanded) ? (
+                                                                                <select
+                                                                                    value={group.classes[0]}
+                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'class', e.target.value)}
+                                                                                    style={{
+                                                                                        background: 'transparent',
+                                                                                        border: 'none',
+                                                                                        color: '#fff',
+                                                                                        fontWeight: '900',
+                                                                                        fontSize: '0.85rem',
+                                                                                        cursor: 'pointer',
+                                                                                        outline: 'none',
+                                                                                        padding: 0
+                                                                                    }}
+                                                                                >
+                                                                                    {CLASS_OPTIONS.map(c => <option key={c} value={c} style={{ color: '#000', background: '#fff' }}>{c}</option>)}
+                                                                                </select>
+                                                                            ) : (
+                                                                                <span style={{ letterSpacing: '0.02em' }}>{formatClasses(group.classes)}</span>
+                                                                            )}
+
+                                                                            <span style={{
+                                                                                fontSize: '0.7rem',
+                                                                                opacity: 0.6,
+                                                                                transform: isGrpExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                                                                display: 'inline-block',
+                                                                                transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                                                color: '#94a3b8'
+                                                                            }}>{isGrpExpanded ? '▼' : '▶'}</span>
+                                                                        </div>
+
+                                                                        <div style={{
+                                                                            display: 'flex',
+                                                                            overflow: 'hidden',
+                                                                            maxWidth: isGrpExpanded ? '700px' : '0px',
+                                                                            opacity: isGrpExpanded ? 1 : 0,
+                                                                            transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                                            background: '#cbd5e1',
+                                                                            color: '#1e293b',
+                                                                            borderRadius: '0.5rem',
+                                                                            marginLeft: isGrpExpanded ? '0.6rem' : '0px',
+                                                                            whiteSpace: 'nowrap',
+                                                                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                                                                            border: isGrpExpanded ? '1px solid #94a3b8' : 'none',
+                                                                            alignItems: 'center',
+                                                                            height: '34px',
+                                                                            boxSizing: 'border-box'
+                                                                        }}>
+                                                                            <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>SUB</span>
+                                                                                <select
+                                                                                    value={group.subject || ''}
+                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'subject', e.target.value)}
+                                                                                    style={{
+                                                                                        background: 'transparent',
+                                                                                        border: 'none',
+                                                                                        color: '#111827',
+                                                                                        fontWeight: '800',
+                                                                                        fontSize: '0.8rem',
+                                                                                        cursor: 'pointer',
+                                                                                        outline: 'none',
+                                                                                        padding: 0
+                                                                                    }}
+                                                                                >
+                                                                                    <option value="">-- sub --</option>
+                                                                                    {(mappingRows.find(m => (m.teacher || '').trim() === (row.teacher || '').trim())?.subjects || []).map(s => (
+                                                                                        <option key={s} value={s}>{s}</option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            </div>
+                                                                            <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>LAB</span>
+                                                                                <select
+                                                                                    value={group.labGroup || 'None'}
+                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'labGroup', e.target.value)}
+                                                                                    style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}
+                                                                                >
+                                                                                    <option value="None">None</option>
+                                                                                    <option value="CSc Lab Group">CSc Group</option>
+                                                                                    <option value="DS/AI Lab Group">DS/AI Group</option>
+                                                                                </select>
+                                                                            </div>
+                                                                            <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8' }}>PPS</span>
+                                                                                <select
+                                                                                    value={group.periods || 0}
+                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'periods', e.target.value)}
+                                                                                    style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
+                                                                                >
+                                                                                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                                                                                </select>
+                                                                            </div>
+                                                                            <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b' }}>TB</span>
+                                                                                <select
+                                                                                    value={group.tBlock || 0}
+                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
+                                                                                    style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
+                                                                                >
+                                                                                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                                                                                </select>
+                                                                            </div>
+                                                                            <div style={{ padding: '0 0.8rem', borderRight: '1px solid #94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#10b981' }}>LB</span>
+                                                                                <select
+                                                                                    value={group.lBlock || 0}
+                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'lBlock', e.target.value)}
+                                                                                    style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
+                                                                                >
+                                                                                    {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+                                                                                </select>
+                                                                            </div>
+                                                                            <div style={{ padding: '0 0.8rem', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '100%' }}>
+                                                                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#3b82f6' }}>DAY</span>
+                                                                                <select
+                                                                                    value={group.preferredDay || 'Any'}
+                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'preferredDay', e.target.value)}
+                                                                                    style={{ background: 'transparent', border: 'none', color: '#1e293b', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
+                                                                                >
+                                                                                    {['Any', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => <option key={d} value={d}>{d}</option>)}
+                                                                                </select>
+                                                                            </div>
+                                                                            <div
+                                                                                onClick={(e) => { e.stopPropagation(); deleteAllotmentGroup(row.id, gIdx); }}
+                                                                                style={{
+                                                                                    padding: '0 1rem',
+                                                                                    color: '#ef4444',
+                                                                                    cursor: 'pointer',
+                                                                                    fontWeight: 'bold',
+                                                                                    height: '100%',
+                                                                                    display: 'flex',
+                                                                                    alignItems: 'center',
+                                                                                    transition: 'background 0.2s'
+                                                                                }}
+                                                                                onMouseOver={e => e.currentTarget.style.background = '#fef2f2'}
+                                                                                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                                                                title="Delete Allotment"
+                                                                            >✕</div>
+                                                                        </div>
                                                                     </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                if (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) {
-                                                                    const rect = e.target.getBoundingClientRect();
-                                                                    const firstGroup = row.allotments[selectedGroups[0].groupIndex];
-                                                                    const g = firstGroup.classes[0].match(/\d+/)?.[0];
-                                                                    setMergePopup({
-                                                                        rowId: row.id,
-                                                                        groupIndices: selectedGroups.map(s => s.groupIndex),
-                                                                        grade: g,
-                                                                        rect
-                                                                    });
-                                                                } else {
-                                                                    addAllotmentGroup(row.id);
-                                                                }
-                                                            }}
-                                                            style={{
-                                                                padding: '0.4rem 1rem',
-                                                                background: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#fbbf24' : '#1e293b',
-                                                                color: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#000' : '#818cf8',
-                                                                border: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? 'none' : '1px dashed #4f46e5',
-                                                                borderRadius: '0.5rem',
-                                                                cursor: 'pointer',
-                                                                fontSize: '0.8rem',
-                                                                fontWeight: '800',
-                                                                transition: 'all 0.2s',
-                                                                whiteSpace: 'nowrap',
-                                                                height: '34px',
-                                                                boxSizing: 'border-box',
-                                                                marginLeft: '0.2rem'
-                                                            }}
-                                                        >
-                                                            {(selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '🔗 Merge Selected' : '＋ Add Group'}
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 'bold' }}>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                                                        <span style={{ color: '#fff' }}>{grandTotal}</span>
-                                                        {streamPeriods > 0 && (
-                                                            <span style={{ fontSize: '0.65rem', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', padding: '1px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
-                                                                incl. {streamPeriods} [S]
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: '0.6rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                                    <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
-                                                        <button
-                                                            onClick={() => handleCreateSpecific(row)}
-                                                            disabled={creationStatus || completedCreations.has(row.id)}
-                                                            style={{
-                                                                padding: '0.5rem 1rem',
-                                                                background: completedCreations.has(row.id) ? '#10b981' : (creationStatus ? '#475569' : '#3b82f6'),
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '0.5rem',
-                                                                fontSize: '0.75rem',
-                                                                fontWeight: '800',
-                                                                cursor: (creationStatus || completedCreations.has(row.id)) ? 'not-allowed' : 'pointer',
-                                                                transition: 'all 0.2s',
-                                                                boxShadow: completedCreations.has(row.id) ? '0 0 10px rgba(16,185,129,0.3)' : 'none'
-                                                            }}
-                                                        >
-                                                            {completedCreations.has(row.id) ? '✅' : 'CREATE'}
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleSmartReassign(row)}
-                                                            title="Smart Reassign"
-                                                            style={{
-                                                                padding: '0.5rem 0.8rem',
-                                                                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '0.5rem',
-                                                                fontSize: '0.75rem',
-                                                                fontWeight: '800',
-                                                                cursor: 'pointer'
-                                                            }}
-                                                        >🪄</button>
-                                                        <button
-                                                            onClick={() => handleDeleteClick(row)}
-                                                            title="Delete Periods"
-                                                            style={{
-                                                                padding: '0.5rem 0.8rem',
-                                                                background: '#450a0a',
-                                                                color: '#f87171',
-                                                                border: '1px solid #7f1d1d',
-                                                                borderRadius: '0.5rem',
-                                                                fontSize: '0.75rem',
-                                                                fontWeight: '800',
-                                                                cursor: 'pointer'
-                                                            }}
-                                                        >🗑️</button>
-                                                        <button
-                                                            onClick={() => { if (confirm('Delete this whole row?')) deleteAllotmentRow(row.id); }}
-                                                            title="Delete Row"
-                                                            style={{
-                                                                padding: '0.5rem 0.8rem',
-                                                                background: '#7f1d1d',
-                                                                color: '#fff',
-                                                                border: 'none',
-                                                                borderRadius: '0.5rem',
-                                                                fontSize: '0.75rem',
-                                                                fontWeight: '800',
-                                                                cursor: 'pointer'
-                                                            }}
-                                                        >✕</button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
+                                                                );
+                                                            })}
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) {
+                                                                        const rect = e.target.getBoundingClientRect();
+                                                                        const firstGroup = row.allotments[selectedGroups[0].groupIndex];
+                                                                        const g = firstGroup.classes[0].match(/\d+/)?.[0];
+                                                                        setMergePopup({
+                                                                            rowId: row.id,
+                                                                            groupIndices: selectedGroups.map(s => s.groupIndex),
+                                                                            grade: g,
+                                                                            rect
+                                                                        });
+                                                                    } else {
+                                                                        addAllotmentGroup(row.id);
+                                                                    }
+                                                                }}
+                                                                style={{
+                                                                    padding: '0.4rem 1rem',
+                                                                    background: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#fbbf24' : '#1e293b',
+                                                                    color: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#000' : '#818cf8',
+                                                                    border: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? 'none' : '1px dashed #4f46e5',
+                                                                    borderRadius: '0.5rem',
+                                                                    cursor: 'pointer',
+                                                                    fontSize: '0.8rem',
+                                                                    fontWeight: '800',
+                                                                    transition: 'all 0.2s',
+                                                                    whiteSpace: 'nowrap',
+                                                                    height: '34px',
+                                                                    boxSizing: 'border-box',
+                                                                    marginLeft: '0.2rem'
+                                                                }}
+                                                            >
+                                                                {(selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '🔗 Merge Selected' : '＋ Add Group'}
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 'bold' }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                                            <span style={{ color: '#fff' }}>{grandTotal}</span>
+                                                            {streamPeriods > 0 && (
+                                                                <span style={{ fontSize: '0.65rem', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', padding: '1px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                                                                    incl. {streamPeriods} [S]
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ padding: '0.6rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                                        <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                                                            <button
+                                                                onClick={() => handleCreateSpecific(row)}
+                                                                disabled={creationStatus || completedCreations.has(row.id)}
+                                                                style={{
+                                                                    padding: '0.5rem 1rem',
+                                                                    background: completedCreations.has(row.id) ? '#10b981' : (creationStatus ? '#475569' : '#3b82f6'),
+                                                                    color: 'white',
+                                                                    border: 'none',
+                                                                    borderRadius: '0.5rem',
+                                                                    fontSize: '0.75rem',
+                                                                    fontWeight: '800',
+                                                                    cursor: (creationStatus || completedCreations.has(row.id)) ? 'not-allowed' : 'pointer',
+                                                                    transition: 'all 0.2s',
+                                                                    boxShadow: completedCreations.has(row.id) ? '0 0 10px rgba(16,185,129,0.3)' : 'none'
+                                                                }}
+                                                            >
+                                                                {completedCreations.has(row.id) ? '✅' : 'CREATE'}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleSmartReassign(row)}
+                                                                title="Smart Reassign"
+                                                                style={{
+                                                                    padding: '0.5rem 0.8rem',
+                                                                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                                                    color: 'white',
+                                                                    border: 'none',
+                                                                    borderRadius: '0.5rem',
+                                                                    fontSize: '0.75rem',
+                                                                    fontWeight: '800',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >🪄</button>
+                                                            <button
+                                                                onClick={() => handleDeleteClick(row)}
+                                                                title="Delete Periods"
+                                                                style={{
+                                                                    padding: '0.5rem 0.8rem',
+                                                                    background: '#450a0a',
+                                                                    color: '#f87171',
+                                                                    border: '1px solid #7f1d1d',
+                                                                    borderRadius: '0.5rem',
+                                                                    fontSize: '0.75rem',
+                                                                    fontWeight: '800',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >🗑️</button>
+                                                            <button
+                                                                onClick={() => { if (confirm('Delete this whole row?')) deleteAllotmentRow(row.id); }}
+                                                                title="Delete Row"
+                                                                style={{
+                                                                    padding: '0.5rem 0.8rem',
+                                                                    background: '#7f1d1d',
+                                                                    color: '#fff',
+                                                                    border: 'none',
+                                                                    borderRadius: '0.5rem',
+                                                                    fontSize: '0.75rem',
+                                                                    fontWeight: '800',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >✕</button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        });
+                                    })()}
                                 </tbody>
                             </table>
                         </div>

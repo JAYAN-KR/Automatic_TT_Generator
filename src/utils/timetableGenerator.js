@@ -153,9 +153,33 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         }
     });
 
+    // ============ PRIORITY SORTING ============
+    const getGradeNum = (className) => {
+        const match = className.match(/^(\d+)/);
+        return match ? parseInt(match[1]) : 0;
+    };
+
     allTasks.sort((a, b) => {
-        const priority = { 'BLOCK': 0, 'STREAM': 1, 'SINGLE': 2 };
-        return priority[a.type] - priority[b.type];
+        const getTaskPriorityScore = (t) => {
+            // Priority 1: Fixed Day
+            if (t.preferredDay && t.preferredDay !== 'Any') return 1;
+            // Priority 2: Block Periods
+            if (t.type === 'BLOCK') return 2;
+            // Priority 3: Streams (Parallel)
+            if (t.type === 'STREAM') return 3;
+            // Priority 4: Single Periods
+            return 4;
+        };
+
+        const pa = getTaskPriorityScore(a);
+        const pb = getTaskPriorityScore(b);
+
+        if (pa !== pb) return pa - pb;
+
+        // Same priority level: Sort by grade level DESCENDING (12 down to 6)
+        const ga = getGradeNum(a.className || '');
+        const gb = getGradeNum(b.className || '');
+        return gb - ga;
     });
 
     // ============ PLACEMENT ENGINE ============
