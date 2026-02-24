@@ -184,8 +184,8 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                         classTimetables[cn][day][p2].subject === ''
                     );
 
-                    const lab1Free = task.labGroup === 'None' || !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p1, task.labGroup, task.subject));
-                    const lab2Free = task.labGroup === 'None' || !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p2, task.labGroup, task.subject));
+                    const lab1Free = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p1, task.labGroup, task.subject));
+                    const lab2Free = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p2, task.labGroup, task.subject));
 
                     if (teacherFree && classesFree && lab1Free && lab2Free) {
                         placeTask(task, day, p1, true);
@@ -207,11 +207,9 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
 
                     let labConflict = false;
                     for (const s of task.subjects) {
-                        if (s.labGroup && s.labGroup !== 'None') {
-                            if (detectLabConflict(classTimetables, task.className, day, period, s.labGroup, s.subject)) {
-                                labConflict = true;
-                                break;
-                            }
+                        if (detectLabConflict(classTimetables, task.className, day, period, s.labGroup, s.subject)) {
+                            labConflict = true;
+                            break;
                         }
                     }
 
@@ -229,7 +227,7 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                     const teacherFree = teacherTimetables[task.teacher] && teacherTimetables[task.teacher][day][period] === '';
                     const classesFree = task.classes.every(cn => classTimetables[cn] && classTimetables[cn][day] && classTimetables[cn][day][period].subject === '');
 
-                    const labFree = task.labGroup === 'None' || !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, period, task.labGroup, task.subject));
+                    const labFree = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, period, task.labGroup, task.subject));
 
                     if (teacherFree && classesFree && labFree) {
                         placeTask(task, day, period, false);
