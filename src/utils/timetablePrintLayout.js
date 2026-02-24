@@ -119,11 +119,13 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
 
             const { num, div } = getFormattedClass(classNameVal + groupSuffix);
             const isCombined = div && div.length <= 3;
+            const typeIndicator = isObj && entry.isTBlock ? 'T' : (isObj && entry.isLBlock ? 'L' : '');
+            const indicatorHtml = typeIndicator ? `<span style="font-size: 7.5pt; font-weight: 800; vertical-align: super; margin-left: 1px;">${typeIndicator}</span>` : '';
 
             return `
                 ${badge}
-                <div style="font-size: 11pt; font-weight: 900; line-height: 1.1;">${num}${isCombined ? `<span style="font-size: 7.5pt; font-weight: 800; margin-left: 1px;">${div}</span>` : ''}</div>
-                ${div && !isCombined ? `<div style="font-size: 8pt; font-weight: 800; line-height: 1; max-width: 10mm; word-break: break-all; margin: 0 auto; color: black;">${div}</div>` : ''}
+                <div style="font-size: 11pt; font-weight: 900; line-height: 1.1;">${num}${isCombined ? `<span style="font-size: 7.5pt; font-weight: 800; margin-left: 1px;">${div}${indicatorHtml}</span>` : (!div ? indicatorHtml : '')}</div>
+                ${div && !isCombined ? `<div style="font-size: 8pt; font-weight: 800; line-height: 1; max-width: 10mm; word-break: break-all; margin: 0 auto; color: black;">${div}${indicatorHtml}</div>` : ''}
                 ${subject ? `<div style="font-size: 7.5pt; font-weight: 800; line-height: 1; color: black;">(${subject})</div>` : ''}
             `;
         };

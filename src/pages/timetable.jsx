@@ -657,11 +657,12 @@ export default function TimetablePage() {
             return;
         }
 
+        const updatedStream = { ...streamForm, id: editingStreamId || Date.now() };
         let updated;
         if (editingStreamId) {
-            updated = subjectStreams.map(s => s.id === editingStreamId ? { ...streamForm, id: editingStreamId } : s);
+            updated = subjectStreams.map(s => s.id === editingStreamId ? updatedStream : s);
         } else {
-            updated = [...subjectStreams, { ...streamForm, id: Date.now() }];
+            updated = [...subjectStreams, updatedStream];
         }
 
         setSubjectStreams(updated);
@@ -670,6 +671,7 @@ export default function TimetablePage() {
         setEditingStreamId(null);
         setStreamForm({ name: '', abbreviation: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '', groupName: '' }] });
         addToast('✅ Stream saved successfully', 'success');
+        return updatedStream;
     };
 
     const handleDeleteStream = (id) => {
@@ -719,7 +721,9 @@ export default function TimetablePage() {
             row: row,
             newTeacher: null,
             analysis: null,
-            options: []
+            options: [],
+            selectedGroups: new Set(),
+            scope: 'MINIMAL'
         });
     };
 
@@ -746,29 +750,68 @@ export default function TimetablePage() {
         const newTeacherTT = generatedTimetable.teacherTimetables[newTeacherName] || {};
         const clashes = assignments.filter(asgn => {
             const slot = newTeacherTT[asgn.day]?.[asgn.period];
-            return slot && slot.subject;
+            return slot && typeof slot === 'object' && slot.subject;
         }).map(asgn => {
             const slot = newTeacherTT[asgn.day][asgn.period];
             return { ...asgn, conflict: `${slot.subject} in ${slot.className}` };
         });
 
-        // Calculate workload
-        const currentWorkload = Object.values(newTeacherTT).reduce((sum, day) => sum + Object.values(day).filter(p => p.subject).length, 0);
+        // Calculate workload per day
+        const DAYS_LIST = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const dailyWorkload = {};
+        DAYS_LIST.forEach(day => {
+            const currentCount = Object.values(newTeacherTT[day] || {}).filter(p => p && typeof p === 'object' && p.subject).length;
+            const extraCount = assignments.filter(a => a.day === day).length;
+            dailyWorkload[day] = {
+                current: currentCount,
+                extra: extraCount,
+                total: currentCount + extraCount
+            };
+        });
 
-        return { assignments, clashes, currentWorkload };
+        const overloadedDays = DAYS_LIST.filter(day => dailyWorkload[day].total > 6);
+        const currentWorkload = Object.values(dailyWorkload).reduce((sum, d) => sum + d.current, 0);
+
+        // Group assignments for selective transfer UI
+        const groups = {};
+        assignments.forEach(asgn => {
+            const key = asgn.className;
+            if (!groups[key]) groups[key] = { className: asgn.className, slots: [] };
+            groups[key].slots.push(asgn);
+        });
+
+        const groupedAssignments = Object.values(groups).map(g => {
+            const dayMap = {};
+            g.slots.forEach(s => {
+                const label = s.period.replace('S', 'P'); // Simplified label
+                if (!dayMap[s.day]) dayMap[s.day] = [];
+                dayMap[s.day].push(label);
+            });
+            const summary = Object.entries(dayMap).map(([day, ps]) => `${day.substring(0, 3)}(${ps.join(',')})`).join(', ');
+            return { ...g, summary, count: g.slots.length };
+        }).sort((a, b) => a.className.localeCompare(b, undefined, { numeric: true }));
+
+        return { assignments, clashes, currentWorkload, dailyWorkload, overloadedDays, groupedAssignments };
     };
 
     const executeSmartReassign = async () => {
         if (!reassignWizard) return;
-        const { row, newTeacher, strategy, analysis } = reassignWizard;
+        const { row, newTeacher, strategy, analysis, selectedGroups } = reassignWizard;
         const tt = JSON.parse(JSON.stringify(generatedTimetable));
         const oldTeacher = row.teacher;
 
-        // Common first step: update the teacher in the allotmentRow
-        setAllotmentRows(prev => prev.map(r => r.id === row.id ? { ...r, teacher: newTeacher } : r));
+        let assignmentsToMove = [];
+        if (strategy === 'SELECTIVE') {
+            assignmentsToMove = analysis.groupedAssignments
+                .filter(g => selectedGroups.has(g.className))
+                .flatMap(g => g.slots);
+        } else if (strategy === 'DIRECT') {
+            assignmentsToMove = analysis.assignments;
+        }
 
-        if (strategy === 'DIRECT') {
-            analysis.assignments.forEach(asgn => {
+        // 1. Update generatedTimetable for DIRECT/SELECTIVE
+        if (strategy === 'DIRECT' || strategy === 'SELECTIVE') {
+            assignmentsToMove.forEach(asgn => {
                 const { className, day, period } = asgn;
                 if (tt.teacherTimetables[oldTeacher]?.[day]?.[period]) delete tt.teacherTimetables[oldTeacher][day][period];
                 if (tt.classTimetables[className]?.[day]?.[period]) tt.classTimetables[className][day][period].teacher = newTeacher;
@@ -777,7 +820,60 @@ export default function TimetablePage() {
                 tt.teacherTimetables[newTeacher][day][period] = { subject: row.subject, className: className };
             });
             setGeneratedTimetable(tt);
-            addToast(`Successfully swapped ${oldTeacher} with ${newTeacher} for ${row.subject}`, 'success');
+        }
+
+        // 2. Update allotmentRows surgically
+        setAllotmentRows(prev => {
+            let nextRows = [...prev];
+            const sourceIdx = nextRows.findIndex(r => r.id === row.id);
+            if (sourceIdx === -1) return prev;
+
+            const sourceRow = nextRows[sourceIdx];
+            const movedAllotments = [];
+            const remainingAllotments = [];
+
+            if (strategy === 'DIRECT') {
+                movedAllotments.push(...sourceRow.allotments);
+                // Keep source row to avoid teacher disappearance
+                nextRows[sourceIdx] = { ...sourceRow, allotments: [], total: 0 };
+            } else if (strategy === 'SELECTIVE') {
+                sourceRow.allotments.forEach(al => {
+                    const movedInAl = al.classes.filter(c => selectedGroups.has(c));
+                    const keptInAl = al.classes.filter(c => !selectedGroups.has(c));
+                    if (movedInAl.length > 0) movedAllotments.push({ ...al, classes: movedInAl });
+                    if (keptInAl.length > 0) remainingAllotments.push({ ...al, classes: keptInAl });
+                });
+                nextRows[sourceIdx] = { ...sourceRow, allotments: remainingAllotments, total: remainingAllotments.reduce((s, a) => s + (a.periods || 0), 0) };
+            }
+
+            // Target teacher: Merge moved allotments
+            if (movedAllotments.length > 0) {
+                const targetId = `${newTeacher}||${row.subject}`;
+                const targetIdx = nextRows.findIndex(r => r.id === targetId);
+                if (targetIdx > -1) {
+                    nextRows[targetIdx] = {
+                        ...nextRows[targetIdx],
+                        allotments: [...nextRows[targetIdx].allotments, ...movedAllotments],
+                        total: nextRows[targetIdx].total + movedAllotments.reduce((s, a) => s + (a.periods || 0), 0)
+                    };
+                } else {
+                    nextRows.push({
+                        id: targetId,
+                        teacher: newTeacher,
+                        subject: row.subject,
+                        allotments: movedAllotments,
+                        total: movedAllotments.reduce((s, a) => s + (a.periods || 0), 0)
+                    });
+                }
+            }
+            return nextRows;
+        });
+
+        if (strategy === 'DIRECT') {
+            addToast(`Successfully moved all ${row.subject} classes to ${newTeacher}. ${oldTeacher} now has 0 periods for this entry.`, 'success');
+            setReassignWizard(null);
+        } else if (strategy === 'SELECTIVE') {
+            addToast(`Transferred ${assignmentsToMove.length} periods to ${newTeacher}. ${oldTeacher} retains remaining classes.`, 'success');
             setReassignWizard(null);
         } else if (strategy === 'PARTIAL') {
             // Smart Partial: First CLEAR old assignments based on scope
@@ -821,6 +917,38 @@ export default function TimetablePage() {
             setTimeout(() => setActiveTab(6), 100);
             addToast('Target teacher updated. Recommended: Trigger Full Regeneration.', 'info');
         }
+    };
+
+    const removeEmptyTeachers = () => {
+        if (!confirm('Are you sure you want to remove all teachers with 0 periods? This will clean up the list.')) return;
+
+        const teachersToRemove = new Set();
+        const teacherTTDict = generatedTimetable?.teacherTimetables || {};
+
+        // Find teachers who have 0 assignments AND 0 totals in allotments
+        const allTeacherNames = new Set([
+            ...Object.keys(teacherTTDict),
+            ...mappingRows.map(r => r.teacher),
+            ...allotmentRows.map(r => r.teacher)
+        ].filter(t => t && t !== 'EMPTY TEMPLATE'));
+
+        allTeacherNames.forEach(name => {
+            const hasAssignments = teacherTTDict[name] && Object.values(teacherTTDict[name]).some(day => Object.values(day).some(p => p && typeof p === 'object' && p.subject));
+            const totalAllotmentPeriods = allotmentRows.filter(r => r.teacher === name).reduce((sum, r) => sum + (r.total || 0), 0);
+            if (!hasAssignments && totalAllotmentPeriods === 0) {
+                teachersToRemove.add(name);
+            }
+        });
+
+        if (teachersToRemove.size === 0) {
+            addToast('No empty teachers found.', 'info');
+            return;
+        }
+
+        setAllotmentRows(prev => prev.filter(r => !teachersToRemove.has(r.teacher)));
+        setMappingRows(prev => prev.filter(r => !teachersToRemove.has(r.teacher)));
+
+        addToast(`Removed ${teachersToRemove.size} teachers with 0 periods.`, 'success');
     };
 
     const executeDelete = () => {
@@ -1983,7 +2111,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         }
     };
 
-    const handleCreateSpecific = async (row, baseTT = null) => {
+    const handleCreateSpecific = async (row, baseTT = null, isBatch = false) => {
         if (!row.teacher) {
             addToast('Teacher must be selected', 'warning');
             return null;
@@ -2020,7 +2148,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             currentTT = { classTimetables: cTimetables, teacherTimetables: tTimetables, academicYear, bellTimings };
         }
 
-        setCreationStatus({
+        setCreationStatus(prev => ({
+            ...(prev || {}),
             teacher: row.teacher, subject: 'Multiple subjects...',
             messages: [
                 `═══════════════════════════════════════`,
@@ -2028,7 +2157,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 `═══════════════════════════════════════`
             ],
             progress: 0, completedCount: completedCreations.size + 1, isError: false
-        });
+        }));
 
         const addMessage = (msg) => setCreationStatus(prev => ({
             ...prev, messages: [...(prev?.messages || []), msg]
@@ -2441,7 +2570,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 await sleep(300);
                 setGeneratedTimetable(tt);
                 setCompletedCreations(prev => new Set([...prev, row.id]));
-                setTimeout(() => setCreationStatus(null), 5000);
+                if (!isBatch) {
+                    setTimeout(() => setCreationStatus(null), 5000);
+                }
                 return tt;
             } else {
                 setCreationStatus(prev => ({ ...prev, isError: true }));
@@ -2460,9 +2591,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
     const handleBatchGenerate = async (label, criteria) => {
         const rowsToProcess = allotmentRows.filter(row => {
             if (!row.teacher) return false;
-            // Support both old root subject and new allotment-level subjects
-            const hasSubject = (row.allotments || []).some(a => a.subject) || !!row.subject;
-            if (!hasSubject) return false;
+            // Must have non-zero periods to be worth generating
+            const totalPeriods = (row.allotments || []).reduce((sum, g) => sum + (Number(g.periods) || 0), 0);
+            if (totalPeriods === 0) return false;
+
             if (completedCreations.has(row.id)) return false;
 
             const allClasses = row.allotments.flatMap(a => a.classes);
@@ -2483,7 +2615,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         const totalToProcess = rowsToProcess.length + streamsToProcess.length;
 
         if (totalToProcess === 0) {
-            addToast(`No pending items found for ${label}`, 'info');
+            addToast(`No pending items with allotments found for ${label}`, 'info');
             return;
         }
 
@@ -2503,7 +2635,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         for (let i = 0; i < streamsToProcess.length; i++) {
             const stream = streamsToProcess[i];
 
-            // Progress update for ribbon
             setCreationStatus(prev => ({
                 ...(prev || { messages: [], teacher: 'Batch', subject: label }),
                 batchProgress: `Processing stream ${i + 1} of ${totalToProcess}...`
@@ -2524,26 +2655,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 const row = rowsToProcess[i];
                 const streamOffset = streamsToProcess.length;
 
-                // Real-time progress update for ribbon
                 setCreationStatus(prev => ({
                     ...(prev || { messages: [], teacher: 'Batch', subject: label }),
-                    batchProgress: `Processing teacher ${i + streamOffset + 1} of ${totalToProcess}... (${skippedRows.length} skipped)`
+                    batchProgress: `Teacher ${i + streamOffset + 1} of ${totalToProcess}: ${row.teacher}`
                 }));
 
-                // Pre-check for allotments/tasks
-                const tasksCount = row.allotments.reduce((sum, g) => sum + (Number(g.periods) || 0), 0);
-
-                if (tasksCount === 0) {
-                    console.warn(`Teacher ${row.teacher} skipped - no class allotments`);
-                    setCreationStatus(prev => ({
-                        ...(prev || { messages: [], teacher: 'Batch', subject: label }),
-                        messages: [...(prev?.messages || []), `⚠️ Skipping ${row.teacher}: No class allotments found.`]
-                    }));
-                    skippedRows.push(row.teacher);
-                    continue;
-                }
-
-                const result = await handleCreateSpecific(row, currentTT);
+                const result = await handleCreateSpecific(row, currentTT, true);
                 if (result) {
                     currentTT = result;
                     generatedCount++;
@@ -2554,9 +2671,17 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             }
         }
 
-        // Final summary
+        // Final summary on ribbon
+        setCreationStatus(prev => ({
+            ...prev,
+            teacher: 'COMPLETED',
+            subject: label,
+            batchProgress: `Batch Finished: ${generatedCount}/${totalToProcess} created.`
+        }));
+        setTimeout(() => setCreationStatus(null), 10000);
+
         const skippedCount = skippedRows.length;
-        addToast(`✅ Batch generation completed!\n\nGenerated: ${generatedCount}\nSkipped: ${skippedCount} (No allotments)`, 'success');
+        addToast(`✅ Batch generation completed!\n\nGenerated: ${generatedCount}\nSkipped: ${skippedCount}`, 'success');
 
         if (skippedCount > 0) {
             setTimeout(() => {
@@ -3261,7 +3386,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 </td>
                                                 <td style={{ padding: '0.8rem', minWidth: '150px' }}>
                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                                                        {(mappingRows.find(m => m.teacher === row.teacher)?.subjects || []).map(s => (
+                                                        {(mappingRows.find(m => (m.teacher || '').trim() === (row.teacher || '').trim())?.subjects || []).map(s => (
                                                             <span key={s} style={{
                                                                 fontSize: '0.7rem',
                                                                 background: '#334155',
@@ -3421,7 +3546,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 }}
                                                                             >
                                                                                 <option value="">-- sub --</option>
-                                                                                {(mappingRows.find(m => m.teacher === row.teacher)?.subjects || []).map(s => (
+                                                                                {(mappingRows.find(m => (m.teacher || '').trim() === (row.teacher || '').trim())?.subjects || []).map(s => (
                                                                                     <option key={s} value={s}>{s}</option>
                                                                                 ))}
                                                                             </select>
@@ -3755,8 +3880,23 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         <div style={{ fontSize: '1.5rem', fontWeight: 900, color: analysis.clashes.length > 0 ? '#ef4444' : '#10b981' }}>{analysis.clashes.length}</div>
                                                                     </div>
                                                                     <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
-                                                                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>New Workload</div>
+                                                                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Total Weekly</div>
                                                                         <div style={{ fontSize: '1.5rem', fontWeight: 900, color: 'white' }}>{analysis.currentWorkload + analysis.assignments.length}</div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Daily Workload Indicator */}
+                                                                <div style={{ background: '#0f172a', padding: '1.2rem', borderRadius: '1rem', border: '1px solid #334155', marginBottom: '1.5rem' }}>
+                                                                    <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.8rem', letterSpacing: '0.05em' }}>Daily Period Distribution (Max 6)</div>
+                                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '0.5rem' }}>
+                                                                        {Object.entries(analysis.dailyWorkload).map(([day, stats]) => (
+                                                                            <div key={day} style={{ textAlign: 'center', padding: '0.5rem', borderRadius: '0.6rem', background: stats.total > 6 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(30, 41, 59, 0.5)', border: `1px solid ${stats.total > 6 ? '#ef4444' : '#334155'}` }}>
+                                                                                <div style={{ fontSize: '0.65rem', color: stats.total > 6 ? '#f87171' : '#94a3b8', fontWeight: 700 }}>{day.substring(0, 3)}</div>
+                                                                                <div style={{ fontSize: '1.1rem', fontWeight: 900, color: stats.total > 6 ? '#ef4444' : (stats.extra > 0 ? '#3b82f6' : 'white') }}>
+                                                                                    {stats.total}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
                                                                     </div>
                                                                 </div>
 
@@ -3771,9 +3911,16 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                             ))}
                                                                         </div>
                                                                     </div>
+                                                                ) : analysis.overloadedDays.length > 0 ? (
+                                                                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
+                                                                        <h4 style={{ margin: '0 0 0.5rem 0', color: '#ef4444', fontSize: '0.95rem' }}>🚨 Workload Limit Exceeded</h4>
+                                                                        <p style={{ margin: 0, color: '#fca5a5', fontSize: '0.85rem' }}>
+                                                                            Cannot reassign - {newTeacher} would exceed 6 periods on: <b>{analysis.overloadedDays.join(', ')}</b>.
+                                                                        </p>
+                                                                    </div>
                                                                 ) : (
                                                                     <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
-                                                                        <h4 style={{ margin: 0, color: '#10b981', fontSize: '0.95rem' }}>✅ Target teacher is fully available for all slots!</h4>
+                                                                        <h4 style={{ margin: 0, color: '#10b981', fontSize: '0.95rem' }}>✅ Target teacher is fully available and within workload limits!</h4>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -3785,22 +3932,36 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                                         <label style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600 }}>2. CHOOSE REASSIGNMENT STRATEGY</label>
 
-                                                        {/* Option 1: Direct Swap */}
+                                                        {/* Option A: Full Swap */}
                                                         <button
                                                             onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'DIRECT' }))}
                                                             disabled={analysis.clashes.length > 0}
                                                             style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: analysis.clashes.length > 0 ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: analysis.clashes.length > 0 ? 0.5 : 1 }}
-                                                            onMouseOver={e => !analysis.clashes.length && (e.currentTarget.style.borderColor = '#f59e0b')}
+                                                            onMouseOver={e => !analysis.clashes.length && (e.currentTarget.style.borderColor = '#10b981')}
                                                             onMouseOut={e => e.currentTarget.style.borderColor = '#334155'}
                                                         >
-                                                            <div style={{ fontSize: '2rem' }}>⚡</div>
+                                                            <div style={{ fontSize: '2rem' }}>🔄</div>
                                                             <div>
-                                                                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#10b981' }}>Option 1: Direct Swap</div>
-                                                                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Immediate transfer of all slots. Zero changes to other classes.</div>
+                                                                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#10b981' }}>Option A: Full Swap</div>
+                                                                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Complete replacement. All classes move from <b>{row.teacher}</b> to <b>{newTeacher}</b>.</div>
                                                             </div>
                                                         </button>
 
-                                                        {/* Option 4: Partial Regeneration */}
+                                                        {/* Option B: Partial Swap */}
+                                                        <button
+                                                            onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'SELECTIVE', selectedGroups: new Set() }))}
+                                                            style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                            onMouseOver={e => (e.currentTarget.style.borderColor = '#3b82f6')}
+                                                            onMouseOut={e => (e.currentTarget.style.borderColor = '#334155')}
+                                                        >
+                                                            <div style={{ fontSize: '2rem' }}>✂️</div>
+                                                            <div>
+                                                                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#3b82f6' }}>Option B: Partial Swap</div>
+                                                                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Selective transfer. Choose specific classes/divisions to move.</div>
+                                                            </div>
+                                                        </button>
+
+                                                        {/* Option C: AI Re-gen */}
                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                                                             <button
                                                                 onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'PARTIAL' }))}
@@ -3811,10 +3972,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 <div style={{ fontSize: '2rem' }}>🪄</div>
                                                                 <div style={{ flex: 1 }}>
                                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                        <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#818cf8' }}>Option 2: Smart Re-reg (Best Choice)</div>
+                                                                        <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#818cf8' }}>Option C: Smart AI Re-reg</div>
                                                                         <span style={{ fontSize: '0.7rem', background: '#4f46e5', padding: '0.2rem 0.5rem', borderRadius: '1rem' }}>RECOMMENDED</span>
                                                                     </div>
-                                                                    <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>AI resolves conflicts by regenerating affected periods only. Preserves most schedules.</div>
+                                                                    <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>AI resolves conflicts by regenerating affected slots only.</div>
                                                                 </div>
                                                             </button>
 
@@ -3830,7 +3991,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             )}
                                                         </div>
 
-                                                        {/* Option 5: Full Regeneration */}
+                                                        {/* Option D: Full Regeneration */}
                                                         <button
                                                             onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'FULL' }))}
                                                             style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1rem 1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s', opacity: 0.8 }}
@@ -3839,19 +4000,59 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         >
                                                             <div style={{ fontSize: '1.5rem' }}>🔄</div>
                                                             <div>
-                                                                <div style={{ fontWeight: 700, fontSize: '1rem', color: '#ef4444' }}>Option 3: Full Re-generation</div>
+                                                                <div style={{ fontWeight: 700, fontSize: '1rem', color: '#ef4444' }}>Option D: Full Re-generation</div>
                                                                 <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Rebuild entire timetable from scratch. Guaranteed conflict-free.</div>
                                                             </div>
                                                         </button>
                                                     </div>
                                                 )}
 
-                                                {step === 3 && (
+                                                {step === 3 && reassignWizard.strategy === 'SELECTIVE' && (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                                        <div>
+                                                            <label style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600 }}>3. SELECT CLASSES TO TRANSFER</label>
+                                                            <p style={{ color: '#64748b', fontSize: '0.8rem', margin: '0.4rem 0 1.25rem 0' }}>From <b>{row.teacher}</b> to <b>{newTeacher}</b></p>
+                                                        </div>
+
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', background: '#0f172a', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #334155' }}>
+                                                            {analysis.groupedAssignments.map(g => (
+                                                                <label key={g.className} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', cursor: 'pointer', transition: 'background 0.2s' }} onMouseOver={e => e.currentTarget.style.background = '#334155'} onMouseOut={e => e.currentTarget.style.background = '#1e293b'}>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
+                                                                        checked={reassignWizard.selectedGroups.has(g.className)}
+                                                                        onChange={(e) => {
+                                                                            const newSet = new Set(reassignWizard.selectedGroups);
+                                                                            if (e.target.checked) newSet.add(g.className);
+                                                                            else newSet.delete(g.className);
+                                                                            setReassignWizard(prev => ({ ...prev, selectedGroups: newSet }));
+                                                                        }}
+                                                                    />
+                                                                    <div style={{ flex: 1 }}>
+                                                                        <div style={{ fontWeight: 800, color: 'white' }}>{g.className} {row.subject}</div>
+                                                                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{g.summary} <span style={{ color: '#f59e0b', fontWeight: 700, marginLeft: '0.5rem' }}>({g.count} periods)</span></div>
+                                                                    </div>
+                                                                </label>
+                                                            ))}
+                                                        </div>
+
+                                                        <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
+                                                            <div style={{ fontSize: '0.85rem', color: '#93c5fd' }}>
+                                                                Selected: <b>{Array.from(reassignWizard.selectedGroups).reduce((sum, cls) => sum + (analysis.groupedAssignments.find(g => g.className === cls)?.count || 0), 0)} periods</b> will transfer.
+                                                            </div>
+                                                            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.4rem' }}>
+                                                                Remaining with {row.teacher}: <b>{analysis.assignments.length - Array.from(reassignWizard.selectedGroups).reduce((sum, cls) => sum + (analysis.groupedAssignments.find(g => g.className === cls)?.count || 0), 0)} periods</b>.
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {step === 3 && reassignWizard.strategy !== 'SELECTIVE' && (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                                                         <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', padding: '1.5rem', borderRadius: '1rem', textAlign: 'center' }}>
                                                             <h4 style={{ margin: '0 0 0.5rem 0', color: '#f59e0b', fontSize: '1.1rem' }}>Ready to Apply Changes</h4>
                                                             <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.9rem' }}>
-                                                                Strategy: <b style={{ color: 'white' }}>{reassignWizard.strategy === 'DIRECT' ? 'Direct Swap' : (reassignWizard.strategy === 'PARTIAL' ? 'Smart Re-reg' : 'Full Re-reg')}</b>
+                                                                Strategy: <b style={{ color: 'white' }}>{reassignWizard.strategy === 'DIRECT' ? 'Option A: Full Swap' : (reassignWizard.strategy === 'SELECTIVE' ? 'Option B: Partial Swap' : (reassignWizard.strategy === 'PARTIAL' ? 'Option C: Smart AI Re-reg' : 'Full Re-reg'))}</b>
                                                             </p>
                                                         </div>
 
@@ -3900,14 +4101,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             executeSmartReassign();
                                                         }
                                                     }}
-                                                    disabled={step === 1 && !newTeacher}
+                                                    disabled={
+                                                        (step === 1 && (!newTeacher || (analysis && (analysis.clashes.length > 0 || analysis.overloadedDays.length > 0)))) ||
+                                                        (step === 2 && !reassignWizard.strategy) ||
+                                                        (step === 3 && reassignWizard.strategy === 'SELECTIVE' && reassignWizard.selectedGroups.size === 0)
+                                                    }
                                                     style={{
                                                         padding: '0.8rem 2rem',
-                                                        background: (step === 1 && !newTeacher) ? '#334155' : 'linear-gradient(135deg, #4f46e5, #4338ca)',
+                                                        background: ((step === 1 && (!newTeacher || (analysis && (analysis.clashes.length > 0 || analysis.overloadedDays.length > 0)))) || (step === 2 && !reassignWizard.strategy) || (step === 3 && reassignWizard.strategy === 'SELECTIVE' && reassignWizard.selectedGroups.size === 0)) ? '#334155' : 'linear-gradient(135deg, #4f46e5, #4338ca)',
                                                         border: 'none',
                                                         borderRadius: '0.8rem',
                                                         color: 'white',
-                                                        cursor: (step === 1 && !newTeacher) ? 'not-allowed' : 'pointer',
+                                                        cursor: ((step === 1 && (!newTeacher || (analysis && (analysis.clashes.length > 0 || analysis.overloadedDays.length > 0)))) || (step === 2 && !reassignWizard.strategy)) ? 'not-allowed' : 'pointer',
                                                         fontWeight: 800,
                                                         boxShadow: '0 10px 15px -3px rgba(79, 70, 229, 0.4)'
                                                     }}
@@ -5592,29 +5797,49 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         const teacherTTDict = generatedTimetable?.teacherTimetables || {};
 
                         // Comprehensive teacher discovery: include from TT, mappings, and allotments
-                        const allTeacherNames = new Set([
-                            ...Object.keys(teacherTTDict),
-                            ...mappingRows.map(r => r.teacher),
-                            ...allotmentRows.map(r => r.teacher)
-                        ].filter(t => t && t !== 'EMPTY TEMPLATE'));
+                        // 1. Discovery & Normalization
+                        const allTeacherNames = new Set();
+                        Object.keys(teacherTTDict).forEach(t => { if (t && t !== 'EMPTY TEMPLATE') allTeacherNames.add(t.trim()); });
+                        mappingRows.forEach(r => { if (r.teacher && r.teacher !== 'EMPTY TEMPLATE') allTeacherNames.add(r.teacher.trim()); });
+                        allotmentRows.forEach(r => { if (r.teacher && r.teacher !== 'EMPTY TEMPLATE') allTeacherNames.add(r.teacher.trim()); });
 
                         const teacherLevelMap = new Map();
-                        // 1. Map levels from mappingRows (Source 1)
-                        mappingRows.forEach(r => {
-                            if (!r.teacher) return;
-                            if (!teacherLevelMap.has(r.teacher)) teacherLevelMap.set(r.teacher, new Set());
-                            if (r.level) teacherLevelMap.get(r.teacher).add(r.level);
-                        });
-                        // 2. Map levels from allotmentRows (Source 2 - Inference)
+                        const addLevel = (name, lv) => {
+                            if (!name || !lv) return;
+                            const n = name.trim();
+                            if (!teacherLevelMap.has(n)) teacherLevelMap.set(n, new Set());
+                            teacherLevelMap.get(n).add(lv);
+                        };
+
+                        // Source 1: Explicit Mappings (Primary Truth)
+                        mappingRows.forEach(r => addLevel(r.teacher, r.level));
+
+                        // Source 2: Allotment Inference (Only if periods > 0)
                         allotmentRows.forEach(r => {
                             if (!r.teacher) return;
-                            if (!teacherLevelMap.has(r.teacher)) teacherLevelMap.set(r.teacher, new Set());
                             (r.allotments || []).forEach(al => {
+                                if ((Number(al.periods) || 0) <= 0) return;
                                 (al.classes || []).forEach(cls => {
                                     const grade = parseInt(cls);
                                     if (!isNaN(grade)) {
-                                        if (grade < 11) teacherLevelMap.get(r.teacher).add('Middle');
-                                        else teacherLevelMap.get(r.teacher).add('Senior');
+                                        if (grade <= 8) addLevel(r.teacher, 'Middle');
+                                        else addLevel(r.teacher, 'Senior');
+                                    }
+                                });
+                            });
+                        });
+
+                        // Source 3: Generated TT Inference (Actual Assignments)
+                        Object.entries(teacherTTDict).forEach(([tName, schedule]) => {
+                            Object.values(schedule).forEach(day => {
+                                if (!day || typeof day !== 'object') return;
+                                Object.values(day).forEach(slot => {
+                                    if (slot && typeof slot === 'object' && slot.className) {
+                                        const grade = parseInt(slot.className);
+                                        if (!isNaN(grade)) {
+                                            if (grade <= 8) addLevel(tName, 'Middle');
+                                            else addLevel(tName, 'Senior');
+                                        }
                                     }
                                 });
                             });
@@ -5634,6 +5859,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 }
                             })
                             .sort((a, b) => a.localeCompare(b));
+
+                        const emptyTeachers = Array.from(allTeacherNames).filter(name => {
+                            const trimmedName = name.trim();
+                            const hasAssignments = teacherTTDict[trimmedName] && Object.values(teacherTTDict[trimmedName]).some(day => Object.values(day).some(p => p && typeof p === 'object' && p.subject));
+                            const totalAllotmentPeriods = allotmentRows.filter(r => (r.teacher || '').trim() === trimmedName).reduce((sum, r) => sum + (r.total || 0), 0);
+                            return !hasAssignments && totalAllotmentPeriods === 0;
+                        });
 
                         // Chunk teachers into groups of 4 for 2x2 grid pages
                         const PAGE_SIZE = 4;
@@ -5724,8 +5956,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                         // Inner component to render a single teacher's TT
                         const TeacherCard = ({ teacher }) => {
-                            const teacherMapping = mappingRows.find(m => m.teacher === teacher);
-                            const tTT = (teacher && teacherTTDict?.[teacher]) ? teacherTTDict[teacher] : null;
+                            const trimmedName = (teacher || '').trim();
+                            const teacherMapping = mappingRows.find(m => (m.teacher || '').trim() === trimmedName);
+                            // Support lookup for both trimmed and potentially untrimmed keys in existing state
+                            const tTT = teacherTTDict[trimmedName] || (teacher && teacherTTDict[teacher]);
 
                             // Use sub-tab as primary indicator
                             let isMiddle = teacherTTSubTab === 'Middle';
@@ -5733,7 +5967,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             // Discover subjects for this teacher
                             const subjectsHandled = new Set();
                             (teacherMapping?.subjects || []).forEach(s => subjectsHandled.add(s));
-                            allotmentRows.filter(r => r.teacher === teacher).forEach(r => {
+                            allotmentRows.filter(r => (r.teacher || '').trim() === trimmedName).forEach(r => {
                                 (r.allotments || []).forEach(al => {
                                     if (al.subject) subjectsHandled.add(al.subject);
                                 });
@@ -5863,7 +6097,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         }
 
                                                         const { num, div } = getFormattedClass(displayClass);
-                                                        const suffix = slot?.isTBlock ? ' [T]' : (slot?.isLBlock ? ' [L]' : '');
+                                                        const typeIndicator = slot?.isTBlock ? 'T' : (slot?.isLBlock ? 'L' : '');
+                                                        const indicatorSpan = typeIndicator ? <sub style={{ fontSize: '0.6rem', verticalAlign: 'super', fontWeight: 800, marginLeft: '1px' }}>{typeIndicator}</sub> : null;
                                                         const isCombined = div && div.length <= 3;
 
                                                         return (
@@ -5878,11 +6113,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             }}>
                                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px' }}>
                                                                     <div style={{ fontSize: '14px', fontWeight: 900, color: 'black', lineHeight: '1.1' }}>
-                                                                        {num}{isCombined ? <span style={{ fontSize: '0.6rem', fontWeight: 800 }}>{div}</span> : ''}{suffix}
+                                                                        {num}{isCombined ? <span style={{ fontSize: '0.6rem', fontWeight: 800 }}>{div}{indicatorSpan}</span> : (!div ? indicatorSpan : '')}
                                                                     </div>
                                                                     {div && !isCombined && (
                                                                         <div style={{ fontSize: '10px', fontWeight: 800, color: 'black', lineHeight: '1', maxWidth: '45px', wordBreak: 'break-all', textAlign: 'center' }}>
-                                                                            {div}
+                                                                            {div}{indicatorSpan}
                                                                         </div>
                                                                     )}
                                                                     {displaySub && (
@@ -5961,6 +6196,16 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         </div>
                                         <span style={{ width: '1px', height: '1rem', background: '#334155' }} />
                                         <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found</span>
+                                        {emptyTeachers.length > 0 && (
+                                            <button
+                                                onClick={removeEmptyTeachers}
+                                                style={{ marginLeft: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', padding: '0.5rem 1rem', borderRadius: '0.6rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', transition: 'all 0.2s' }}
+                                                onMouseOver={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
+                                                onMouseOut={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
+                                            >
+                                                🗑️ Remove {emptyTeachers.length} Empty
+                                            </button>
+                                        )}
                                     </div>
                                     <button
                                         onClick={handlePrintAll}
@@ -6525,7 +6770,15 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
                                                 >
                                                     <option value="" style={{ color: '#000', background: '#fff' }}>-- select teacher --</option>
-                                                    {teachers.filter(t => !sub.subject || mappingRows.some(m => m.teacher === t && m.subject === sub.subject)).sort().map(t => <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>{t}</option>)}
+                                                    {teachers.filter(t => {
+                                                        if (!sub.subject) return true;
+                                                        const trimmedT = (t || '').trim();
+                                                        const targetSub = sub.subject.trim().toUpperCase();
+                                                        return mappingRows.some(m =>
+                                                            (m.teacher || '').trim() === trimmedT &&
+                                                            (m.subjects || []).some(s => s.trim().toUpperCase() === targetSub)
+                                                        );
+                                                    }).sort().map(t => <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>{t}</option>)}
                                                 </select>
                                             </div>
                                             <div>
@@ -6556,7 +6809,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; e.target.style.borderColor = '#475569'; }}
                                 >Cancel</button>
                                 <button
-                                    onClick={handleSaveStream}
+                                    onClick={async () => {
+                                        const savedStream = handleSaveStream();
+                                        if (savedStream) {
+                                            // Automatically trigger placement (deployment) into the timetable
+                                            await handleCreateStreamSpecific(savedStream);
+                                        }
+                                    }}
                                     style={{
                                         padding: '0.85rem 2rem',
                                         background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
@@ -6571,7 +6830,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     onMouseEnter={(e) => { e.target.style.transform = 'translateY(-2px)'; e.target.style.boxShadow = '0 6px 15px rgba(79, 70, 229, 0.5)'; }}
                                     onMouseLeave={(e) => { e.target.style.transform = 'translateY(0)'; e.target.style.boxShadow = '0 4px 12px rgba(79, 70, 229, 0.4)'; }}
                                 >
-                                    {editingStreamId ? 'Update Stream' : 'Deploy Stream'}
+                                    {editingStreamId ? 'Update Stream' : 'Stream Deploy'}
                                 </button>
                             </div>
                         </div>
