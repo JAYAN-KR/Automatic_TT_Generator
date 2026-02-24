@@ -1,5 +1,5 @@
 import { getAbbreviation } from './subjectAbbreviations';
-import { detectLabConflict, determineLabStatus } from './labSharingValidation';
+import { detectLabConflict, determineLabStatus, getLabForSubject, LAB_SYSTEM } from './labSharingValidation';
 
 // Timetable Generation Engine
 export const generateTimetable = (mappings, distribution, bellTimings, streams = []) => {
@@ -13,9 +13,10 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
     const allPeriods = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
 
     // Level-aware slot logic
+    // Level-aware slot logic
     const getLevel = (className) => {
         const grade = parseInt(className) || 0;
-        return grade >= 11 ? 'Senior' : 'Middle';
+        return grade >= 9 ? 'Senior' : 'Middle';
     };
 
     const getAvailableSlots = (className) => {
@@ -25,17 +26,10 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
             : ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S10', 'S11'];
     };
 
-    const getBlockPairs = (className) => {
-        const slots = getAvailableSlots(className);
-        return [
-            [slots[0], slots[1]], // S1-S2
-            [slots[2], slots[3]], // S4-S5
-            [slots[3], slots[4]], // S5-S6
-            [slots[6], slots[7]]  // S10-S11 or S9-S11
-        ];
-    };
+    // ... (getBlockPairs remains same if it depends on getAvailableSlots)
 
-    const classList = [
+    // ============ DISCOVER CLASSES & TEACHERS ============
+    const allClassNames = new Set([
         '6A', '6B', '6C', '6D', '6E', '6F', '6G',
         '7A', '7B', '7C', '7D', '7E', '7F', '7G',
         '8A', '8B', '8C', '8D', '8E', '8F', '8G',
@@ -43,27 +37,30 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         '10A', '10B', '10C', '10D', '10E', '10F', '10G',
         '11A', '11B', '11C', '11D', '11E', '11F',
         '12A', '12B', '12C', '12D', '12E', '12F'
-    ];
+    ]);
 
-    // ============ GET UNIQUE TEACHERS ============
     const teacherSet = new Set();
     mappings.forEach(m => {
-        if (m.teacher) teacherSet.add(m.teacher);
+        if (m.teacher) teacherSet.add(m.teacher.trim());
+        (m.selectedClasses || m.classes || []).forEach(c => allClassNames.add(c));
     });
+
     streams.forEach(stream => {
+        if (stream.className) allClassNames.add(stream.className);
         stream.subjects?.forEach(s => {
-            if (s.teacher) teacherSet.add(s.teacher);
+            if (s.teacher) teacherSet.add(s.teacher.trim());
         });
     });
 
     const teacherList = Array.from(teacherSet);
-    console.log(`👩\u200D🏫 Found ${teacherList.length} unique teachers`);
+    const discoveredClasses = Array.from(allClassNames);
+    console.log(`👩\u200D🏫 Found ${teacherList.length} unique teachers, ${discoveredClasses.length} unique classes`);
 
     // ============ INITIALIZE DATA STRUCTURES SAFELY ============
     const classTimetables = {};
     const teacherTimetables = {};
 
-    classList.forEach(className => {
+    discoveredClasses.forEach(className => {
         classTimetables[className] = {};
         const level = getLevel(className);
         days.forEach(day => {
@@ -94,8 +91,8 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
     // ============ PREPARE ALL TASKS GLOBALLLY ============
     const allTasks = [];
     mappings.forEach((mapping) => {
-        const teacher = mapping.teacher;
-        const subject = mapping.subject;
+        const teacher = mapping.teacher ? mapping.teacher.trim() : '';
+        const subject = mapping.subject ? mapping.subject.trim() : '';
         const classes = mapping.selectedClasses || mapping.classes || [];
 
         if (!teacher || !subject || classes.length === 0) return;
@@ -119,6 +116,27 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
             }
         });
     });
+
+    // Debugging: Track how many tasks were created for each teacher
+    const teacherTaskCounts = {};
+    allTasks.forEach(t => {
+        if (t.teacher) {
+            teacherTaskCounts[t.teacher] = (teacherTaskCounts[t.teacher] || 0) + (t.type === 'BLOCK' ? 2 : 1);
+        } else if (t.subjects) {
+            t.subjects.forEach(s => {
+                const tName = s.teacher ? s.teacher.trim() : '';
+                teacherTaskCounts[tName] = (teacherTaskCounts[tName] || 0) + 1;
+            });
+        }
+    });
+
+    Object.keys(teacherTimetables).forEach(t => {
+        if (!teacherTaskCounts[t]) {
+            console.warn(`⚠️ Teacher "${t}" has 0 periods identified for generation.`);
+        }
+    });
+
+    console.log(`📋 Total generation tasks: ${allTasks.length}`);
 
     // STREAM processing
     streams.forEach(stream => {
@@ -166,8 +184,8 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                         classTimetables[cn][day][p2].subject === ''
                     );
 
-                    const lab1Free = task.labGroup === 'None' || !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p1, task.labGroup));
-                    const lab2Free = task.labGroup === 'None' || !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p2, task.labGroup));
+                    const lab1Free = task.labGroup === 'None' || !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p1, task.labGroup, task.subject));
+                    const lab2Free = task.labGroup === 'None' || !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p2, task.labGroup, task.subject));
 
                     if (teacherFree && classesFree && lab1Free && lab2Free) {
                         placeTask(task, day, p1, true);
@@ -181,13 +199,16 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                 const pStart = Math.floor(Math.random() * availableSlots.length);
                 for (let pIdx = 0; pIdx < availableSlots.length; pIdx++) {
                     const period = availableSlots[(pStart + pIdx) % availableSlots.length];
-                    const teachersFree = task.subjects.every(s => teacherTimetables[s.teacher] && teacherTimetables[s.teacher][day][period] === '');
+                    const teachersFree = task.subjects.every(s => {
+                        const tName = s.teacher ? s.teacher.trim() : '';
+                        return teacherTimetables[tName] && teacherTimetables[tName][day][period] === '';
+                    });
                     const classFree = classTimetables[task.className] && classTimetables[task.className][day][period].subject === '';
 
                     let labConflict = false;
                     for (const s of task.subjects) {
                         if (s.labGroup && s.labGroup !== 'None') {
-                            if (detectLabConflict(classTimetables, task.className, day, period, s.labGroup)) {
+                            if (detectLabConflict(classTimetables, task.className, day, period, s.labGroup, s.subject)) {
                                 labConflict = true;
                                 break;
                             }
@@ -208,7 +229,7 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                     const teacherFree = teacherTimetables[task.teacher] && teacherTimetables[task.teacher][day][period] === '';
                     const classesFree = task.classes.every(cn => classTimetables[cn] && classTimetables[cn][day] && classTimetables[cn][day][period].subject === '');
 
-                    const labFree = task.labGroup === 'None' || !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, period, task.labGroup));
+                    const labFree = task.labGroup === 'None' || !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, period, task.labGroup, task.subject));
 
                     if (teacherFree && classesFree && labFree) {
                         placeTask(task, day, period, false);
@@ -270,10 +291,11 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         }
 
         task.subjects.forEach(s => {
+            const tName = s.teacher ? s.teacher.trim() : '';
             const labStatusData = { className: task.className, subject: s.subject, labGroup: s.labGroup || 'None', targetLabCount: s.targetLabCount };
             const isLab = determineLabStatus(classTimetables, labStatusData, day, period);
 
-            teacherTimetables[s.teacher][day][period] = {
+            teacherTimetables[tName][day][period] = {
                 className: task.className,
                 subject: s.subject,
                 fullSubject: s.subject,
@@ -290,10 +312,46 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                 classTimetables[task.className][day][period].isLabPeriod = isLab;
             }
 
-            teacherTimetables[s.teacher][day].periodCount++;
-            teacherTimetables[s.teacher].weeklyPeriods++;
+            teacherTimetables[tName][day].periodCount++;
+            teacherTimetables[tName].weeklyPeriods++;
         });
     }
 
-    return { teacherTimetables, classTimetables, errors: [] };
+    // ============ POPULATE LAB TIMETABLES ============
+    const labTimetables = {};
+    Object.values(LAB_SYSTEM).forEach(name => {
+        labTimetables[name] = {};
+        days.forEach(day => {
+            labTimetables[name][day] = {};
+            allPeriods.forEach(p => {
+                labTimetables[name][day][p] = '-';
+            });
+        });
+    });
+
+    Object.keys(classTimetables).forEach(cn => {
+        days.forEach(day => {
+            allPeriods.forEach(p => {
+                const slot = classTimetables[cn][day][p];
+                if (slot && slot.isLabPeriod) {
+                    const lab = getLabForSubject(cn, slot.fullSubject || slot.subject);
+                    if (lab && labTimetables[lab]) {
+                        labTimetables[lab][day][p] = cn;
+                    }
+                }
+                if (slot && slot.isStream && slot.subjects) {
+                    slot.subjects.forEach(s => {
+                        if (s.isLabPeriod) {
+                            const lab = getLabForSubject(cn, s.subject);
+                            if (lab && labTimetables[lab]) {
+                                labTimetables[lab][day][p] = cn;
+                            }
+                        }
+                    });
+                }
+            });
+        });
+    });
+
+    return { teacherTimetables, classTimetables, labTimetables, errors: [] };
 };

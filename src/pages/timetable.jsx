@@ -7,7 +7,7 @@ import {
     generateFullPrintHTML
 } from '../utils/timetablePrintLayout';
 import { generateTimetable } from '../utils/timetableGenerator';
-import { detectLabConflict, determineLabStatus, LAB_GROUPS } from '../utils/labSharingValidation';
+import { detectLabConflict, determineLabStatus, LAB_GROUPS, getLabForSubject, LAB_SYSTEM } from '../utils/labSharingValidation';
 import { saveTimetableMappings, loadTimetableMappings, publishTimetableVersion, publishTimetableToAPK } from '../services/timetableFirestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
@@ -54,6 +54,49 @@ const TAB_GRADIENTS = [
     'linear-gradient(135deg, #059669, #10b981)', // Tab 5 (Green)
     'linear-gradient(135deg, #b91c1c, #dc2626)', // Tab 6 (Red)
 ];
+
+const syncLabTimetables = (tt) => {
+    if (!tt) return tt;
+    const labTimetables = {};
+    const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const PRDS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+
+    Object.values(LAB_SYSTEM).forEach(name => {
+        labTimetables[name] = {};
+        DAYS.forEach(day => {
+            labTimetables[name][day] = {};
+            PRDS.forEach(p => {
+                labTimetables[name][day][p] = '-';
+            });
+        });
+    });
+
+    Object.keys(tt.classTimetables || {}).forEach(cn => {
+        DAYS.forEach(day => {
+            PRDS.forEach(p => {
+                const slot = tt.classTimetables[cn][day][p];
+                if (slot && slot.isLabPeriod) {
+                    const lab = getLabForSubject(cn, slot.fullSubject || slot.subject);
+                    if (lab && labTimetables[lab]) {
+                        labTimetables[lab][day][p] = cn;
+                    }
+                }
+                if (slot && slot.isStream && slot.subjects) {
+                    slot.subjects.forEach(s => {
+                        if (s.isLabPeriod) {
+                            const lab = getLabForSubject(cn, s.subject);
+                            if (lab && labTimetables[lab]) {
+                                labTimetables[lab][day][p] = cn;
+                            }
+                        }
+                    });
+                }
+            });
+        });
+    });
+    tt.labTimetables = labTimetables;
+    return tt;
+};
 
 const CLASSROOMS = [
     '6A', '6B', '6C', '6D', '6E', '6F', '6G',
@@ -694,7 +737,7 @@ export default function TimetablePage() {
     const addSubjectToStream = () => {
         setStreamForm(prev => ({
             ...prev,
-            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '', labGroup: 'None' }]
+            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '', labGroup: 'None', targetLabCount: 2 }]
         }));
     };
 
@@ -1362,6 +1405,8 @@ export default function TimetablePage() {
     // flag to remember if last mouse down was a ctrl-selection
     const ctrlSelecting = useRef(false);
     const statusScrollRef = useRef(null); // ref for status panel auto-scroll
+    const [editingSubjectName, setEditingSubjectName] = useState(null);
+    const [subjectRenameValue, setSubjectRenameValue] = useState('');
 
     // helper to toggle ctrl-selection (used by mouse events)
     const toggleCtrlSelect = (subject, className) => {
@@ -1409,7 +1454,7 @@ export default function TimetablePage() {
         abbreviation: '',
         className: '6A',
         periods: 4,
-        subjects: [{ teacher: '', subject: '', groupName: '' }]
+        subjects: [{ teacher: '', subject: '', groupName: '', labGroup: 'None', targetLabCount: 2 }]
     });
 
     // toast messages
@@ -1953,13 +1998,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 });
             });
 
-            const allTeachers = [...new Set(allotmentRows.map(r => r.teacher).filter(Boolean))];
+            const allTeachers = [...new Set(allotmentRows.map(r => r.teacher?.trim()).filter(Boolean))];
             allTeachers.forEach(t => {
-                tTimetables[t] = {};
+                const trimmedT = t.trim();
+                tTimetables[trimmedT] = {};
                 days.forEach(d => {
-                    tTimetables[t][d] = { CT: 'CT', S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
+                    tTimetables[trimmedT][d] = { CT: 'CT', S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
                 });
-                tTimetables[t].weeklyPeriods = 0;
+                tTimetables[trimmedT].weeklyPeriods = 0;
             });
 
             currentTT = { classTimetables: cTimetables, teacherTimetables: tTimetables, academicYear, bellTimings };
@@ -1991,7 +2037,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 ? ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S10', 'S11']
                 : ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S11'];
 
-            const tFree = (teacher, d, p) => {
+            const tFree = (teacherInput, d, p) => {
+                const teacher = teacherInput?.trim();
                 if (!tt.teacherTimetables[teacher]) {
                     tt.teacherTimetables[teacher] = { weeklyPeriods: 0 };
                     DAYS.forEach(day => {
@@ -2089,6 +2136,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     };
 
                     stream.subjects.forEach(s => {
+                        const trimmedT = s.teacher?.trim();
+                        if (!trimmedT) return;
                         const labStatusData = {
                             className: stream.className,
                             subject: s.subject,
@@ -2097,7 +2146,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         };
                         const isLab = determineLabStatus(tt.classTimetables, labStatusData, pick.d, pick.p);
 
-                        tt.teacherTimetables[s.teacher][pick.d][pick.p] = {
+                        tt.teacherTimetables[trimmedT][pick.d][pick.p] = {
                             className: stream.className,
                             subject: s.subject,
                             fullSubject: s.subject,
@@ -2117,8 +2166,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             tt.classTimetables[stream.className][pick.d][pick.p].isLabPeriod = isLab;
                         }
 
-                        tt.teacherTimetables[s.teacher][pick.d].periodCount++;
-                        tt.teacherTimetables[s.teacher].weeklyPeriods++;
+                        tt.teacherTimetables[trimmedT][pick.d].periodCount++;
+                        tt.teacherTimetables[trimmedT].weeklyPeriods++;
                     });
 
                     placements.push(pick);
@@ -2133,7 +2182,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             }
 
             if (placed === periodsToPlace) {
-                setGeneratedTimetable(tt);
+                const finalTT = syncLabTimetables(tt);
+                setGeneratedTimetable(finalTT);
                 setCompletedCreations(prev => new Set([...prev, stream.id]));
                 setCreationStatus(null);
                 return tt;
@@ -2163,7 +2213,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const initPeriods = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
             const cTimetables = {};
             const tTimetables = {};
-            const allTeachers = [...new Set(allotmentRows.map(r => r.teacher).filter(Boolean))];
+            const allTeachers = [...new Set(allotmentRows.map(r => r.teacher?.trim()).filter(Boolean))];
 
             CLASS_OPTIONS.forEach(cn => {
                 cTimetables[cn] = {};
@@ -2174,11 +2224,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             });
 
             allTeachers.forEach(t => {
-                tTimetables[t] = {};
+                const trimmedT = t.trim();
+                tTimetables[trimmedT] = {};
                 days.forEach(d => {
-                    tTimetables[t][d] = { CT: 'CT', S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
+                    tTimetables[trimmedT][d] = { CT: 'CT', S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
                 });
-                tTimetables[t].weeklyPeriods = 0;
+                tTimetables[trimmedT].weeklyPeriods = 0;
             });
 
             currentTT = { classTimetables: cTimetables, teacherTimetables: tTimetables, academicYear, bellTimings };
@@ -2201,7 +2252,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
         try {
-            const teacher = row.teacher;
+            const teacher = row.teacher?.trim();
 
             // ── Build tasks list ────────────────────────────────────────────────
             const tasks = [];
@@ -2290,12 +2341,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const cFree = (d, p, classes) =>
                 classes.every(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject ?? '') === '');
 
-            const labFree = (d, p, classes, labGroup) => {
+            const labFree = (d, p, classes, labGroup, subject) => {
                 if (labGroup === 'None') return true;
-                return !classes.some(cn => detectLabConflict(tt.classTimetables, cn, d, p, labGroup));
+                return !classes.some(cn => detectLabConflict(tt.classTimetables, cn, d, p, labGroup, subject));
             };
 
-            const slotFree = (d, p, classes, labGroup = 'None') => AVAILABLE_SLOTS.includes(p) && tFree(d, p) && cFree(d, p, classes) && labFree(d, p, classes, labGroup);
+            const slotFree = (d, p, classes, labGroup = 'None', subject = '') =>
+                AVAILABLE_SLOTS.includes(p) && tFree(d, p) && cFree(d, p, classes) && labFree(d, p, classes, labGroup, subject);
             const teacherDayLoad = (d) => AVAILABLE_SLOTS.filter(p => !tFree(d, p)).length;
 
             // Returns true if the given day already has ANY block period for these classes
@@ -2379,7 +2431,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     // Step 1: Try preferred pair on available days
                     for (const d of baseDays) {
                         if (dayAlreadyHasBlock(d, task.classes)) continue;
-                        if (slotFree(d, preferredPair[0], task.classes) && slotFree(d, preferredPair[1], task.classes)) {
+                        if (slotFree(d, preferredPair[0], task.classes, task.labGroup, task.subject) && slotFree(d, preferredPair[1], task.classes, task.labGroup, task.subject)) {
                             best = { d, p1: preferredPair[0], p2: preferredPair[1] };
                             break;
                         }
@@ -2390,7 +2442,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         for (const d of PRIORITY_DAYS_B) {
                             if (dayAlreadyHasBlock(d, task.classes)) continue;
                             for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
-                                if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
+                                if (slotFree(d, fp1, task.classes, task.labGroup, task.subject) && slotFree(d, fp2, task.classes, task.labGroup, task.subject)) {
                                     best = { d, p1: fp1, p2: fp2 };
                                     break outer_fallback;
                                 }
@@ -2461,7 +2513,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         for (const d of PRIORITY_DAYS_B) {
                             if (dayAlreadyHasBlock(d, task.classes)) continue;
                             for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
-                                if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
+                                if (slotFree(d, fp1, task.classes, task.labGroup, task.subject) && slotFree(d, fp2, task.classes, task.labGroup, task.subject)) {
                                     best = { d, p1: fp1, p2: fp2 };
                                     break outer_l_fallback;
                                 }
@@ -2474,7 +2526,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         outer_l_final:
                         for (const d of PRIORITY_DAYS_B) {
                             for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
-                                if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
+                                if (slotFree(d, fp1, task.classes, task.labGroup, task.subject) && slotFree(d, fp2, task.classes, task.labGroup, task.subject)) {
                                     best = { d, p1: fp1, p2: fp2 };
                                     break outer_l_final;
                                 }
@@ -2628,7 +2680,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 addMessage(`═══════════════════════════════════════`);
                 console.log('✅ [CREATE] setGeneratedTimetable called. classTimetables keys:', Object.keys(tt.classTimetables).slice(0, 5));
                 await sleep(300);
-                setGeneratedTimetable(tt);
+                const finalTT = syncLabTimetables(tt);
+                setGeneratedTimetable(finalTT);
                 setCompletedCreations(prev => new Set([...prev, row.id]));
                 if (!isBatch) {
                     setTimeout(() => setCreationStatus(null), 5000);
@@ -2827,7 +2880,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     const uniqueClasses = [...new Set(selectedClasses)];
                     if (uniqueClasses.length > 0) {
                         legacyMappings.push({
-                            teacher: row.teacher,
+                            teacher: (row.teacher || '').trim(),
                             subject: sub,
                             selectedClasses: uniqueClasses
                         });
@@ -2848,8 +2901,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             );
 
             console.log('Generation result:', timetable);
-            setGeneratedTimetable(timetable);
-            localStorage.setItem('tt_generated_timetable', JSON.stringify(timetable));
+            const finalTT = syncLabTimetables(timetable);
+            setGeneratedTimetable(finalTT);
+            localStorage.setItem('tt_generated_timetable', JSON.stringify(finalTT));
             if (!baselineTimetable) {
                 setBaselineTimetable(timetable);
                 localStorage.setItem('tt_baseline_timetable', JSON.stringify(timetable));
@@ -5518,6 +5572,71 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 )}
                             </div>
 
+                            {/* Lab Timetable System Section */}
+                            <div style={{ marginTop: '4rem', padding: '2rem', background: '#1e293b', borderRadius: '1rem', border: '1px solid #334155' }}>
+                                <h3 style={{ fontSize: '1.8rem', fontWeight: 900, color: '#f1f5f9', marginBottom: '2rem', textAlign: 'center', borderBottom: '3px solid #4f46e5', paddingBottom: '10px' }}>
+                                    🔬 Lab Timetable Management System
+                                </h3>
+
+                                {generatedTimetable?.labTimetables ? (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                                        {Object.entries(generatedTimetable.labTimetables).map(([labName, timetable]) => (
+                                            <div key={labName} style={{ background: 'white', borderRadius: '0.5rem', overflow: 'hidden' }}>
+                                                <div style={{ padding: '10px', background: '#334155', color: 'white', fontWeight: 900, textAlign: 'center' }}>
+                                                    {labName}
+                                                </div>
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', color: 'black', fontSize: '0.75rem' }}>
+                                                    <thead>
+                                                        <tr style={{ background: '#f8fafc' }}>
+                                                            <th style={{ border: '1px solid #e2e8f0', padding: '4px' }}>DAY</th>
+                                                            {['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S10', 'S11'].map(p => {
+                                                                const map = { S1: 'P1', S2: 'P2', S4: 'P3', S5: 'P4', S6: 'P5', S8: 'P6', S9: 'P7', S10: 'P7', S11: 'P8' };
+                                                                // Show appropriate P7 for MS/Senior
+                                                                const isMS = labName === LAB_SYSTEM.MS_COMP;
+                                                                if (isMS && p === 'S9') return null; // MS Lunch
+                                                                if (!isMS && p === 'S10') return null; // Senior Lunch
+                                                                return <th key={p} style={{ border: '1px solid #e2e8f0', padding: '4px' }}>{map[p]}</th>;
+                                                            })}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
+                                                            <tr key={day}>
+                                                                <td style={{ border: '1px solid #e2e8f0', fontWeight: 800, padding: '4px', textAlign: 'center' }}>{day.substring(0, 3)}</td>
+                                                                {['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S10', 'S11'].map(p => {
+                                                                    const isMS = labName === LAB_SYSTEM.MS_COMP;
+                                                                    if (isMS && p === 'S9') return null;
+                                                                    if (!isMS && p === 'S10') return null;
+
+                                                                    const val = timetable[day][p];
+                                                                    return (
+                                                                        <td key={p} style={{
+                                                                            border: '1px solid #e2e8f0',
+                                                                            padding: '4px',
+                                                                            textAlign: 'center',
+                                                                            fontWeight: val !== '-' ? 900 : 400,
+                                                                            background: val !== '-' ? '#f0fdf4' : 'white',
+                                                                            color: val !== '-' ? '#166534' : '#64748b'
+                                                                        }}>
+                                                                            {val}
+                                                                        </td>
+                                                                    );
+                                                                })}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8', background: '#0f172a', borderRadius: '0.5rem' }}>
+                                        <p style={{ fontSize: '1.2rem', fontWeight: 600 }}>No Lab Data Available</p>
+                                        <p style={{ marginTop: '0.5rem' }}>Generate a timetable to see lab occupancy</p>
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Legend and Stats */}
                             <div style={{
                                 marginTop: '1.5rem',
@@ -5909,20 +6028,32 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         const seniorTeachers = [];
 
                         Array.from(allTeacherNames).forEach(tName => {
-                            const mapping = mappingRows.find(m => (m.teacher || '').trim() === tName);
+                            const trimmedT = tName.trim();
+                            const mapping = mappingRows.find(m => (m.teacher || '').trim() === trimmedT);
                             if (mapping) {
-                                if (mapping.level === 'Middle') {
-                                    middleTeachers.push(tName);
+                                // Explicit check: if it contains 'Middle' and not 'Senior' or 'Main', put in Middle
+                                // Otherwise, if it has Main or Senior, put in Senior.
+                                const level = mapping.level || '';
+                                if (level === 'Middle') {
+                                    middleTeachers.push(trimmedT);
                                 } else {
-                                    // Covers 'Main', 'Senior', and anything else
-                                    seniorTeachers.push(tName);
-                                    if (mapping.level !== 'Main' && mapping.level !== 'Senior') {
-                                        console.warn(`Teacher ${tName} has level "${mapping.level}". Defaulting to Senior.`);
-                                    }
+                                    seniorTeachers.push(trimmedT);
                                 }
                             } else {
-                                console.warn(`Teacher ${tName} not found in first tab. Defaulting to Senior.`);
-                                seniorTeachers.push(tName);
+                                // Fallback: try to guess level from allotments
+                                const teacherAllotments = allotmentRows.find(r => (r.teacher || '').trim() === trimmedT);
+                                if (teacherAllotments && teacherAllotments.allotments?.length > 0) {
+                                    const firstClass = teacherAllotments.allotments[0].classes[0];
+                                    const grade = parseInt(firstClass) || 0;
+                                    // Senior school according to print layout starts at 9
+                                    if (grade >= 1 && grade <= 8) {
+                                        middleTeachers.push(trimmedT);
+                                    } else {
+                                        seniorTeachers.push(trimmedT);
+                                    }
+                                } else {
+                                    seniorTeachers.push(trimmedT); // Default to Senior if no info
+                                }
                             }
                         });
 
@@ -6201,7 +6332,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                                         const { num, div } = getFormattedClass(displayClass);
                                                         const typeIndicator = slot?.isTBlock ? 'T' : (slot?.isLBlock ? 'L' : '');
-                                                        const indicatorSpan = typeIndicator ? <sub style={{ fontSize: '0.6rem', verticalAlign: 'super', fontWeight: 800, marginLeft: '1px' }}>{typeIndicator}</sub> : null;
+                                                        const indicatorSpan = typeIndicator ? <sub style={{ fontSize: '0.55rem', verticalAlign: 'super', fontWeight: 500, marginLeft: '1px' }}>{typeIndicator}</sub> : null;
                                                         const isCombined = div && div.length <= 3;
 
                                                         return (
@@ -6214,31 +6345,22 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 color: 'black',
                                                                 verticalAlign: 'middle'
                                                             }}>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px' }}>
-                                                                    <div style={{ fontSize: '14px', color: 'black', lineHeight: '1.1' }}>
-                                                                        <span style={{ fontWeight: 400 }}>{num}</span>
-                                                                        {isCombined ? (
-                                                                            <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>
-                                                                                {div}{labType}{indicatorSpan}
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span style={{ fontWeight: 800 }}>
-                                                                                {labType}{indicatorSpan}
-                                                                            </span>
-                                                                        )}
+                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px' }}>
+                                                                    <div style={{ fontSize: '11.5px', color: 'black', lineHeight: '1.1' }}>
+                                                                        <span style={{ fontWeight: 600 }}>{num}{div}</span>
                                                                     </div>
-                                                                    {div && !isCombined && (
-                                                                        <div style={{ fontSize: '10px', fontWeight: 800, color: 'black', lineHeight: '1', maxWidth: '45px', wordBreak: 'break-all', textAlign: 'center' }}>
-                                                                            {div}{labType}{indicatorSpan}
+                                                                    {(labType || indicatorSpan) && (
+                                                                        <div style={{ fontSize: '9px', fontWeight: 600, color: 'black', lineHeight: '1' }}>
+                                                                            {labType}{indicatorSpan}
                                                                         </div>
                                                                     )}
                                                                     {displaySub && (
-                                                                        <div style={{ fontSize: '10px', fontWeight: 900, color: 'black', lineHeight: '1', marginTop: '1px' }}>
+                                                                        <div style={{ fontSize: '10px', fontWeight: 500, color: 'black', lineHeight: '1', marginTop: '1px' }}>
                                                                             {displaySub}
                                                                         </div>
                                                                     )}
                                                                     {isLunch && num === '-' && (
-                                                                        <div style={{ color: 'black', fontSize: '9px', fontWeight: 800 }}>LUNCH</div>
+                                                                        <div style={{ color: 'black', fontSize: '9px', fontWeight: 600 }}>LUNCH</div>
                                                                     )}
                                                                 </div>
                                                             </td>
@@ -6857,8 +6979,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     {streamForm.subjects.map((sub, idx) => (
                                         <div key={idx} style={{
                                             display: 'grid',
-                                            gridTemplateColumns: '1fr 1fr 1fr 120px 40px',
-                                            gap: '0.75rem',
+                                            gridTemplateColumns: '1.2fr 1fr 1fr 100px 60px 40px',
+                                            gap: '0.6rem',
                                             alignItems: 'center',
                                             background: 'rgba(30, 41, 59, 0.5)',
                                             padding: '0.75rem',
@@ -6912,6 +7034,17 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     <option value="CSc Lab Group">CSc Group</option>
                                                     <option value="DS/AI Lab Group">DS/AI Group</option>
                                                 </select>
+                                            </div>
+                                            <div>
+                                                <input
+                                                    type="number"
+                                                    value={sub.targetLabCount || 0}
+                                                    onChange={e => updateStreamSubject(idx, 'targetLabCount', Number(e.target.value))}
+                                                    title="Lab Periods (LP)"
+                                                    min="0"
+                                                    max={streamForm.periods}
+                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#10b981', fontSize: '0.85rem', fontWeight: 900, textAlign: 'center' }}
+                                                />
                                             </div>
                                             <button
                                                 onClick={() => removeSubjectFromStream(idx)}
