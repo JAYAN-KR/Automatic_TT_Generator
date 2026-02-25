@@ -409,6 +409,30 @@ export default function TimetablePage() {
     const [isChainComplete, setIsChainComplete] = useState(false);
     const [chainCoords, setChainCoords] = useState([]);
     const formatTTContainerRef = useRef(null);
+    const getBlockEntries = (cls, day, period) => {
+        const classTT = generatedTimetable?.classTimetables?.[cls];
+        if (!classTT || !classTT[day]) return [{ cls, day, period }];
+        const cell = classTT[day][period];
+        if (!cell || (!cell.isBlock && !cell.isTBlock && !cell.isLBlock)) return [{ cls, day, period }];
+
+        const periods = ['CT', 'S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S10', 'S11'];
+        const idx = periods.indexOf(period);
+        const entries = [{ cls, day, period }];
+
+        // Check neighbors for same block
+        [idx - 1, idx + 1].forEach(nIdx => {
+            if (nIdx >= 0 && nIdx < periods.length) {
+                const nPeriod = periods[nIdx];
+                const nCell = classTT[day][nPeriod];
+                if (nCell && (nCell.isBlock || nCell.isTBlock || nCell.isLBlock) && 
+                    nCell.subject === cell.subject && nCell.teacher === cell.teacher) {
+                    entries.push({ cls, day, period: nPeriod });
+                }
+            }
+        });
+        return entries.sort((a, b) => periods.indexOf(a.period) - periods.indexOf(b.period));
+    };
+
 
     useEffect(() => {
         if (!chainSwapMode || swapChain.length < 1) {
@@ -417,16 +441,34 @@ export default function TimetablePage() {
         }
 
         const updateCoords = () => {
-            const coords = swapChain.map(item => {
+            const coords = [];
+            // Group swapChain entries by link index to avoid arrows within blocks
+            // For now, let's just use the unique coordinate points (center of blocks)
+            // Or simpler: only draw arrows if subject/teacher/cls/day changes between entries
+            const uniqueCoords = [];
+            swapChain.forEach((item, idx) => {
                 const el = document.getElementById(`cell-${item.cls}-${item.day}-${item.period}`);
-                if (!el) return null;
+                if (!el) return;
                 const rect = el.getBoundingClientRect();
                 const containerRect = formatTTContainerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
-                return {
-                    x: rect.left + rect.width / 2 - containerRect.left,
-                    y: rect.top + rect.height / 2 - containerRect.top
-                };
-            }).filter(c => c !== null);
+                const cx = rect.left + rect.width / 2 - containerRect.left;
+                const cy = rect.top + rect.height / 2 - containerRect.top;
+                
+                // If this cell is adjacent to the previous one and part of the same block, 
+                // we might want to skip drawing an arrow between them.
+                if (idx > 0) {
+                    const prev = swapChain[idx-1];
+                    const classTT = generatedTimetable?.classTimetables?.[item.cls];
+                    const cell = classTT?.[item.day]?.[item.period];
+                    const pCell = classTT?.[prev.day]?.[prev.period];
+                    if (cell && pCell && cell.subject === pCell.subject && cell.teacher === pCell.teacher && cell.fullSubject === pCell.fullSubject) {
+                        // Same block! Just update the last point to be the average or skip
+                        return; 
+                    }
+                }
+                uniqueCoords.push({ x: cx, y: cy });
+            });
+            setChainCoords(uniqueCoords);
             setChainCoords(coords);
         };
 
@@ -4878,16 +4920,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
             return 'rgba(251, 191, 36, 0.4)';
         })(),
-        border: (
-            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'CT') || 
-            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'CT')
-        ) ? '3px solid #3b82f6' : (
-            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'CT')
-        ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} id={`cell-${cls}-${day[1]}-${'CT'}`} id={`cell-${cls}-${day[1]}-${'CT'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'CT' }; setSwapChain(prev => {
+        border: (() => {
+            if (swapChain.length === 0) return '1px solid #64748b';
+            const last = swapChain[swapChain.length - 1];
+            // Dest check: does this period match the block of the last item in chain?
+            const isDest = getBlockEntries(cls, day[1], 'CT').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
+            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+            
+            // Source check: find the boundary where the previous block selection ended
+            // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
+            // Simplified: Use the last selection as Dest, and the selection BEFORE it as Source.
+            
+            // Find the most recent unique block in the chain that isn't the current last block
+            let sourceIndex = -1;
+            const lastBlockEntries = getBlockEntries(last.cls, last.day, last.period);
+            for (let i = swapChain.length - 1; i >= 0; i--) {
+                const item = swapChain[i];
+                const alreadyInLast = lastBlockEntries.some(e => e.cls === item.cls && e.day === item.day && e.period === item.period);
+                if (!alreadyInLast) {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (sourceIndex !== -1) {
+                const source = swapChain[sourceIndex];
+                const isSource = getBlockEntries(cls, day[1], 'CT').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            } else if (swapChain.length > 0) {
+                // Special case: only one selection made so far
+                const source = swapChain[0];
+                const isSource = getBlockEntries(cls, day[1], 'CT').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            }
+
+            return '1px solid #64748b';
+        })()
+    })} id={`cell-${cls}-${day[1]}-${'CT'}`} onClick={() => { if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'CT'); setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
-                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
-                                                                            const next = [...prev, entry];
+                                                                            const isLoop = prev.length > 0 && entries.some(e => e.cls === prev[0].cls && e.day === prev[0].day && e.period === prev[0].period);
+                                                                            const next = [...prev, ...entries];
                                                                             if (isLoop) {
                                                                                 setIsChainComplete(true);
                                                                                 console.log('CHAIN COMPLETE (LOOPED!)');
@@ -4903,16 +4975,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
             return 'rgba(251, 191, 36, 0.4)';
         })(),
-        border: (
-            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S1') || 
-            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S1')
-        ) ? '3px solid #3b82f6' : (
-            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S1')
-        ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} id={`cell-${cls}-${day[1]}-${'S1'}`} id={`cell-${cls}-${day[1]}-${'S1'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S1' }; setSwapChain(prev => {
+        border: (() => {
+            if (swapChain.length === 0) return '1px solid #64748b';
+            const last = swapChain[swapChain.length - 1];
+            // Dest check: does this period match the block of the last item in chain?
+            const isDest = getBlockEntries(cls, day[1], 'S1').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
+            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+            
+            // Source check: find the boundary where the previous block selection ended
+            // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
+            // Simplified: Use the last selection as Dest, and the selection BEFORE it as Source.
+            
+            // Find the most recent unique block in the chain that isn't the current last block
+            let sourceIndex = -1;
+            const lastBlockEntries = getBlockEntries(last.cls, last.day, last.period);
+            for (let i = swapChain.length - 1; i >= 0; i--) {
+                const item = swapChain[i];
+                const alreadyInLast = lastBlockEntries.some(e => e.cls === item.cls && e.day === item.day && e.period === item.period);
+                if (!alreadyInLast) {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (sourceIndex !== -1) {
+                const source = swapChain[sourceIndex];
+                const isSource = getBlockEntries(cls, day[1], 'S1').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            } else if (swapChain.length > 0) {
+                // Special case: only one selection made so far
+                const source = swapChain[0];
+                const isSource = getBlockEntries(cls, day[1], 'S1').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            }
+
+            return '1px solid #64748b';
+        })()
+    })} id={`cell-${cls}-${day[1]}-${'S1'}`} onClick={() => { if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'S1'); setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
-                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
-                                                                            const next = [...prev, entry];
+                                                                            const isLoop = prev.length > 0 && entries.some(e => e.cls === prev[0].cls && e.day === prev[0].day && e.period === prev[0].period);
+                                                                            const next = [...prev, ...entries];
                                                                             if (isLoop) {
                                                                                 setIsChainComplete(true);
                                                                                 console.log('CHAIN COMPLETE (LOOPED!)');
@@ -4928,16 +5030,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
             return 'rgba(251, 191, 36, 0.4)';
         })(),
-        border: (
-            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S2') || 
-            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S2')
-        ) ? '3px solid #3b82f6' : (
-            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S2')
-        ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} id={`cell-${cls}-${day[1]}-${'S2'}`} id={`cell-${cls}-${day[1]}-${'S2'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S2' }; setSwapChain(prev => {
+        border: (() => {
+            if (swapChain.length === 0) return '1px solid #64748b';
+            const last = swapChain[swapChain.length - 1];
+            // Dest check: does this period match the block of the last item in chain?
+            const isDest = getBlockEntries(cls, day[1], 'S2').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
+            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+            
+            // Source check: find the boundary where the previous block selection ended
+            // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
+            // Simplified: Use the last selection as Dest, and the selection BEFORE it as Source.
+            
+            // Find the most recent unique block in the chain that isn't the current last block
+            let sourceIndex = -1;
+            const lastBlockEntries = getBlockEntries(last.cls, last.day, last.period);
+            for (let i = swapChain.length - 1; i >= 0; i--) {
+                const item = swapChain[i];
+                const alreadyInLast = lastBlockEntries.some(e => e.cls === item.cls && e.day === item.day && e.period === item.period);
+                if (!alreadyInLast) {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (sourceIndex !== -1) {
+                const source = swapChain[sourceIndex];
+                const isSource = getBlockEntries(cls, day[1], 'S2').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            } else if (swapChain.length > 0) {
+                // Special case: only one selection made so far
+                const source = swapChain[0];
+                const isSource = getBlockEntries(cls, day[1], 'S2').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            }
+
+            return '1px solid #64748b';
+        })()
+    })} id={`cell-${cls}-${day[1]}-${'S2'}`} onClick={() => { if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'S2'); setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
-                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
-                                                                            const next = [...prev, entry];
+                                                                            const isLoop = prev.length > 0 && entries.some(e => e.cls === prev[0].cls && e.day === prev[0].day && e.period === prev[0].period);
+                                                                            const next = [...prev, ...entries];
                                                                             if (isLoop) {
                                                                                 setIsChainComplete(true);
                                                                                 console.log('CHAIN COMPLETE (LOOPED!)');
@@ -4961,16 +5093,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
             return 'rgba(251, 191, 36, 0.4)';
         })(),
-        border: (
-            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S4') || 
-            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S4')
-        ) ? '3px solid #3b82f6' : (
-            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S4')
-        ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} id={`cell-${cls}-${day[1]}-${'S4'}`} id={`cell-${cls}-${day[1]}-${'S4'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S4' }; setSwapChain(prev => {
+        border: (() => {
+            if (swapChain.length === 0) return '1px solid #64748b';
+            const last = swapChain[swapChain.length - 1];
+            // Dest check: does this period match the block of the last item in chain?
+            const isDest = getBlockEntries(cls, day[1], 'S4').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
+            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+            
+            // Source check: find the boundary where the previous block selection ended
+            // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
+            // Simplified: Use the last selection as Dest, and the selection BEFORE it as Source.
+            
+            // Find the most recent unique block in the chain that isn't the current last block
+            let sourceIndex = -1;
+            const lastBlockEntries = getBlockEntries(last.cls, last.day, last.period);
+            for (let i = swapChain.length - 1; i >= 0; i--) {
+                const item = swapChain[i];
+                const alreadyInLast = lastBlockEntries.some(e => e.cls === item.cls && e.day === item.day && e.period === item.period);
+                if (!alreadyInLast) {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (sourceIndex !== -1) {
+                const source = swapChain[sourceIndex];
+                const isSource = getBlockEntries(cls, day[1], 'S4').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            } else if (swapChain.length > 0) {
+                // Special case: only one selection made so far
+                const source = swapChain[0];
+                const isSource = getBlockEntries(cls, day[1], 'S4').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            }
+
+            return '1px solid #64748b';
+        })()
+    })} id={`cell-${cls}-${day[1]}-${'S4'}`} onClick={() => { if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'S4'); setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
-                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
-                                                                            const next = [...prev, entry];
+                                                                            const isLoop = prev.length > 0 && entries.some(e => e.cls === prev[0].cls && e.day === prev[0].day && e.period === prev[0].period);
+                                                                            const next = [...prev, ...entries];
                                                                             if (isLoop) {
                                                                                 setIsChainComplete(true);
                                                                                 console.log('CHAIN COMPLETE (LOOPED!)');
@@ -4986,16 +5148,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
             return 'rgba(251, 191, 36, 0.4)';
         })(),
-        border: (
-            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S5') || 
-            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S5')
-        ) ? '3px solid #3b82f6' : (
-            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S5')
-        ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} id={`cell-${cls}-${day[1]}-${'S5'}`} id={`cell-${cls}-${day[1]}-${'S5'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S5' }; setSwapChain(prev => {
+        border: (() => {
+            if (swapChain.length === 0) return '1px solid #64748b';
+            const last = swapChain[swapChain.length - 1];
+            // Dest check: does this period match the block of the last item in chain?
+            const isDest = getBlockEntries(cls, day[1], 'S5').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
+            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+            
+            // Source check: find the boundary where the previous block selection ended
+            // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
+            // Simplified: Use the last selection as Dest, and the selection BEFORE it as Source.
+            
+            // Find the most recent unique block in the chain that isn't the current last block
+            let sourceIndex = -1;
+            const lastBlockEntries = getBlockEntries(last.cls, last.day, last.period);
+            for (let i = swapChain.length - 1; i >= 0; i--) {
+                const item = swapChain[i];
+                const alreadyInLast = lastBlockEntries.some(e => e.cls === item.cls && e.day === item.day && e.period === item.period);
+                if (!alreadyInLast) {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (sourceIndex !== -1) {
+                const source = swapChain[sourceIndex];
+                const isSource = getBlockEntries(cls, day[1], 'S5').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            } else if (swapChain.length > 0) {
+                // Special case: only one selection made so far
+                const source = swapChain[0];
+                const isSource = getBlockEntries(cls, day[1], 'S5').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            }
+
+            return '1px solid #64748b';
+        })()
+    })} id={`cell-${cls}-${day[1]}-${'S5'}`} onClick={() => { if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'S5'); setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
-                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
-                                                                            const next = [...prev, entry];
+                                                                            const isLoop = prev.length > 0 && entries.some(e => e.cls === prev[0].cls && e.day === prev[0].day && e.period === prev[0].period);
+                                                                            const next = [...prev, ...entries];
                                                                             if (isLoop) {
                                                                                 setIsChainComplete(true);
                                                                                 console.log('CHAIN COMPLETE (LOOPED!)');
@@ -5011,16 +5203,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
             return 'rgba(251, 191, 36, 0.4)';
         })(),
-        border: (
-            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S6') || 
-            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S6')
-        ) ? '3px solid #3b82f6' : (
-            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S6')
-        ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} id={`cell-${cls}-${day[1]}-${'S6'}`} id={`cell-${cls}-${day[1]}-${'S6'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S6' }; setSwapChain(prev => {
+        border: (() => {
+            if (swapChain.length === 0) return '1px solid #64748b';
+            const last = swapChain[swapChain.length - 1];
+            // Dest check: does this period match the block of the last item in chain?
+            const isDest = getBlockEntries(cls, day[1], 'S6').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
+            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+            
+            // Source check: find the boundary where the previous block selection ended
+            // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
+            // Simplified: Use the last selection as Dest, and the selection BEFORE it as Source.
+            
+            // Find the most recent unique block in the chain that isn't the current last block
+            let sourceIndex = -1;
+            const lastBlockEntries = getBlockEntries(last.cls, last.day, last.period);
+            for (let i = swapChain.length - 1; i >= 0; i--) {
+                const item = swapChain[i];
+                const alreadyInLast = lastBlockEntries.some(e => e.cls === item.cls && e.day === item.day && e.period === item.period);
+                if (!alreadyInLast) {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (sourceIndex !== -1) {
+                const source = swapChain[sourceIndex];
+                const isSource = getBlockEntries(cls, day[1], 'S6').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            } else if (swapChain.length > 0) {
+                // Special case: only one selection made so far
+                const source = swapChain[0];
+                const isSource = getBlockEntries(cls, day[1], 'S6').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            }
+
+            return '1px solid #64748b';
+        })()
+    })} id={`cell-${cls}-${day[1]}-${'S6'}`} onClick={() => { if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'S6'); setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
-                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
-                                                                            const next = [...prev, entry];
+                                                                            const isLoop = prev.length > 0 && entries.some(e => e.cls === prev[0].cls && e.day === prev[0].day && e.period === prev[0].period);
+                                                                            const next = [...prev, ...entries];
                                                                             if (isLoop) {
                                                                                 setIsChainComplete(true);
                                                                                 console.log('CHAIN COMPLETE (LOOPED!)');
@@ -5044,16 +5266,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
             return 'rgba(251, 191, 36, 0.4)';
         })(),
-        border: (
-            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S8') || 
-            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S8')
-        ) ? '3px solid #3b82f6' : (
-            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S8')
-        ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} id={`cell-${cls}-${day[1]}-${'S8'}`} id={`cell-${cls}-${day[1]}-${'S8'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S8' }; setSwapChain(prev => {
+        border: (() => {
+            if (swapChain.length === 0) return '1px solid #64748b';
+            const last = swapChain[swapChain.length - 1];
+            // Dest check: does this period match the block of the last item in chain?
+            const isDest = getBlockEntries(cls, day[1], 'S8').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
+            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+            
+            // Source check: find the boundary where the previous block selection ended
+            // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
+            // Simplified: Use the last selection as Dest, and the selection BEFORE it as Source.
+            
+            // Find the most recent unique block in the chain that isn't the current last block
+            let sourceIndex = -1;
+            const lastBlockEntries = getBlockEntries(last.cls, last.day, last.period);
+            for (let i = swapChain.length - 1; i >= 0; i--) {
+                const item = swapChain[i];
+                const alreadyInLast = lastBlockEntries.some(e => e.cls === item.cls && e.day === item.day && e.period === item.period);
+                if (!alreadyInLast) {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (sourceIndex !== -1) {
+                const source = swapChain[sourceIndex];
+                const isSource = getBlockEntries(cls, day[1], 'S8').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            } else if (swapChain.length > 0) {
+                // Special case: only one selection made so far
+                const source = swapChain[0];
+                const isSource = getBlockEntries(cls, day[1], 'S8').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            }
+
+            return '1px solid #64748b';
+        })()
+    })} id={`cell-${cls}-${day[1]}-${'S8'}`} onClick={() => { if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'S8'); setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
-                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
-                                                                            const next = [...prev, entry];
+                                                                            const isLoop = prev.length > 0 && entries.some(e => e.cls === prev[0].cls && e.day === prev[0].day && e.period === prev[0].period);
+                                                                            const next = [...prev, ...entries];
                                                                             if (isLoop) {
                                                                                 setIsChainComplete(true);
                                                                                 console.log('CHAIN COMPLETE (LOOPED!)');
@@ -5081,16 +5333,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
             return 'rgba(251, 191, 36, 0.4)';
         })(),
-        border: (
-            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S10') || 
-            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S10')
-        ) ? '3px solid #3b82f6' : (
-            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S10')
-        ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} id={`cell-${cls}-${day[1]}-${'S10'}`} id={`cell-${cls}-${day[1]}-${'S10'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S10' }; setSwapChain(prev => {
+        border: (() => {
+            if (swapChain.length === 0) return '1px solid #64748b';
+            const last = swapChain[swapChain.length - 1];
+            // Dest check: does this period match the block of the last item in chain?
+            const isDest = getBlockEntries(cls, day[1], 'S10').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
+            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+            
+            // Source check: find the boundary where the previous block selection ended
+            // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
+            // Simplified: Use the last selection as Dest, and the selection BEFORE it as Source.
+            
+            // Find the most recent unique block in the chain that isn't the current last block
+            let sourceIndex = -1;
+            const lastBlockEntries = getBlockEntries(last.cls, last.day, last.period);
+            for (let i = swapChain.length - 1; i >= 0; i--) {
+                const item = swapChain[i];
+                const alreadyInLast = lastBlockEntries.some(e => e.cls === item.cls && e.day === item.day && e.period === item.period);
+                if (!alreadyInLast) {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (sourceIndex !== -1) {
+                const source = swapChain[sourceIndex];
+                const isSource = getBlockEntries(cls, day[1], 'S10').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            } else if (swapChain.length > 0) {
+                // Special case: only one selection made so far
+                const source = swapChain[0];
+                const isSource = getBlockEntries(cls, day[1], 'S10').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            }
+
+            return '1px solid #64748b';
+        })()
+    })} id={`cell-${cls}-${day[1]}-${'S10'}`} onClick={() => { if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'S10'); setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
-                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
-                                                                            const next = [...prev, entry];
+                                                                            const isLoop = prev.length > 0 && entries.some(e => e.cls === prev[0].cls && e.day === prev[0].day && e.period === prev[0].period);
+                                                                            const next = [...prev, ...entries];
                                                                             if (isLoop) {
                                                                                 setIsChainComplete(true);
                                                                                 console.log('CHAIN COMPLETE (LOOPED!)');
@@ -5111,16 +5393,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
             return 'rgba(251, 191, 36, 0.4)';
         })(),
-        border: (
-            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S9') || 
-            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S9')
-        ) ? '3px solid #3b82f6' : (
-            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S9')
-        ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} id={`cell-${cls}-${day[1]}-${'S9'}`} id={`cell-${cls}-${day[1]}-${'S9'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S9' }; setSwapChain(prev => {
+        border: (() => {
+            if (swapChain.length === 0) return '1px solid #64748b';
+            const last = swapChain[swapChain.length - 1];
+            // Dest check: does this period match the block of the last item in chain?
+            const isDest = getBlockEntries(cls, day[1], 'S9').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
+            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+            
+            // Source check: find the boundary where the previous block selection ended
+            // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
+            // Simplified: Use the last selection as Dest, and the selection BEFORE it as Source.
+            
+            // Find the most recent unique block in the chain that isn't the current last block
+            let sourceIndex = -1;
+            const lastBlockEntries = getBlockEntries(last.cls, last.day, last.period);
+            for (let i = swapChain.length - 1; i >= 0; i--) {
+                const item = swapChain[i];
+                const alreadyInLast = lastBlockEntries.some(e => e.cls === item.cls && e.day === item.day && e.period === item.period);
+                if (!alreadyInLast) {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (sourceIndex !== -1) {
+                const source = swapChain[sourceIndex];
+                const isSource = getBlockEntries(cls, day[1], 'S9').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            } else if (swapChain.length > 0) {
+                // Special case: only one selection made so far
+                const source = swapChain[0];
+                const isSource = getBlockEntries(cls, day[1], 'S9').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            }
+
+            return '1px solid #64748b';
+        })()
+    })} id={`cell-${cls}-${day[1]}-${'S9'}`} onClick={() => { if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'S9'); setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
-                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
-                                                                            const next = [...prev, entry];
+                                                                            const isLoop = prev.length > 0 && entries.some(e => e.cls === prev[0].cls && e.day === prev[0].day && e.period === prev[0].period);
+                                                                            const next = [...prev, ...entries];
                                                                             if (isLoop) {
                                                                                 setIsChainComplete(true);
                                                                                 console.log('CHAIN COMPLETE (LOOPED!)');
@@ -5146,16 +5458,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
             return 'rgba(251, 191, 36, 0.4)';
         })(),
-        border: (
-            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S11') || 
-            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S11')
-        ) ? '3px solid #3b82f6' : (
-            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S11')
-        ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} id={`cell-${cls}-${day[1]}-${'S11'}`} id={`cell-${cls}-${day[1]}-${'S11'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S11' }; setSwapChain(prev => {
+        border: (() => {
+            if (swapChain.length === 0) return '1px solid #64748b';
+            const last = swapChain[swapChain.length - 1];
+            // Dest check: does this period match the block of the last item in chain?
+            const isDest = getBlockEntries(cls, day[1], 'S11').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
+            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+            
+            // Source check: find the boundary where the previous block selection ended
+            // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
+            // Simplified: Use the last selection as Dest, and the selection BEFORE it as Source.
+            
+            // Find the most recent unique block in the chain that isn't the current last block
+            let sourceIndex = -1;
+            const lastBlockEntries = getBlockEntries(last.cls, last.day, last.period);
+            for (let i = swapChain.length - 1; i >= 0; i--) {
+                const item = swapChain[i];
+                const alreadyInLast = lastBlockEntries.some(e => e.cls === item.cls && e.day === item.day && e.period === item.period);
+                if (!alreadyInLast) {
+                    sourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (sourceIndex !== -1) {
+                const source = swapChain[sourceIndex];
+                const isSource = getBlockEntries(cls, day[1], 'S11').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            } else if (swapChain.length > 0) {
+                // Special case: only one selection made so far
+                const source = swapChain[0];
+                const isSource = getBlockEntries(cls, day[1], 'S11').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
+                if (isSource) return '3px solid #3b82f6';
+            }
+
+            return '1px solid #64748b';
+        })()
+    })} id={`cell-${cls}-${day[1]}-${'S11'}`} onClick={() => { if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'S11'); setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
-                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
-                                                                            const next = [...prev, entry];
+                                                                            const isLoop = prev.length > 0 && entries.some(e => e.cls === prev[0].cls && e.day === prev[0].day && e.period === prev[0].period);
+                                                                            const next = [...prev, ...entries];
                                                                             if (isLoop) {
                                                                                 setIsChainComplete(true);
                                                                                 console.log('CHAIN COMPLETE (LOOPED!)');
