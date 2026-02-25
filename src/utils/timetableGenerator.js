@@ -19,6 +19,12 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         return grade >= 9 ? 'Senior' : 'Middle';
     };
 
+    const getBuilding = (className) => {
+        if (!className) return null;
+        const grade = parseInt(className.split('/')[0]) || 0;
+        return (grade >= 11) ? 'Senior' : 'Main';
+    };
+
     const getAvailableSlots = (className) => {
         const level = getLevel(className);
         return level === 'Senior'
@@ -26,41 +32,59 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
             : ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S10', 'S11'];
     };
 
-    // ... (getBlockPairs remains same if it depends on getAvailableSlots)
+    const getBlockPairs = (className) => {
+        const level = getLevel(className);
+        return level === 'Senior'
+            ? [['S1', 'S2'], ['S4', 'S5'], ['S5', 'S6'], ['S8', 'S9']]
+            : [['S1', 'S2'], ['S4', 'S5'], ['S5', 'S6'], ['S10', 'S11']];
+    };
 
     // ============ DISCOVER CLASSES & TEACHERS ============
+    // Helper to extract classes from mappings
+    const getClassesFromMappings = (mappings) => {
+        const classes = new Set();
+        mappings.forEach(m => {
+            (m.selectedClasses || m.classes || []).forEach(c => classes.add(c));
+        });
+        return Array.from(classes);
+    };
+
+    // Helper to extract classes from streams
+    const getClassesFromStreams = (streams) => {
+        const classes = new Set();
+        streams.forEach(stream => {
+            if (stream.className) classes.add(stream.className);
+        });
+        return Array.from(classes);
+    };
+
+    const discoveredClasses = getClassesFromMappings(mappings);
+    const allStreamClassNames = getClassesFromStreams(streams);
+
     const allClassNames = new Set([
-        '6A', '6B', '6C', '6D', '6E', '6F', '6G',
-        '7A', '7B', '7C', '7D', '7E', '7F', '7G',
-        '8A', '8B', '8C', '8D', '8E', '8F', '8G',
-        '9A', '9B', '9C', '9D', '9E', '9F', '9G',
-        '10A', '10B', '10C', '10D', '10E', '10F', '10G',
-        '11A', '11B', '11C', '11D', '11E', '11F',
-        '12A', '12B', '12C', '12D', '12E', '12F'
+        ...discoveredClasses,
+        ...allStreamClassNames
     ]);
 
-    const teacherSet = new Set();
-    mappings.forEach(m => {
-        if (m.teacher) teacherSet.add(m.teacher.trim());
-        (m.selectedClasses || m.classes || []).forEach(c => allClassNames.add(c));
+    const allTeacherNames = new Set();
+    mappings.forEach(row => { // Renamed from allAllotmentRows to mappings
+        if (row.teacher) allTeacherNames.add(row.teacher.trim());
     });
-
-    streams.forEach(stream => {
-        if (stream.className) allClassNames.add(stream.className);
-        stream.subjects?.forEach(s => {
-            if (s.teacher) teacherSet.add(s.teacher.trim());
+    streams.forEach(row => { // Renamed from allStreamRows to streams
+        row.subjects.forEach(s => {
+            if (s.teacher) allTeacherNames.add(s.teacher.trim());
         });
     });
 
-    const teacherList = Array.from(teacherSet);
-    const discoveredClasses = Array.from(allClassNames);
-    console.log(`👩\u200D🏫 Found ${teacherList.length} unique teachers, ${discoveredClasses.length} unique classes`);
+    const teacherList = Array.from(allTeacherNames); // Updated to use allTeacherNames
+    const finalDiscoveredClasses = Array.from(allClassNames); // Updated to use allClassNames
+    console.log(`👩\u200D🏫 Found ${teacherList.length} unique teachers, ${finalDiscoveredClasses.length} unique classes`);
 
     // ============ INITIALIZE DATA STRUCTURES SAFELY ============
     const classTimetables = {};
     const teacherTimetables = {};
 
-    discoveredClasses.forEach(className => {
+    finalDiscoveredClasses.forEach(className => { // Updated to use finalDiscoveredClasses
         classTimetables[className] = {};
         const level = getLevel(className);
         days.forEach(day => {
@@ -77,20 +101,18 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         });
     });
 
-    teacherList.forEach(teacher => {
-        teacherTimetables[teacher] = { weeklyPeriods: 0 };
+    allTeacherNames.forEach(tName => { // Updated to use allTeacherNames
+        teacherTimetables[tName] = {};
         days.forEach(day => {
-            teacherTimetables[teacher][day] = { periodCount: 0 };
-            allPeriods.forEach(p => {
-                const isBreak = p === 'S3' || p === 'S7';
-                teacherTimetables[teacher][day][p] = isBreak ? 'BREAK' : '';
-            });
+            teacherTimetables[tName][day] = {};
+            allPeriods.forEach(p => { teacherTimetables[tName][day][p] = ''; });
         });
+        teacherTimetables[tName].weeklyPeriods = 0;
     });
 
     // ============ PREPARE ALL TASKS GLOBALLLY ============
     const allTasks = [];
-    mappings.forEach((mapping) => {
+    mappings.forEach((mapping) => { // Renamed from allAllotmentRows to mappings
         const teacher = mapping.teacher ? mapping.teacher.trim() : '';
         const subject = mapping.subject ? mapping.subject.trim() : '';
         const classes = mapping.selectedClasses || mapping.classes || [];
@@ -182,6 +204,54 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         return gb - ga;
     });
 
+    const isBuildingConstraintViolated = (teacher, day, period, className) => {
+        const targetBuilding = getBuilding(className);
+        const tTT = teacherTimetables[teacher]?.[day];
+        if (!tTT) return false;
+
+        const checkAdj = (adjP) => {
+            const slot = tTT[adjP];
+            if (slot && typeof slot === 'object' && slot.className) {
+                const adjBuilding = getBuilding(slot.className);
+                if (adjBuilding && adjBuilding !== targetBuilding) return true;
+            }
+            return false;
+        };
+
+        // Static adjacent pairs with no physical gaps
+        if (period === 'S1' && checkAdj('S2')) return true;
+        if (period === 'S2' && checkAdj('S1')) return true;
+        if (period === 'S4' && checkAdj('S5')) return true;
+        if (period === 'S5') { if (checkAdj('S4')) return true; if (checkAdj('S6')) return true; }
+        if (period === 'S6' && checkAdj('S5')) return true;
+
+        if (period === 'S8') {
+            const s9 = tTT['S9'];
+            if (s9 && typeof s9 === 'object' && getBuilding(s9.className) === 'Senior' && targetBuilding !== 'Senior') return true;
+        }
+        if (period === 'S9') {
+            const level = getLevel(className);
+            if (level === 'Senior') {
+                if (checkAdj('S8')) return true;
+                const s10 = tTT['S10'];
+                if (s10 && typeof s10 === 'object' && getBuilding(s10.className) === 'Main' && targetBuilding !== 'Main') return true;
+            }
+        }
+        if (period === 'S10') {
+            const level = getLevel(className);
+            if (level === 'Main') {
+                if (checkAdj('S11')) return true;
+                const s9 = tTT['S9'];
+                if (s9 && typeof s9 === 'object' && getBuilding(s9.className) === 'Senior' && targetBuilding !== 'Senior') return true;
+            }
+        }
+        if (period === 'S11') {
+            const s10 = tTT['S10'];
+            if (s10 && typeof s10 === 'object' && getBuilding(s10.className) === 'Main' && targetBuilding !== 'Main') return true;
+        }
+        return false;
+    };
+
     // ============ PLACEMENT ENGINE ============
     allTasks.forEach((task, taskIdx) => {
         let placed = false;
@@ -202,6 +272,11 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                 const pairs = getBlockPairs(task.className);
                 for (const [p1, p2] of pairs) {
                     const teacherFree = teacherTimetables[task.teacher] && teacherTimetables[task.teacher][day][p1] === '' && teacherTimetables[task.teacher][day][p2] === '';
+
+                    // Building Transition Check for Blocks
+                    const bConf = isBuildingConstraintViolated(task.teacher, day, p1, task.className) ||
+                        isBuildingConstraintViolated(task.teacher, day, p2, task.className);
+
                     const classesFree = task.classes.every(cn =>
                         classTimetables[cn] && classTimetables[cn][day] &&
                         classTimetables[cn][day][p1].subject === '' &&
@@ -211,7 +286,7 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                     const lab1Free = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p1, task.labGroup, task.subject));
                     const lab2Free = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p2, task.labGroup, task.subject));
 
-                    if (teacherFree && classesFree && lab1Free && lab2Free) {
+                    if (teacherFree && !bConf && classesFree && lab1Free && lab2Free) {
                         placeTask(task, day, p1, true);
                         placeTask(task, day, p2, true);
                         placed = true;
@@ -227,6 +302,13 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                         const tName = s.teacher ? s.teacher.trim() : '';
                         return teacherTimetables[tName] && teacherTimetables[tName][day][period] === '';
                     });
+
+                    // Building Check for Streams
+                    const bConf = task.subjects.some(s => {
+                        const tName = s.teacher ? s.teacher.trim() : '';
+                        return isBuildingConstraintViolated(tName, day, period, task.className);
+                    });
+
                     const classFree = classTimetables[task.className] && classTimetables[task.className][day][period].subject === '';
 
                     let labConflict = false;
@@ -237,7 +319,7 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                         }
                     }
 
-                    if (teachersFree && classFree && !labConflict) {
+                    if (teachersFree && !bConf && classFree && !labConflict) {
                         placeStreamTask(task, day, period);
                         placed = true;
                         break;
@@ -249,11 +331,13 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                 for (let pIdx = 0; pIdx < availableSlots.length; pIdx++) {
                     const period = availableSlots[(pStart + pIdx) % availableSlots.length];
                     const teacherFree = teacherTimetables[task.teacher] && teacherTimetables[task.teacher][day][period] === '';
+                    const bConf = isBuildingConstraintViolated(task.teacher, day, period, task.className);
+
                     const classesFree = task.classes.every(cn => classTimetables[cn] && classTimetables[cn][day] && classTimetables[cn][day][period].subject === '');
 
                     const labFree = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, period, task.labGroup, task.subject));
 
-                    if (teacherFree && classesFree && labFree) {
+                    if (teacherFree && !bConf && classesFree && labFree) {
                         placeTask(task, day, period, false);
                         placed = true;
                         break;

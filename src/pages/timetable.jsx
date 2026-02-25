@@ -305,6 +305,12 @@ const getPeriodLabel = (cls, period) => {
     return mapping[period] || period;
 };
 
+const getBuilding = (className) => {
+    if (!className) return null;
+    const grade = parseInt(className.split('/')[0]) || 0;
+    return (grade >= 11) ? 'Senior' : 'Main';
+};
+
 // --- Sub-components ---
 
 /**
@@ -510,31 +516,48 @@ export default function TimetablePage() {
 
         const conflicts = [];
         const movingOut = new Set(swapChain.map(p => `${p.cls}|${p.day}|${p.period}`));
+        const movingIn = new Map(); // key: "cls|day|period", value: content
 
         const steps = [];
-        let current = 0;
+        let curS = 0;
         swapChainSteps.forEach(len => {
-            steps.push(swapChain.slice(current, current + len));
-            current += len;
+            steps.push(swapChain.slice(curS, curS + len));
+            curS += len;
         });
 
         const numUnits = steps.length - 1;
         if (numUnits < 2) return;
 
+        // Map what moves where
+        for (let i = 0; i < numUnits; i++) {
+            const sourceU = steps[i];
+            const destU = steps[(i + 1) % numUnits];
+            sourceU.forEach((src, idx) => {
+                const dst = destU[idx] || destU[0];
+                const content = generatedTimetable.classTimetables[src.cls]?.[src.day]?.[src.period];
+                if (content && content.subject) {
+                    movingIn.set(`${dst.cls}|${dst.day}|${dst.period}`, content);
+                }
+            });
+        }
+
         const teacherLoadOnDay = {}; // teacher -> day -> count
+        const affectedTeachers = new Set();
+        const affectedDays = new Set();
 
         for (let i = 0; i < numUnits; i++) {
-            const sourceUnit = steps[i];
-            const destUnit = steps[(i + 1) % numUnits];
+            const sU = steps[i];
+            const dU = steps[(i + 1) % numUnits];
 
-            sourceUnit.forEach((source, idx) => {
-                const dest = destUnit[idx] || destUnit[0];
+            sU.forEach((source, idx) => {
+                const dest = dU[idx] || dU[0];
                 const cellContent = generatedTimetable.classTimetables[source.cls]?.[source.day]?.[source.period];
                 if (!cellContent || !cellContent.subject) return;
 
                 const teacher = cellContent.teacher?.trim();
                 const day = dest.day;
                 const period = dest.period;
+                if (teacher) { affectedTeachers.add(teacher); affectedDays.add(day); }
 
                 // A. Teacher Availability
                 if (teacher) {
@@ -578,6 +601,65 @@ export default function TimetablePage() {
                 }
             });
         }
+
+        // D. Building Transition Check (Post-Swap Simulation)
+        affectedTeachers.forEach(teacher => {
+            affectedDays.forEach(day => {
+                const dailySchedule = {};
+                const DAYS_PRDS = ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S10', 'S11'];
+
+                // Fill current schedule (excluding what's moving out)
+                Object.keys(generatedTimetable.classTimetables).forEach(cn => {
+                    const classDay = generatedTimetable.classTimetables[cn][day];
+                    if (!classDay) return;
+                    DAYS_PRDS.forEach(p => {
+                        const slot = classDay[p];
+                        if (slot && slot.teacher?.trim() === teacher && !movingOut.has(`${cn}|${day}|${p}`)) {
+                            dailySchedule[p] = cn;
+                        }
+                    });
+                });
+
+                // Add what's moving in
+                movingIn.forEach((content, key) => {
+                    const [cn, d, p] = key.split('|');
+                    if (d === day && content.teacher?.trim() === teacher) {
+                        dailySchedule[p] = cn;
+                    }
+                });
+
+                // Check Adjacent Pairs for building changes
+                const riskyPairs = [['S1', 'S2'], ['S4', 'S5'], ['S5', 'S6']];
+                // Senior P6-P7 is S8-S9
+                // Middle P7-P8 is S10-S11
+
+                const checkPair = (p1, p2) => {
+                    if (dailySchedule[p1] && dailySchedule[p2]) {
+                        const b1 = getBuilding(dailySchedule[p1]);
+                        const b2 = getBuilding(dailySchedule[p2]);
+                        if (b1 !== b2) {
+                            conflicts.push(`Building Violation: ${teacher} switching ${b1}->${b2} between ${getPeriodLabel(dailySchedule[p1], p1)} and ${getPeriodLabel(dailySchedule[p2], p2)} on ${day}`);
+                        }
+                    }
+                };
+
+                riskyPairs.forEach(([p1, p2]) => checkPair(p1, p2));
+
+                // Grades specific adjacencies
+                if (dailySchedule['S8'] && dailySchedule['S9'] && getBuilding(dailySchedule['S9']) === 'Senior') {
+                    // S8 is P6. S9 is P7 for Senior. Adjacent.
+                    checkPair('S8', 'S9');
+                }
+                if (dailySchedule['S9'] && dailySchedule['S10'] && getBuilding(dailySchedule['S9']) === 'Senior' && getBuilding(dailySchedule['S10']) === 'Main') {
+                    // S9 is P7 for Senior. S10 is P7 for Middle. Adjacent in timeline.
+                    checkPair('S9', 'S10');
+                }
+                if (dailySchedule['S10'] && dailySchedule['S11'] && getBuilding(dailySchedule['S10']) === 'Main') {
+                    // S10 is P7 for Middle. S11 is P8. Adjacent.
+                    checkPair('S10', 'S11');
+                }
+            });
+        });
 
         Object.keys(teacherLoadOnDay).forEach(t => {
             Object.keys(teacherLoadOnDay[t]).forEach(d => {
