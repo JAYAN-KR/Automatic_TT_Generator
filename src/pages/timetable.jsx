@@ -403,6 +403,11 @@ export default function TimetablePage() {
     const [activeGradeSubTab, setActiveGradeSubTab] = useState('6');
     const [activeClassSubTab, setActiveClassSubTab] = useState('6A');
 
+    // Chain Swap State
+    const [chainSwapMode, setChainSwapMode] = useState(false);
+    const [swapChain, setSwapChain] = useState([]);
+    const [isChainComplete, setIsChainComplete] = useState(false);
+
     // Teacher TT Tab State
     const [teacherTTSubTab, setTeacherTTSubTab] = useState('Middle');
     const [teacherTTPage, setTeacherTTPage] = useState(1);
@@ -4633,11 +4638,42 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 )}
 
                                 {/* Page heading */}
-                                <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                                     <h2 style={{ color: '#f1f5f9', fontSize: '1.2rem', fontWeight: 900, margin: 0 }}>
                                         🎓 Grade {activeGradeSubTab} Timetables
                                     </h2>
                                     <span style={{ color: '#475569', fontSize: '0.8rem' }}>({gradeClassList.join(', ')})</span>
+
+                                    {/* Chain Swap Button */}
+                                    <button
+                                        onClick={() => {
+                                            setChainSwapMode(m => !m);
+                                            setSwapChain([]);
+                                            setIsChainComplete(false);
+                                        }}
+                                        style={{
+                                            marginLeft: 'auto',
+                                            padding: '0.5rem 1rem',
+                                            background: chainSwapMode ? '#dc2626' : '#4f46e5',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '0.5rem',
+                                            cursor: 'pointer',
+                                            fontWeight: 700,
+                                            fontSize: '0.85rem'
+                                        }}
+                                    >
+                                        {chainSwapMode ? '🚫 Cancel Chain' : '🔗 Start Chain'}
+                                    </button>
+                                    {chainSwapMode && (
+                                        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                                            {isChainComplete 
+                                                ? '✅ CHAIN COMPLETE (LOOP DETECTED)' 
+                                                : swapChain.length === 0
+                                                    ? 'Click a period cell to select Period A'
+                                                    : `Chain Length: ${swapChain.length} - Click start cell to close loop`}
+                                        </span>
+                                    )}
                                 </div>
 
                                 {/* All classes stacked vertically */}
@@ -4757,9 +4793,81 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             {DAYS.map((day, i) => (
                                                                 <tr key={day[1]}>
                                                                     <th style={ttCellDay()}>{day[0]}</th>
-                                                                    <td style={ttCell()}>{renderCell(day[1], 'CT')}</td>
-                                                                    <td style={ttCell()}>{renderCell(day[1], 'S1')}</td>
-                                                                    <td style={ttCell()}>{renderCell(day[1], 'S2')}</td>
+                                                                    <td style={ttCell({ 
+        background: (() => {
+            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'CT') ? idx : -1).filter(i => i !== -1);
+            if (indices.length === 0) return '#1e293b';
+            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
+            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
+            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
+            return 'rgba(251, 191, 36, 0.4)';
+        })(),
+        border: (
+            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'CT') || 
+            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'CT')
+        ) ? '3px solid #3b82f6' : (
+            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'CT')
+        ) ? '3px solid #10b981' : '1px solid #64748b'
+    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'CT' }; setSwapChain(prev => {
+                                                                            if (isChainComplete) return prev;
+                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
+                                                                            const next = [...prev, entry];
+                                                                            if (isLoop) {
+                                                                                setIsChainComplete(true);
+                                                                                console.log('CHAIN COMPLETE (LOOPED!)');
+                                                                            }
+                                                                            return next;
+                                                                        }); }}>{renderCell(day[1], 'CT')}</td>
+                                                                    <td style={ttCell({ 
+        background: (() => {
+            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S1') ? idx : -1).filter(i => i !== -1);
+            if (indices.length === 0) return '#1e293b';
+            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
+            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
+            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
+            return 'rgba(251, 191, 36, 0.4)';
+        })(),
+        border: (
+            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S1') || 
+            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S1')
+        ) ? '3px solid #3b82f6' : (
+            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S1')
+        ) ? '3px solid #10b981' : '1px solid #64748b'
+    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S1' }; setSwapChain(prev => {
+                                                                            if (isChainComplete) return prev;
+                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
+                                                                            const next = [...prev, entry];
+                                                                            if (isLoop) {
+                                                                                setIsChainComplete(true);
+                                                                                console.log('CHAIN COMPLETE (LOOPED!)');
+                                                                            }
+                                                                            return next;
+                                                                        }); }}>{renderCell(day[1], 'S1')}</td>
+                                                                    <td style={ttCell({ 
+        background: (() => {
+            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S2') ? idx : -1).filter(i => i !== -1);
+            if (indices.length === 0) return '#1e293b';
+            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
+            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
+            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
+            return 'rgba(251, 191, 36, 0.4)';
+        })(),
+        border: (
+            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S2') || 
+            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S2')
+        ) ? '3px solid #3b82f6' : (
+            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S2')
+        ) ? '3px solid #10b981' : '1px solid #64748b'
+    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S2' }; setSwapChain(prev => {
+                                                                            if (isChainComplete) return prev;
+                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
+                                                                            const next = [...prev, entry];
+                                                                            if (isLoop) {
+                                                                                setIsChainComplete(true);
+                                                                                console.log('CHAIN COMPLETE (LOOPED!)');
+                                                                            }
+                                                                            return next;
+                                                                        }); }}>{renderCell(day[1], 'S2')}</td>
 
                                                                     {/* S3: BREAK I merged vertically */}
                                                                     {i === 0 ? (
@@ -4768,9 +4876,81 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         </td>
                                                                     ) : null}
 
-                                                                    <td style={ttCell()}>{renderCell(day[1], 'S4')}</td>
-                                                                    <td style={ttCell()}>{renderCell(day[1], 'S5')}</td>
-                                                                    <td style={ttCell()}>{renderCell(day[1], 'S6')}</td>
+                                                                    <td style={ttCell({ 
+        background: (() => {
+            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S4') ? idx : -1).filter(i => i !== -1);
+            if (indices.length === 0) return '#1e293b';
+            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
+            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
+            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
+            return 'rgba(251, 191, 36, 0.4)';
+        })(),
+        border: (
+            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S4') || 
+            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S4')
+        ) ? '3px solid #3b82f6' : (
+            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S4')
+        ) ? '3px solid #10b981' : '1px solid #64748b'
+    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S4' }; setSwapChain(prev => {
+                                                                            if (isChainComplete) return prev;
+                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
+                                                                            const next = [...prev, entry];
+                                                                            if (isLoop) {
+                                                                                setIsChainComplete(true);
+                                                                                console.log('CHAIN COMPLETE (LOOPED!)');
+                                                                            }
+                                                                            return next;
+                                                                        }); }}>{renderCell(day[1], 'S4')}</td>
+                                                                    <td style={ttCell({ 
+        background: (() => {
+            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S5') ? idx : -1).filter(i => i !== -1);
+            if (indices.length === 0) return '#1e293b';
+            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
+            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
+            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
+            return 'rgba(251, 191, 36, 0.4)';
+        })(),
+        border: (
+            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S5') || 
+            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S5')
+        ) ? '3px solid #3b82f6' : (
+            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S5')
+        ) ? '3px solid #10b981' : '1px solid #64748b'
+    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S5' }; setSwapChain(prev => {
+                                                                            if (isChainComplete) return prev;
+                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
+                                                                            const next = [...prev, entry];
+                                                                            if (isLoop) {
+                                                                                setIsChainComplete(true);
+                                                                                console.log('CHAIN COMPLETE (LOOPED!)');
+                                                                            }
+                                                                            return next;
+                                                                        }); }}>{renderCell(day[1], 'S5')}</td>
+                                                                    <td style={ttCell({ 
+        background: (() => {
+            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S6') ? idx : -1).filter(i => i !== -1);
+            if (indices.length === 0) return '#1e293b';
+            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
+            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
+            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
+            return 'rgba(251, 191, 36, 0.4)';
+        })(),
+        border: (
+            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S6') || 
+            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S6')
+        ) ? '3px solid #3b82f6' : (
+            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S6')
+        ) ? '3px solid #10b981' : '1px solid #64748b'
+    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S6' }; setSwapChain(prev => {
+                                                                            if (isChainComplete) return prev;
+                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
+                                                                            const next = [...prev, entry];
+                                                                            if (isLoop) {
+                                                                                setIsChainComplete(true);
+                                                                                console.log('CHAIN COMPLETE (LOOPED!)');
+                                                                            }
+                                                                            return next;
+                                                                        }); }}>{renderCell(day[1], 'S6')}</td>
 
                                                                     {/* S7: BREAK II merged vertically */}
                                                                     {i === 0 ? (
@@ -4779,7 +4959,31 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         </td>
                                                                     ) : null}
 
-                                                                    <td style={ttCell()}>{renderCell(day[1], 'S8')}</td>
+                                                                    <td style={ttCell({ 
+        background: (() => {
+            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S8') ? idx : -1).filter(i => i !== -1);
+            if (indices.length === 0) return '#1e293b';
+            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
+            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
+            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
+            return 'rgba(251, 191, 36, 0.4)';
+        })(),
+        border: (
+            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S8') || 
+            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S8')
+        ) ? '3px solid #3b82f6' : (
+            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S8')
+        ) ? '3px solid #10b981' : '1px solid #64748b'
+    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S8' }; setSwapChain(prev => {
+                                                                            if (isChainComplete) return prev;
+                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
+                                                                            const next = [...prev, entry];
+                                                                            if (isLoop) {
+                                                                                setIsChainComplete(true);
+                                                                                console.log('CHAIN COMPLETE (LOOPED!)');
+                                                                            }
+                                                                            return next;
+                                                                        }); }}>{renderCell(day[1], 'S8')}</td>
 
                                                                     {/* S9 & S10: Dynamic Periodic/Lunch merged vertically */}
                                                                     {(() => {
@@ -4792,13 +4996,61 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                             <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
                                                                                         </td>
                                                                                     ) : null}
-                                                                                    <td style={ttCell()}>{renderCell(day[1], 'S10')}</td>
+                                                                                    <td style={ttCell({ 
+        background: (() => {
+            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S10') ? idx : -1).filter(i => i !== -1);
+            if (indices.length === 0) return '#1e293b';
+            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
+            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
+            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
+            return 'rgba(251, 191, 36, 0.4)';
+        })(),
+        border: (
+            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S10') || 
+            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S10')
+        ) ? '3px solid #3b82f6' : (
+            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S10')
+        ) ? '3px solid #10b981' : '1px solid #64748b'
+    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S10' }; setSwapChain(prev => {
+                                                                            if (isChainComplete) return prev;
+                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
+                                                                            const next = [...prev, entry];
+                                                                            if (isLoop) {
+                                                                                setIsChainComplete(true);
+                                                                                console.log('CHAIN COMPLETE (LOOPED!)');
+                                                                            }
+                                                                            return next;
+                                                                        }); }}>{renderCell(day[1], 'S10')}</td>
                                                                                 </>
                                                                             );
                                                                         } else {
                                                                             return (
                                                                                 <>
-                                                                                    <td style={ttCell()}>{renderCell(day[1], 'S9')}</td>
+                                                                                    <td style={ttCell({ 
+        background: (() => {
+            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S9') ? idx : -1).filter(i => i !== -1);
+            if (indices.length === 0) return '#1e293b';
+            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
+            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
+            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
+            return 'rgba(251, 191, 36, 0.4)';
+        })(),
+        border: (
+            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S9') || 
+            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S9')
+        ) ? '3px solid #3b82f6' : (
+            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S9')
+        ) ? '3px solid #10b981' : '1px solid #64748b'
+    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S9' }; setSwapChain(prev => {
+                                                                            if (isChainComplete) return prev;
+                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
+                                                                            const next = [...prev, entry];
+                                                                            if (isLoop) {
+                                                                                setIsChainComplete(true);
+                                                                                console.log('CHAIN COMPLETE (LOOPED!)');
+                                                                            }
+                                                                            return next;
+                                                                        }); }}>{renderCell(day[1], 'S9')}</td>
                                                                                     {i === 0 ? (
                                                                                         <td rowSpan={DAYS.length} style={ttCellBreak('LUNCH', DAYS.length)}>
                                                                                             <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
@@ -4809,7 +5061,31 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         }
                                                                     })()}
 
-                                                                    <td style={ttCell()}>{renderCell(day[1], 'S11')}</td>
+                                                                    <td style={ttCell({ 
+        background: (() => {
+            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S11') ? idx : -1).filter(i => i !== -1);
+            if (indices.length === 0) return '#1e293b';
+            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
+            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
+            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
+            return 'rgba(251, 191, 36, 0.4)';
+        })(),
+        border: (
+            (swapChain.length === 1 && swapChain[0].cls === cls && swapChain[0].day === day[1] && swapChain[0].period === 'S11') || 
+            (swapChain.length >= 2 && swapChain[swapChain.length - 2].cls === cls && swapChain[swapChain.length - 2].day === day[1] && swapChain[swapChain.length - 2].period === 'S11')
+        ) ? '3px solid #3b82f6' : (
+            (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S11')
+        ) ? '3px solid #10b981' : '1px solid #64748b'
+    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S11' }; setSwapChain(prev => {
+                                                                            if (isChainComplete) return prev;
+                                                                            const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
+                                                                            const next = [...prev, entry];
+                                                                            if (isLoop) {
+                                                                                setIsChainComplete(true);
+                                                                                console.log('CHAIN COMPLETE (LOOPED!)');
+                                                                            }
+                                                                            return next;
+                                                                        }); }}>{renderCell(day[1], 'S11')}</td>
                                                                 </tr>
                                                             ))}
                                                         </tbody>
@@ -4819,6 +5095,35 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         );
                                     })}
                                 </div>
+
+                                {isChainComplete && (
+                                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.85)', backdropFilter: 'blur(12px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', animation: 'fadeIn 0.3s ease-out' }}>
+                                        <div style={{ background: '#1e293b', border: '2px solid #10b981', borderRadius: '1.5rem', padding: '2.5rem', maxWidth: '600px', width: '100%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '4rem', marginBottom: '1.5rem' }}>🔄</div>
+                                            <h2 style={{ color: '#f1f5f9', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Chain Swap Complete</h2>
+                                            <p style={{ color: '#94a3b8', fontSize: '1.1rem', marginBottom: '2.5rem' }}>The following sequence of swaps has been recorded and looped successfully.</p>
+                                            
+                                            <div style={{ background: '#0f172a', borderRadius: '1rem', padding: '1.5rem', marginBottom: '2.5rem', textAlign: 'left', border: '1px solid #334155', maxHeight: '300px', overflowY: 'auto' }}>
+                                                {swapChain.map((p, i) => (
+                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.6rem 0', borderBottom: i < swapChain.length - 1 ? '1px dashed #334155' : 'none' }}>
+                                                        <span style={{ color: '#10b981', fontWeight: 900, fontSize: '0.9rem', width: '25px' }}>{i + 1}.</span>
+                                                        <span style={{ color: '#f1f5f9', fontWeight: 700 }}>{p.cls}</span>
+                                                        <span style={{ color: '#64748b' }}>{p.day}</span>
+                                                        <span style={{ color: '#fbbf24', fontWeight: 800 }}>{p.period}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <button 
+                                                onClick={() => {
+                                                    setSwapChain([]);
+                                                    setIsChainComplete(false);
+                                                }}
+                                                style={{ background: '#10b981', color: 'white', border: 'none', padding: '1rem 2.5rem', borderRadius: '0.8rem', fontSize: '1.1rem', fontWeight: 900, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}
+                                            >Dismiss</button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         );
                     })()
