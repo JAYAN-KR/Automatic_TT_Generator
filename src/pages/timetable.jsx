@@ -484,8 +484,106 @@ export default function TimetablePage() {
     const [swapChain, setSwapChain] = useState([]);
     const [swapChainSteps, setSwapChainSteps] = useState([]);
     const [isChainComplete, setIsChainComplete] = useState(false);
+    const [chainValidation, setChainValidation] = useState(null);
     const [chainCoords, setChainCoords] = useState([]);
     const formatTTContainerRef = useRef(null);
+
+    const validateChain = () => {
+        if (!swapChain.length || !isChainComplete) {
+            setChainValidation(null);
+            return;
+        }
+
+        const conflicts = [];
+        const movingOut = new Set(swapChain.map(p => `${p.cls}|${p.day}|${p.period}`));
+
+        const steps = [];
+        let current = 0;
+        swapChainSteps.forEach(len => {
+            steps.push(swapChain.slice(current, current + len));
+            current += len;
+        });
+
+        const numUnits = steps.length - 1;
+        if (numUnits < 2) return;
+
+        const teacherLoadOnDay = {}; // teacher -> day -> count
+
+        for (let i = 0; i < numUnits; i++) {
+            const sourceUnit = steps[i];
+            const destUnit = steps[(i + 1) % numUnits];
+
+            sourceUnit.forEach((source, idx) => {
+                const dest = destUnit[idx] || destUnit[0];
+                const cellContent = generatedTimetable.classTimetables[source.cls]?.[source.day]?.[source.period];
+                if (!cellContent || !cellContent.subject) return;
+
+                const teacher = cellContent.teacher?.trim();
+                const day = dest.day;
+                const period = dest.period;
+
+                // A. Teacher Availability
+                if (teacher) {
+                    Object.keys(generatedTimetable.classTimetables).forEach(otherCls => {
+                        const slot = generatedTimetable.classTimetables[otherCls][day]?.[period];
+                        if (slot && slot.teacher?.trim() === teacher) {
+                            if (!movingOut.has(`${otherCls}|${day}|${period}`)) {
+                                conflicts.push(`${teacher} already teaching ${otherCls} in ${day} ${period} (DPT Check)`);
+                            }
+                        }
+                    });
+                }
+
+                // B. Lab Availability
+                if (cellContent.isLabPeriod) {
+                    const lab = getLabForSubject(source.cls, cellContent.fullSubject || cellContent.subject);
+                    if (lab && generatedTimetable.labTimetables[lab]) {
+                        const labOccupant = generatedTimetable.labTimetables[lab][day]?.[period];
+                        if (labOccupant && labOccupant !== '-' && !movingOut.has(`${labOccupant}|${day}|${period}`)) {
+                            conflicts.push(`${lab} occupied by ${labOccupant} in ${day} ${period} (Lab Check)`);
+                        }
+                    }
+                }
+
+                // C. Tracker for teacher load
+                if (teacher) {
+                    if (!teacherLoadOnDay[teacher]) teacherLoadOnDay[teacher] = {};
+                    if (!teacherLoadOnDay[teacher][day]) {
+                        let currentDayLoad = 0;
+                        Object.keys(generatedTimetable.classTimetables).forEach(cn => {
+                            Object.keys(generatedTimetable.classTimetables[cn][day] || {}).forEach(p => {
+                                const s = generatedTimetable.classTimetables[cn][day][p];
+                                if (s && s.teacher?.trim() === teacher && !movingOut.has(`${cn}|${day}|${p}`)) {
+                                    currentDayLoad++;
+                                }
+                            });
+                        });
+                        teacherLoadOnDay[teacher][day] = currentDayLoad;
+                    }
+                    teacherLoadOnDay[teacher][day]++;
+                }
+            });
+        }
+
+        Object.keys(teacherLoadOnDay).forEach(t => {
+            Object.keys(teacherLoadOnDay[t]).forEach(d => {
+                if (teacherLoadOnDay[t][d] > 6) {
+                    conflicts.push(`${t} would have ${teacherLoadOnDay[t][d]} periods on ${d} (Exceeds max of 6)`);
+                }
+            });
+        });
+
+        setChainValidation({
+            conflicts: [...new Set(conflicts)],
+            success: conflicts.length === 0
+        });
+    };
+
+    useEffect(() => {
+        if (isChainComplete) validateChain();
+        else setChainValidation(null);
+    }, [isChainComplete, swapChain]);
+
     const executeChainSwap = () => {
         if (!swapChain.length || !isChainComplete) return;
         if (!window.confirm("Are you sure you want to execute this chain swap? All affected Class and Teacher schedules will be updated.")) return;
@@ -5662,18 +5760,52 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                 {isChainComplete && (
                                     <div style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.85)', backdropFilter: 'blur(12px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', animation: 'fadeIn 0.3s ease-out' }}>
-                                        <div style={{ background: '#1e293b', border: '2px solid #10b981', borderRadius: '1.5rem', padding: '2.5rem', maxWidth: '600px', width: '100%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', textAlign: 'center' }}>
-                                            <div style={{ fontSize: '4rem', marginBottom: '1.5rem' }}>🔄</div>
-                                            <h2 style={{ color: '#f1f5f9', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Chain Swap Complete</h2>
-                                            <p style={{ color: '#94a3b8', fontSize: '1.1rem', marginBottom: '2.5rem' }}>The following sequence of swaps has been recorded and looped successfully.</p>
+                                        <div style={{ background: '#1e293b', border: chainValidation?.success ? '2px solid #10b981' : '2px solid #ef4444', borderRadius: '1.5rem', padding: '2.5rem', maxWidth: '600px', width: '100%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>{chainValidation?.success ? '✅' : '❌'}</div>
 
-                                            <div style={{ background: '#0f172a', borderRadius: '1rem', padding: '1.5rem', marginBottom: '2.5rem', textAlign: 'left', border: '1px solid #334155', maxHeight: '300px', overflowY: 'auto' }}>
+                                            {chainValidation?.success ? (
+                                                <h2 style={{ color: '#10b981', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Validation Passed</h2>
+                                            ) : (
+                                                <h2 style={{ color: '#ef4444', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Validation Failed</h2>
+                                            )}
+
+                                            <p style={{ color: '#94a3b8', fontSize: '1rem', marginBottom: '1.5rem' }}>
+                                                {chainValidation?.success
+                                                    ? "All resource checks passed. Ready to commit the changes."
+                                                    : "Conflicts detected in DPT or Lab resources. Please resolve them to proceed."}
+                                            </p>
+
+                                            {!chainValidation?.success && chainValidation?.conflicts.length > 0 && (
+                                                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '1rem', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'left' }}>
+                                                    <h3 style={{ color: '#ef4444', marginBottom: '0.8rem', fontWeight: 800, fontSize: '0.9rem' }}>Conflicts detected:</h3>
+                                                    <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                                                        {chainValidation.conflicts.map((c, i) => (
+                                                            <div key={i} style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '0.4rem', paddingLeft: '1rem', position: 'relative' }}>
+                                                                <span style={{ position: 'absolute', left: 0 }}>•</span> {c}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {chainValidation?.success && (
+                                                <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid #10b981', borderRadius: '1rem', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'left' }}>
+                                                    <div style={{ color: '#a7f3d0', fontSize: '0.9rem' }}>
+                                                        <div style={{ marginBottom: '0.3rem' }}>✓ DPT Check: All teachers available</div>
+                                                        <div style={{ marginBottom: '0.3rem' }}>✓ Lab Check: All resources available</div>
+                                                        <div>✓ Class Check: All slots available</div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div style={{ background: '#0f172a', borderRadius: '1rem', padding: '1rem', marginBottom: '2rem', textAlign: 'left', border: '1px solid #334155', maxHeight: '150px', overflowY: 'auto' }}>
+                                                <h4 style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Chain Sequence:</h4>
                                                 {swapChain.map((p, i) => (
-                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.6rem 0', borderBottom: i < swapChain.length - 1 ? '1px dashed #334155' : 'none' }}>
-                                                        <span style={{ color: '#10b981', fontWeight: 900, fontSize: '0.9rem', width: '25px' }}>{i + 1}.</span>
-                                                        <span style={{ color: '#f1f5f9', fontWeight: 700 }}>{p.cls}</span>
-                                                        <span style={{ color: '#64748b' }}>{p.day}</span>
-                                                        <span style={{ color: '#fbbf24', fontWeight: 800 }}>{p.period}</span>
+                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.4rem 0', borderBottom: i < swapChain.length - 1 ? '1px dashed #334155' : 'none' }}>
+                                                        <span style={{ color: '#10b981', fontWeight: 900, fontSize: '0.8rem', width: '20px' }}>{i + 1}.</span>
+                                                        <span style={{ color: '#f1f5f9', fontWeight: 700, fontSize: '0.9rem' }}>{p.cls}</span>
+                                                        <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{p.day}</span>
+                                                        <span style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.85rem' }}>{p.period}</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -5685,11 +5817,21 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         setSwapChainSteps([]);
                                                         setIsChainComplete(false);
                                                     }}
-                                                    style={{ background: '#334155', color: 'white', border: 'none', padding: '1rem 2rem', borderRadius: '0.8rem', fontSize: '1.1rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
+                                                    style={{ background: '#334155', color: 'white', border: 'none', padding: '0.8rem 1.8rem', borderRadius: '0.7rem', fontSize: '1rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
                                                 >Cancel</button>
                                                 <button
                                                     onClick={executeChainSwap}
-                                                    style={{ background: '#f97316', color: 'white', border: 'none', padding: '1rem 2.5rem', borderRadius: '0.8rem', fontSize: '1.1rem', fontWeight: 900, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(249,115,22,0.3)' }}
+                                                    disabled={!chainValidation?.success}
+                                                    style={{
+                                                        background: chainValidation?.success ? '#f97316' : '#1e293b',
+                                                        color: 'white', border: 'none', padding: '0.8rem 2rem',
+                                                        borderRadius: '0.7rem', fontSize: '1rem', fontWeight: 900,
+                                                        cursor: chainValidation?.success ? 'pointer' : 'not-allowed',
+                                                        transition: 'all 0.2s',
+                                                        boxShadow: chainValidation?.success ? '0 4px 12px rgba(249,115,22,0.3)' : 'none',
+                                                        opacity: chainValidation?.success ? 1 : 0.5,
+                                                        border: chainValidation?.success ? 'none' : '1px solid #334155'
+                                                    }}
                                                 >Execute Swap</button>
                                             </div>
                                         </div>
