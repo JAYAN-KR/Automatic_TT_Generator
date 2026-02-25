@@ -291,6 +291,20 @@ const getAbbreviation = (sub) => {
     return SUBJECT_ABBR[sub.toUpperCase()] || sub.substring(0, 7).toUpperCase();
 };
 
+const getPeriodLabel = (cls, period) => {
+    if (!cls || period === 'CT') return period || '';
+    const num = cls.match(/\d+/)?.[0];
+    const isMiddle = ['6', '7', '8'].includes(num);
+    const mapping = {
+        'S1': 'P1', 'S2': 'P2', 'S3': 'BRK', 'S4': 'P3', 'S5': 'P4',
+        'S6': 'P5', 'S7': 'BRK', 'S8': 'P6',
+        'S9': isMiddle ? 'LUNCH' : 'P7',
+        'S10': isMiddle ? 'P7' : 'LUNCH',
+        'S11': 'P8'
+    };
+    return mapping[period] || period;
+};
+
 // --- Sub-components ---
 
 /**
@@ -528,7 +542,7 @@ export default function TimetablePage() {
                         const slot = generatedTimetable.classTimetables[otherCls][day]?.[period];
                         if (slot && slot.teacher?.trim() === teacher) {
                             if (!movingOut.has(`${otherCls}|${day}|${period}`)) {
-                                conflicts.push(`${teacher} already teaching ${otherCls} in ${day} ${period} (DPT Check)`);
+                                conflicts.push(`${teacher} already teaching ${otherCls} in ${day} ${getPeriodLabel(otherCls, period)} (DPT Check)`);
                             }
                         }
                     });
@@ -540,7 +554,7 @@ export default function TimetablePage() {
                     if (lab && generatedTimetable.labTimetables[lab]) {
                         const labOccupant = generatedTimetable.labTimetables[lab][day]?.[period];
                         if (labOccupant && labOccupant !== '-' && !movingOut.has(`${labOccupant}|${day}|${period}`)) {
-                            conflicts.push(`${lab} occupied by ${labOccupant} in ${day} ${period} (Lab Check)`);
+                            conflicts.push(`${lab} occupied by ${labOccupant} in ${day} ${getPeriodLabel(labOccupant, period)} (Lab Check)`);
                         }
                     }
                 }
@@ -5805,7 +5819,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         <span style={{ color: '#10b981', fontWeight: 900, fontSize: '0.8rem', width: '20px' }}>{i + 1}.</span>
                                                         <span style={{ color: '#f1f5f9', fontWeight: 700, fontSize: '0.9rem' }}>{p.cls}</span>
                                                         <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{p.day}</span>
-                                                        <span style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.85rem' }}>{p.period}</span>
+                                                        <span style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.85rem' }}>{getPeriodLabel(p.cls, p.period)}</span>
                                                     </div>
                                                 ))}
                                             </div>
