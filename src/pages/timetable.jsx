@@ -407,6 +407,41 @@ export default function TimetablePage() {
     const [chainSwapMode, setChainSwapMode] = useState(false);
     const [swapChain, setSwapChain] = useState([]);
     const [isChainComplete, setIsChainComplete] = useState(false);
+    const [chainCoords, setChainCoords] = useState([]);
+    const formatTTContainerRef = useRef(null);
+
+    useEffect(() => {
+        if (!chainSwapMode || swapChain.length < 1) {
+            setChainCoords([]);
+            return;
+        }
+
+        const updateCoords = () => {
+            const coords = swapChain.map(item => {
+                const el = document.getElementById(`cell-${item.cls}-${item.day}-${item.period}`);
+                if (!el) return null;
+                const rect = el.getBoundingClientRect();
+                const containerRect = formatTTContainerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
+                return {
+                    x: rect.left + rect.width / 2 - containerRect.left,
+                    y: rect.top + rect.height / 2 - containerRect.top
+                };
+            }).filter(c => c !== null);
+            setChainCoords(coords);
+        };
+
+        const timer = setTimeout(updateCoords, 100);
+        window.addEventListener('resize', updateCoords);
+        // Using a shorter check or polling might be needed for scroll if it's nested
+        const interval = setInterval(updateCoords, 500); 
+
+        return () => {
+            clearTimeout(timer);
+            clearInterval(interval);
+            window.removeEventListener('resize', updateCoords);
+        };
+    }, [swapChain, chainSwapMode, activeGradeSubTab, activeTab]);
+
 
     // Teacher TT Tab State
     const [teacherTTSubTab, setTeacherTTSubTab] = useState('Middle');
@@ -3057,6 +3092,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 {/* Tab 0: Teachers & Subjects with mapping table (selection-only) */}
                 {activeTab === 0 && (
                     <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                                
+
                         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
                             <button
                                 disabled={isSaving}
@@ -4526,7 +4563,46 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         const DAYS = [['MON', 'Monday'], ['TUE', 'Tuesday'], ['WED', 'Wednesday'], ['THU', 'Thursday'], ['FRI', 'Friday'], ['SAT', 'Saturday']];
 
                         return (
-                            <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                            <div ref={formatTTContainerRef} style={{ animation: 'fadeIn 0.3s ease-out', position: 'relative' }}>
+                                {/* SVG Overlay for Chain Arrows */}
+                                {chainSwapMode && chainCoords.length >= 2 && (
+                                    <svg style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 100, width: '100%', height: '100%' }}>
+                                        <defs>
+                                            <marker id="arrowhead-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24" />
+                                            </marker>
+                                            <marker id="arrowhead-gray" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+                                            </marker>
+                                        </defs>
+                                        {chainCoords.slice(0, -1).map((start, i) => {
+                                            const end = chainCoords[i + 1];
+                                            const isLastLink = i === chainCoords.length - 2;
+                                            const strokeColor = isLastLink ? '#fbbf24' : '#94a3b8';
+                                            const dx = end.x - start.x;
+                                            const dy = end.y - start.y;
+                                            const len = Math.sqrt(dx*dx + dy*dy);
+                                            if (len < 10) return null;
+                                            const margin = 35;
+                                            const x1 = start.x + (dx/len) * margin;
+                                            const y1 = start.y + (dy/len) * margin;
+                                            const x2 = end.x - (dx/len) * margin;
+                                            const y2 = end.y - (dy/len) * margin;
+                                            return (
+                                                <line 
+                                                    key={i}
+                                                    x1={x1} y1={y1}
+                                                    x2={x2} y2={y2}
+                                                    stroke={strokeColor}
+                                                    strokeWidth="3"
+                                                    strokeLinecap="round"
+                                                    markerEnd={isLastLink ? "url(#arrowhead-amber)" : "url(#arrowhead-gray)"}
+                                                    style={{ filter: 'drop-shadow(0 0 4px rgba(0,0,0,0.5))' }}
+                                                />
+                                            );
+                                        })}
+                                    </svg>
+                                )}
                                 {/* Grade Tabs */}
                                 <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.2rem', background: '#1e293b', padding: '0.8rem', borderRadius: '0.8rem', border: '1px solid #334155', flexWrap: 'wrap' }}>
                                     {[6, 7, 8, 9, 10, 11, 12].map(grade => (
@@ -4808,7 +4884,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         ) ? '3px solid #3b82f6' : (
             (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'CT')
         ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'CT' }; setSwapChain(prev => {
+    })} id={`cell-${cls}-${day[1]}-${'CT'}`} id={`cell-${cls}-${day[1]}-${'CT'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'CT' }; setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
                                                                             const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
                                                                             const next = [...prev, entry];
@@ -4833,7 +4909,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         ) ? '3px solid #3b82f6' : (
             (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S1')
         ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S1' }; setSwapChain(prev => {
+    })} id={`cell-${cls}-${day[1]}-${'S1'}`} id={`cell-${cls}-${day[1]}-${'S1'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S1' }; setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
                                                                             const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
                                                                             const next = [...prev, entry];
@@ -4858,7 +4934,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         ) ? '3px solid #3b82f6' : (
             (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S2')
         ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S2' }; setSwapChain(prev => {
+    })} id={`cell-${cls}-${day[1]}-${'S2'}`} id={`cell-${cls}-${day[1]}-${'S2'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S2' }; setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
                                                                             const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
                                                                             const next = [...prev, entry];
@@ -4891,7 +4967,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         ) ? '3px solid #3b82f6' : (
             (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S4')
         ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S4' }; setSwapChain(prev => {
+    })} id={`cell-${cls}-${day[1]}-${'S4'}`} id={`cell-${cls}-${day[1]}-${'S4'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S4' }; setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
                                                                             const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
                                                                             const next = [...prev, entry];
@@ -4916,7 +4992,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         ) ? '3px solid #3b82f6' : (
             (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S5')
         ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S5' }; setSwapChain(prev => {
+    })} id={`cell-${cls}-${day[1]}-${'S5'}`} id={`cell-${cls}-${day[1]}-${'S5'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S5' }; setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
                                                                             const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
                                                                             const next = [...prev, entry];
@@ -4941,7 +5017,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         ) ? '3px solid #3b82f6' : (
             (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S6')
         ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S6' }; setSwapChain(prev => {
+    })} id={`cell-${cls}-${day[1]}-${'S6'}`} id={`cell-${cls}-${day[1]}-${'S6'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S6' }; setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
                                                                             const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
                                                                             const next = [...prev, entry];
@@ -4974,7 +5050,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         ) ? '3px solid #3b82f6' : (
             (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S8')
         ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S8' }; setSwapChain(prev => {
+    })} id={`cell-${cls}-${day[1]}-${'S8'}`} id={`cell-${cls}-${day[1]}-${'S8'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S8' }; setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
                                                                             const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
                                                                             const next = [...prev, entry];
@@ -5011,7 +5087,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         ) ? '3px solid #3b82f6' : (
             (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S10')
         ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S10' }; setSwapChain(prev => {
+    })} id={`cell-${cls}-${day[1]}-${'S10'}`} id={`cell-${cls}-${day[1]}-${'S10'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S10' }; setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
                                                                             const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
                                                                             const next = [...prev, entry];
@@ -5041,7 +5117,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         ) ? '3px solid #3b82f6' : (
             (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S9')
         ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S9' }; setSwapChain(prev => {
+    })} id={`cell-${cls}-${day[1]}-${'S9'}`} id={`cell-${cls}-${day[1]}-${'S9'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S9' }; setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
                                                                             const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
                                                                             const next = [...prev, entry];
@@ -5076,7 +5152,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         ) ? '3px solid #3b82f6' : (
             (swapChain.length >= 2 && swapChain[swapChain.length - 1].cls === cls && swapChain[swapChain.length - 1].day === day[1] && swapChain[swapChain.length - 1].period === 'S11')
         ) ? '3px solid #10b981' : '1px solid #64748b'
-    })} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S11' }; setSwapChain(prev => {
+    })} id={`cell-${cls}-${day[1]}-${'S11'}`} id={`cell-${cls}-${day[1]}-${'S11'}`} onClick={() => { if (!chainSwapMode) return; const entry = { cls, day: day[1], period: 'S11' }; setSwapChain(prev => {
                                                                             if (isChainComplete) return prev;
                                                                             const isLoop = prev.length > 0 && prev[0].cls === entry.cls && prev[0].day === entry.day && prev[0].period === entry.period;
                                                                             const next = [...prev, entry];
