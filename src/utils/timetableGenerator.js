@@ -101,10 +101,10 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         });
     });
 
-    allTeacherNames.forEach(tName => { // Updated to use allTeacherNames
+    allTeacherNames.forEach(tName => {
         teacherTimetables[tName] = {};
         days.forEach(day => {
-            teacherTimetables[tName][day] = {};
+            teacherTimetables[tName][day] = { periodCount: 0 };
             allPeriods.forEach(p => { teacherTimetables[tName][day][p] = ''; });
         });
         teacherTimetables[tName].weeklyPeriods = 0;
@@ -265,82 +265,95 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
 
         const dayStart = candidateDays.length > 1 ? Math.floor(Math.random() * candidateDays.length) : 0;
 
-        for (let d = 0; d < candidateDays.length && !placed; d++) {
-            const day = candidateDays[(dayStart + d) % candidateDays.length];
+        // Multi-pass placement strategy:
+        // Pass 1: Ideal (Free slots + No subject clustering + Under 6 periods)
+        // Pass 2: Relax subject clustering, still respect 6 periods
+        // Pass 3: Fallback (Current logic)
 
-            if (task.type === 'BLOCK') {
-                const pairs = getBlockPairs(task.className);
-                for (const [p1, p2] of pairs) {
-                    const teacherFree = teacherTimetables[task.teacher] && teacherTimetables[task.teacher][day][p1] === '' && teacherTimetables[task.teacher][day][p2] === '';
+        const isSubjectOnDay = (day) => {
+            const tTT = teacherTimetables[task.teacher]?.[day];
+            if (!tTT) return false;
+            const targetSub = (task.subject || '').toUpperCase();
+            return Object.values(tTT).some(s =>
+                s && typeof s === 'object' &&
+                s.className === task.className &&
+                (s.subject || '').toUpperCase() === targetSub
+            );
+        };
 
-                    // Building Transition Check for Blocks
-                    const bConf = isBuildingConstraintViolated(task.teacher, day, p1, task.className) ||
-                        isBuildingConstraintViolated(task.teacher, day, p2, task.className);
+        const getTeacherLoad = (day) => teacherTimetables[task.teacher]?.[day]?.periodCount || 0;
 
-                    const classesFree = task.classes.every(cn =>
-                        classTimetables[cn] && classTimetables[cn][day] &&
-                        classTimetables[cn][day][p1].subject === '' &&
-                        classTimetables[cn][day][p2].subject === ''
-                    );
+        for (let pass = 1; pass <= 3 && !placed; pass++) {
+            // Pass 1: Ideal Spread: No clustering (max 1 of same subject per day, NO singles on block days)
+            // Pass 2: Relaxed Clustering: Max 2 units (e.g. 1 block + 0 singles, or 0 blocks + 2 singles)
+            // Pass 3: Final Fallback: As much as fits within daily load limit of 6
 
-                    const lab1Free = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p1, task.labGroup, task.subject));
-                    const lab2Free = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p2, task.labGroup, task.subject));
+            for (let d = 0; d < candidateDays.length && !placed; d++) {
+                const day = candidateDays[(dayStart + d) % candidateDays.length];
+                const currentLoad = getTeacherLoad(day);
+                const alreadyOnDay = isSubjectOnDay(day);
 
-                    if (teacherFree && !bConf && classesFree && lab1Free && lab2Free) {
-                        placeTask(task, day, p1, true);
-                        placeTask(task, day, p2, true);
-                        placed = true;
-                        break;
-                    }
-                }
-            } else if (task.type === 'STREAM') {
-                const availableSlots = getAvailableSlots(task.className);
-                const pStart = Math.floor(Math.random() * availableSlots.length);
-                for (let pIdx = 0; pIdx < availableSlots.length; pIdx++) {
-                    const period = availableSlots[(pStart + pIdx) % availableSlots.length];
-                    const teachersFree = task.subjects.every(s => {
-                        const tName = s.teacher ? s.teacher.trim() : '';
-                        return teacherTimetables[tName] && teacherTimetables[tName][day][period] === '';
-                    });
+                if (task.type === 'BLOCK') {
+                    if (pass === 1 && alreadyOnDay) continue;
+                    if (currentLoad + 2 > 6) continue;
 
-                    // Building Check for Streams
-                    const bConf = task.subjects.some(s => {
-                        const tName = s.teacher ? s.teacher.trim() : '';
-                        return isBuildingConstraintViolated(tName, day, period, task.className);
-                    });
+                    const pairs = getBlockPairs(task.className);
+                    for (const [p1, p2] of pairs) {
+                        const teacherFree = teacherTimetables[task.teacher][day][p1] === '' && teacherTimetables[task.teacher][day][p2] === '';
+                        const bConf = isBuildingConstraintViolated(task.teacher, day, p1, task.className) ||
+                            isBuildingConstraintViolated(task.teacher, day, p2, task.className);
+                        const classesFree = task.classes.every(cn => classTimetables[cn][day][p1].subject === '' && classTimetables[cn][day][p2].subject === '');
+                        const labsFree = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p1, task.labGroup, task.subject)) &&
+                            !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, p2, task.labGroup, task.subject));
 
-                    const classFree = classTimetables[task.className] && classTimetables[task.className][day][period].subject === '';
-
-                    let labConflict = false;
-                    for (const s of task.subjects) {
-                        if (detectLabConflict(classTimetables, task.className, day, period, s.labGroup, s.subject)) {
-                            labConflict = true;
+                        if (teacherFree && !bConf && classesFree && labsFree) {
+                            placeTask(task, day, p1, true);
+                            placeTask(task, day, p2, true);
+                            placed = true;
                             break;
                         }
                     }
+                } else if (task.type === 'STREAM') {
+                    // Streams are handled slightly differently but let's apply load limits
+                    if (currentLoad + 1 > 6) continue;
 
-                    if (teachersFree && !bConf && classFree && !labConflict) {
-                        placeStreamTask(task, day, period);
-                        placed = true;
-                        break;
+                    const availableSlots = getAvailableSlots(task.className);
+                    const pStart = Math.floor(Math.random() * availableSlots.length);
+                    for (let pIdx = 0; pIdx < availableSlots.length; pIdx++) {
+                        const period = availableSlots[(pStart + pIdx) % availableSlots.length];
+                        const teachersFree = task.subjects.every(s => {
+                            const tName = s.teacher ? s.teacher.trim() : '';
+                            return teacherTimetables[tName] && teacherTimetables[tName][day][period] === '';
+                        });
+                        const bConf = task.subjects.some(s => isBuildingConstraintViolated(s.teacher.trim(), day, period, task.className));
+                        const classFree = classTimetables[task.className][day][period].subject === '';
+                        const labConflict = task.subjects.some(s => detectLabConflict(classTimetables, task.className, day, period, s.labGroup, s.subject));
+
+                        if (teachersFree && !bConf && classFree && !labConflict) {
+                            placeStreamTask(task, day, period);
+                            placed = true;
+                            break;
+                        }
                     }
-                }
-            } else { // SINGLE
-                const availableSlots = getAvailableSlots(task.className);
-                const pStart = Math.floor(Math.random() * availableSlots.length);
-                for (let pIdx = 0; pIdx < availableSlots.length; pIdx++) {
-                    const period = availableSlots[(pStart + pIdx) % availableSlots.length];
-                    const teacherFree = teacherTimetables[task.teacher] && teacherTimetables[task.teacher][day][period] === '';
-                    const bConf = isBuildingConstraintViolated(task.teacher, day, period, task.className);
+                } else { // SINGLE
+                    if (pass === 1 && alreadyOnDay) continue;
+                    if (pass === 2 && currentLoad >= 2 && alreadyOnDay) continue; // Allow max 2 units per subject per day if clustered in pass 2
+                    if (currentLoad + 1 > 6) continue;
 
-                    const classesFree = task.classes.every(cn => classTimetables[cn] && classTimetables[cn][day] && classTimetables[cn][day][period].subject === '');
+                    const availableSlots = getAvailableSlots(task.className);
+                    const pStart = Math.floor(Math.random() * availableSlots.length);
+                    for (let pIdx = 0; pIdx < availableSlots.length; pIdx++) {
+                        const period = availableSlots[(pStart + pIdx) % availableSlots.length];
+                        const teacherFree = teacherTimetables[task.teacher][day][period] === '';
+                        const bConf = isBuildingConstraintViolated(task.teacher, day, period, task.className);
+                        const classesFree = task.classes.every(cn => classTimetables[cn][day][period].subject === '');
+                        const labFree = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, period, task.labGroup, task.subject));
 
-                    const labFree = !task.classes.some(cn => detectLabConflict(classTimetables, cn, day, period, task.labGroup, task.subject));
-
-                    if (teacherFree && !bConf && classesFree && labFree) {
-                        placeTask(task, day, period, false);
-                        placed = true;
-                        break;
+                        if (teacherFree && !bConf && classesFree && labFree) {
+                            placeTask(task, day, period, false);
+                            placed = true;
+                            break;
+                        }
                     }
                 }
             }

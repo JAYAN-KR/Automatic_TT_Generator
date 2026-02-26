@@ -3084,11 +3084,28 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     const task = lBlockTasks[bi];
                     let best = null;
 
-                    // Try to find a day that doesn't have ANY periods for this subject yet (Theory or Lab)
-                    const subjectOnDay = (d) =>
-                        PRDS.some(p =>
-                            task.classes.some(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject === task.subject))
-                        );
+                    // Robust subject check: Prefer days that don't have this subject yet
+                    const getDaySubjectUnits = (d) => {
+                        const targetSub = (task.subject || '').trim().toUpperCase();
+                        let totalUnits = 0;
+                        let hasBlock = false;
+                        PRDS.forEach(p => {
+                            task.classes.forEach(cn => {
+                                const sl = tt.classTimetables[cn]?.[d]?.[p];
+                                if (sl) {
+                                    const matches = (sl.fullSubject || '').trim().toUpperCase() === targetSub ||
+                                        (sl.subject || '').trim().toUpperCase() === targetSub;
+                                    if (matches) {
+                                        totalUnits++;
+                                        if (sl.isBlock) hasBlock = true;
+                                    }
+                                }
+                            });
+                        });
+                        return { units: totalUnits / (task.classes.length || 1), hasBlock };
+                    };
+
+                    const subjectOnDay = (d) => getDaySubjectUnits(d).units > 0;
 
                     outer_l:
                     for (const d of PRIORITY_DAYS_B) {
@@ -3198,45 +3215,67 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                     // Logic for subject on day:
                     // If subject already has 2+ periods on this day, skip it
-                    const subjectCountOnDay = (d) =>
-                        PRDS.reduce((count, p) =>
-                            count + (task.classes.some(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject === task.subject)) ? 1 : 0)
-                            , 0);
+                    const getDaySubjectUnits = (d) => {
+                        const targetSub = (task.subject || '').trim().toUpperCase();
+                        let totalUnits = 0;
+                        let hasBlock = false;
+                        PRDS.forEach(p => {
+                            task.classes.forEach(cn => {
+                                const sl = tt.classTimetables[cn]?.[d]?.[p];
+                                if (sl) {
+                                    const matches = (sl.fullSubject || '').trim().toUpperCase() === targetSub ||
+                                        (sl.subject || '').trim().toUpperCase() === targetSub;
+                                    if (matches) {
+                                        totalUnits++;
+                                        if (sl.isBlock) hasBlock = true;
+                                    }
+                                }
+                            });
+                        });
+                        return { units: totalUnits / (task.classes.length || 1), hasBlock };
+                    };
 
-                    // Strategy: diagonal walk, but try to find a day with 0 periods of this subject first
-                    for (let attempt = 0; attempt < 100; attempt++) {
+                    const teacherDayLoad = (d) => {
+                        return tt.teacherTimetables[teacher][d]?.periodCount || 0;
+                    };
+
+                    // First pass: prefer fresh days (0 periods of this subject)
+                    for (let attempt = 0; attempt < 100 && !pick; attempt++) {
                         const slotIdx = (currentSlotIdx + attempt) % orderedSlots.length;
                         const { d, p } = orderedSlots[slotIdx];
                         if (taskDays.length > 0 && !taskDays.includes(d)) continue;
-                        if (subjectCountOnDay(d) >= 1) continue; // First pass: prefer fresh days
+                        if (getDaySubjectUnits(d).units > 0) continue;
+                        if (teacherDayLoad(d) >= 6) continue; // Enforce daily limit
                         if (slotFree(d, p, task.classes, task.labGroup)) {
                             pick = { d, p, slotIdx };
-                            break;
                         }
                     }
 
-                    // Fallback: allow 1 period already existing (total 2 on day)
+                    // Second pass: allow clustering ONLY if no block exists and daily count < 2
                     if (!pick) {
-                        for (let attempt = 0; attempt < 100; attempt++) {
+                        for (let attempt = 0; attempt < 100 && !pick; attempt++) {
                             const slotIdx = (currentSlotIdx + attempt) % orderedSlots.length;
                             const { d, p } = orderedSlots[slotIdx];
                             if (taskDays.length > 0 && !taskDays.includes(d)) continue;
-                            if (subjectCountOnDay(d) >= 2) continue;
+                            const { units, hasBlock } = getDaySubjectUnits(d);
+                            if (hasBlock || units >= 1) continue; // Strictly avoid 3rd unit or adding to block
+                            if (teacherDayLoad(d) >= 6) continue;
                             if (slotFree(d, p, task.classes, task.labGroup)) {
                                 pick = { d, p, slotIdx };
-                                break;
                             }
                         }
                     }
 
-                    // Absolute fallback: any free slot
+                    // Absolute fallback: still respect blockDay and max 2 units
                     if (!pick) {
-                        for (let attempt = 0; attempt < 100; attempt++) {
+                        for (let attempt = 0; attempt < 100 && !pick; attempt++) {
                             const slotIdx = (currentSlotIdx + attempt) % orderedSlots.length;
                             const { d, p } = orderedSlots[slotIdx];
+                            const { units, hasBlock } = getDaySubjectUnits(d);
+                            if (hasBlock || units >= 3) continue; // Even in fallback, 3 is too many
+                            if (teacherDayLoad(d) >= 6) continue;
                             if (slotFree(d, p, task.classes, task.labGroup)) {
                                 pick = { d, p, slotIdx };
-                                break;
                             }
                         }
                     }
