@@ -819,16 +819,20 @@ export default function TimetablePage() {
     const [selectedGroups, setSelectedGroups] = useState([]); // Array of { rowId, groupIndex }
     const [mergePopup, setMergePopup] = useState(null); // { rowId, groupIndices, grade, rect }
     const [expandedGroup, setExpandedGroup] = useState(null); // { rowId, groupIndex }
+    const [editingTeacherId, setEditingTeacherId] = useState(null);
 
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (expandedGroup && !e.target.closest('.group-expansion-container')) {
                 setExpandedGroup(null);
             }
+            if (editingTeacherId && !e.target.closest('.dropdown-editor-container') && !e.target.closest('.edit-groups-btn')) {
+                setEditingTeacherId(null);
+            }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [expandedGroup]);
+    }, [expandedGroup, editingTeacherId]);
 
     // --- Interactive Builder State ---
     const [creationStatus, setCreationStatus] = useState(null); // { teacher, subject, messages: [], progress: 0, completedCount: 0, isError: false }
@@ -3951,17 +3955,21 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             justifyContent: 'space-between',
                                                             alignItems: 'center',
                                                             background: 'linear-gradient(90deg, #1e293b, #0f172a)',
-                                                            padding: '0.4rem 1rem',
+                                                            padding: '0.5rem 1rem',
                                                             borderRadius: '0.6rem',
-                                                            marginBottom: '0.4rem',
-                                                            border: '1px solid #334155'
+                                                            marginBottom: editingTeacherId === row.id ? '0.5rem' : '0.2rem',
+                                                            border: '1px solid #334155',
+                                                            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.2)',
+                                                            transition: 'all 0.3s ease'
                                                         }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.2rem' }}>
                                                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                                    <span style={{ fontWeight: 900, color: '#f8fafc', fontSize: '0.95rem', letterSpacing: '0.01em' }}>{row.teacher || '(No Teacher)'}</span>
-                                                                    <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700 }}>{subjectsText || 'No Subjects Mapped'}</span>
+                                                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                                                                        <span style={{ fontWeight: 900, color: '#f8fafc', fontSize: '1rem', letterSpacing: '0.01em' }}>{row.teacher || '(No Teacher)'}</span>
+                                                                        <span style={{ fontSize: '0.75rem', color: '#6366f1', fontWeight: 800 }}>• {subjectsText || 'No Subjects'}</span>
+                                                                    </div>
                                                                 </div>
-                                                                <div style={{ height: '24px', width: '1px', background: '#334155' }}></div>
+                                                                <div style={{ height: '28px', width: '1px', background: '#334155' }}></div>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                                                                     <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Total Load:</span>
                                                                     <span style={{ background: '#0284c7', color: 'white', padding: '2px 10px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 900, boxShadow: '0 2px 4px rgba(2,132,199,0.3)' }}>
@@ -3971,7 +3979,30 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 </div>
                                                             </div>
 
-                                                            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                                <button
+                                                                    className="edit-groups-btn"
+                                                                    onClick={() => setEditingTeacherId(editingTeacherId === row.id ? null : row.id)}
+                                                                    style={{
+                                                                        padding: '0.4rem 0.8rem',
+                                                                        background: editingTeacherId === row.id ? '#4f46e5' : 'rgba(79, 70, 229, 0.1)',
+                                                                        color: editingTeacherId === row.id ? 'white' : '#818cf8',
+                                                                        border: '1px solid #4f46e5',
+                                                                        borderRadius: '0.4rem',
+                                                                        fontSize: '0.75rem',
+                                                                        fontWeight: '800',
+                                                                        cursor: 'pointer',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '4px',
+                                                                        transition: 'all 0.2s'
+                                                                    }}
+                                                                >
+                                                                    {editingTeacherId === row.id ? '✕ Close' : '📝 Edit Groups'}
+                                                                </button>
+
+                                                                <div style={{ width: '1px', height: '20px', background: '#334155', margin: '0 4px' }}></div>
+
                                                                 <button
                                                                     onClick={() => handleCreateSpecific(row)}
                                                                     disabled={creationStatus || completedCreations.has(row.id)}
@@ -3984,7 +4015,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         fontSize: '0.75rem',
                                                                         fontWeight: '900',
                                                                         cursor: 'pointer',
-                                                                        transition: 'all 0.2s'
+                                                                        transition: 'all 0.2s',
+                                                                        boxShadow: '0 2px 4px rgba(59, 130, 246, 0.2)'
                                                                     }}
                                                                 >
                                                                     {completedCreations.has(row.id) ? '✅' : 'CREATE'}
@@ -3995,197 +4027,176 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             </div>
                                                         </div>
 
-                                                        {/* Horizontal Groups Scroll Container */}
-                                                        <div style={{
-                                                            display: 'flex',
-                                                            overflowX: 'auto',
-                                                            gap: '0.8rem',
-                                                            padding: '0.2rem 0.4rem 0.6rem 0.4rem',
-                                                            scrollbarWidth: 'thin',
-                                                            scrollbarColor: '#475569 transparent',
-                                                            alignItems: 'center',
-                                                            minHeight: '45px'
-                                                        }}>
-                                                            {(row.allotments || []).map((group, gIdx) => {
-                                                                const isSelected = selectedGroups.some(s => s.rowId === row.id && s.groupIndex === gIdx);
-                                                                return (
-                                                                    <div
-                                                                        key={group.id}
-                                                                        draggable
-                                                                        onDragStart={(e) => { e.dataTransfer.setData('gIdx', gIdx); e.dataTransfer.setData('rowId', row.id); }}
-                                                                        onDragOver={(e) => e.preventDefault()}
-                                                                        onDrop={(e) => {
-                                                                            e.preventDefault();
-                                                                            const fromIdx = parseInt(e.dataTransfer.getData('gIdx'));
-                                                                            const fromRowId = e.dataTransfer.getData('rowId');
-                                                                            if (fromRowId === row.id) moveAllotmentGroup(row.id, fromIdx, gIdx);
-                                                                        }}
-                                                                        style={{
+                                                        {/* Dropdown Editor Panel */}
+                                                        {editingTeacherId === row.id && (
+                                                            <div className="dropdown-editor-container" style={{
+                                                                background: '#1e293b',
+                                                                border: '1px solid #4f46e5',
+                                                                borderRadius: '0.8rem',
+                                                                padding: '1rem',
+                                                                marginTop: '0.5rem',
+                                                                marginBottom: '1rem',
+                                                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
+                                                                animation: 'fadeInScale 0.2s ease-out'
+                                                            }}>
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                                                    {(row.allotments || []).map((group, gIdx) => (
+                                                                        <div key={group.id} style={{
                                                                             display: 'flex',
                                                                             alignItems: 'center',
-                                                                            gap: '4px',
-                                                                            background: isSelected ? 'rgba(251, 191, 36, 0.15)' : '#1e293b',
-                                                                            padding: '4px 6px',
+                                                                            gap: '0.6rem',
+                                                                            background: '#0f172a',
+                                                                            padding: '0.6rem 0.8rem',
                                                                             borderRadius: '0.5rem',
-                                                                            border: isSelected ? '1px solid #fbbf24' : '1px solid #334155',
-                                                                            flexShrink: 0,
-                                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                                                                            border: '1px solid #334155'
+                                                                        }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#475569', minWidth: '60px' }}>GROUP {gIdx + 1}</span>
+
+                                                                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                                                                {/* Class */}
+                                                                                <select
+                                                                                    value={group.classes[0]}
+                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'class', e.target.value)}
+                                                                                    style={{ background: '#1e293b', border: '1px solid #334155', color: '#fff', fontWeight: 800, fontSize: '0.8rem', borderRadius: '0.3rem', padding: '4px 8px' }}
+                                                                                >
+                                                                                    {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                                                                                </select>
+
+                                                                                {/* Subject */}
+                                                                                <select
+                                                                                    value={group.subject || ''}
+                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'subject', e.target.value)}
+                                                                                    style={{ background: '#1e293b', border: '1px solid #334155', color: '#38bdf8', fontWeight: 800, fontSize: '0.8rem', borderRadius: '0.3rem', padding: '4px 8px', minWidth: '120px' }}
+                                                                                >
+                                                                                    <option value="">-- Select Subject --</option>
+                                                                                    {subjects.map(s => <option key={s} value={s}>{s}</option>)}
+                                                                                </select>
+
+                                                                                {/* PPS */}
+                                                                                <div style={{ display: 'flex', alignItems: 'center', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.3rem', padding: '0 8px' }}>
+                                                                                    <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', marginRight: '6px' }}>PPS:</span>
+                                                                                    <select
+                                                                                        value={group.periods || 0}
+                                                                                        onChange={e => updateAllotmentGroup(row.id, gIdx, 'periods', e.target.value)}
+                                                                                        style={{ background: 'transparent', border: 'none', color: '#fff', fontWeight: 800, fontSize: '0.8rem', padding: '4px 0', outline: 'none' }}
+                                                                                    >
+                                                                                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                                                                                    </select>
+                                                                                </div>
+
+                                                                                {/* TB */}
+                                                                                <div style={{ display: 'flex', alignItems: 'center', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.3rem', padding: '0 8px' }}>
+                                                                                    <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#f59e0b', marginRight: '6px' }}>TB:</span>
+                                                                                    <select
+                                                                                        value={group.tBlock || 0}
+                                                                                        onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
+                                                                                        style={{ background: 'transparent', border: 'none', color: '#fff', fontWeight: 800, fontSize: '0.8rem', padding: '4px 0', outline: 'none' }}
+                                                                                    >
+                                                                                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                                                                                    </select>
+                                                                                </div>
+
+                                                                                {/* LB */}
+                                                                                <div style={{ display: 'flex', alignItems: 'center', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.3rem', padding: '0 8px' }}>
+                                                                                    <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#10b981', marginRight: '6px' }}>LB:</span>
+                                                                                    <select
+                                                                                        value={group.lBlock || 0}
+                                                                                        onChange={e => updateAllotmentGroup(row.id, gIdx, 'lBlock', e.target.value)}
+                                                                                        style={{ background: 'transparent', border: 'none', color: '#fff', fontWeight: 800, fontSize: '0.8rem', padding: '4px 0', outline: 'none' }}
+                                                                                    >
+                                                                                        {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+                                                                                    </select>
+                                                                                </div>
+
+                                                                                {/* DAY */}
+                                                                                <div style={{ display: 'flex', alignItems: 'center', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.3rem', padding: '0 8px' }}>
+                                                                                    <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#3b82f6', marginRight: '6px' }}>DAY:</span>
+                                                                                    <select
+                                                                                        value={group.preferredDay || 'Any'}
+                                                                                        onChange={e => updateAllotmentGroup(row.id, gIdx, 'preferredDay', e.target.value)}
+                                                                                        style={{ background: 'transparent', border: 'none', color: '#fff', fontWeight: 800, fontSize: '0.8rem', padding: '4px 0', outline: 'none' }}
+                                                                                    >
+                                                                                        {['Any', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => <option key={d} value={d}>{d}</option>)}
+                                                                                    </select>
+                                                                                </div>
+
+                                                                                {/* Fixed Block Toggle */}
+                                                                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', background: group.isFixedBlock ? 'rgba(79, 70, 229, 0.2)' : 'transparent', padding: '4px 8px', borderRadius: '0.3rem', border: '1px solid', borderColor: group.isFixedBlock ? '#4f46e5' : '#334155' }}>
+                                                                                    <input
+                                                                                        type="checkbox"
+                                                                                        checked={group.isFixedBlock || false}
+                                                                                        onChange={e => updateAllotmentGroup(row.id, gIdx, 'isFixedBlock', e.target.checked)}
+                                                                                        style={{ cursor: 'pointer' }}
+                                                                                    />
+                                                                                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: group.isFixedBlock ? '#fff' : '#64748b' }}>FB</span>
+                                                                                </label>
+
+                                                                                {group.isFixedBlock && (
+                                                                                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', background: '#4c1d95', borderRadius: '0.3rem', padding: '2px 8px', border: '1px solid #5b21b6' }}>
+                                                                                        <select
+                                                                                            value={group.fixedBlockFrom || 'P1'}
+                                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'fixedBlockFrom', e.target.value)}
+                                                                                            style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.8rem', fontWeight: 800, outline: 'none' }}
+                                                                                        >
+                                                                                            {['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map(p => <option key={p} value={p}>{p}</option>)}
+                                                                                        </select>
+                                                                                        <span style={{ color: '#fff', fontWeight: 800 }}>-</span>
+                                                                                        <select
+                                                                                            value={group.fixedBlockTo || 'P2'}
+                                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'fixedBlockTo', e.target.value)}
+                                                                                            style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.8rem', fontWeight: 800, outline: 'none' }}
+                                                                                        >
+                                                                                            {['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map(p => <option key={p} value={p}>{p}</option>)}
+                                                                                        </select>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                <button
+                                                                                    onClick={() => deleteAllotmentGroup(row.id, gIdx)}
+                                                                                    style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#ef4444', fontSize: '1.2rem', fontWeight: 800, cursor: 'pointer', padding: '0 8px' }}
+                                                                                    title="Delete Group"
+                                                                                >×</button>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.2rem', borderTop: '1px solid #334155', paddingTop: '1rem' }}>
+                                                                    <button
+                                                                        onClick={() => addAllotmentGroup(row.id)}
+                                                                        style={{
+                                                                            padding: '0.6rem 1.2rem',
+                                                                            background: 'rgba(16, 185, 129, 0.1)',
+                                                                            color: '#10b981',
+                                                                            border: '1px dashed #10b981',
+                                                                            borderRadius: '0.5rem',
+                                                                            fontSize: '0.85rem',
+                                                                            fontWeight: '800',
+                                                                            cursor: 'pointer',
                                                                             transition: 'all 0.2s'
                                                                         }}
                                                                     >
-                                                                        {/* Reorder Handle */}
-                                                                        <div style={{ cursor: 'grab', color: '#475569', fontSize: '1rem', padding: '0 4px', userSelect: 'none' }}>⋮⋮</div>
+                                                                        ＋ Add Group
+                                                                    </button>
 
-                                                                        {/* Class Select */}
-                                                                        <div style={{ width: '65px', flexShrink: 0 }}>
-                                                                            <select
-                                                                                value={group.classes[0]}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'class', e.target.value)}
-                                                                                style={{ width: '100%', background: '#334155', border: 'none', color: '#fff', fontWeight: 900, fontSize: '0.8rem', borderRadius: '0.3rem', padding: '2px 4px', outline: 'none' }}
-                                                                            >
-                                                                                {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-                                                                            </select>
-                                                                        </div>
-
-                                                                        {/* Subject Select */}
-                                                                        <div style={{ width: '120px', flexShrink: 0, display: 'flex', alignItems: 'center', background: '#0f172a', borderRadius: '0.3rem', padding: '2px 6px', border: '1px solid #334155' }}>
-                                                                            <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', marginRight: '4px' }}>SUB</span>
-                                                                            <select
-                                                                                value={group.subject || ''}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'subject', e.target.value)}
-                                                                                style={{ width: '80%', background: 'transparent', border: 'none', color: '#38bdf8', fontWeight: 800, fontSize: '0.75rem', outline: 'none' }}
-                                                                            >
-                                                                                <option value="">--</option>
-                                                                                {subjects.map(s => <option key={s} value={s}>{s}</option>)}
-                                                                            </select>
-                                                                        </div>
-
-                                                                        {/* PPS (Periods per week) */}
-                                                                        <div style={{ width: '75px', flexShrink: 0, display: 'flex', alignItems: 'center', background: '#0f172a', borderRadius: '0.3rem', padding: '2px 6px', border: '1px solid #334155' }}>
-                                                                            <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', marginRight: '4px' }}>PPS</span>
-                                                                            <select
-                                                                                value={group.periods || 0}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'periods', e.target.value)}
-                                                                                style={{ width: '100%', background: 'transparent', border: 'none', color: '#fff', fontWeight: 800, fontSize: '0.8rem', outline: 'none' }}
-                                                                            >
-                                                                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
-                                                                            </select>
-                                                                        </div>
-
-                                                                        {/* TB (Triple Block) */}
-                                                                        <div style={{ width: '60px', flexShrink: 0, display: 'flex', alignItems: 'center', background: '#0f172a', borderRadius: '0.3rem', padding: '2px 6px', border: '1px solid #334155' }}>
-                                                                            <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#f59e0b', marginRight: '4px' }}>TB</span>
-                                                                            <select
-                                                                                value={group.tBlock || 0}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
-                                                                                style={{ width: '100%', background: 'transparent', border: 'none', color: '#fff', fontWeight: 800, fontSize: '0.8rem', outline: 'none' }}
-                                                                            >
-                                                                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
-                                                                            </select>
-                                                                        </div>
-
-                                                                        {/* LB (Double Block) */}
-                                                                        <div style={{ width: '60px', flexShrink: 0, display: 'flex', alignItems: 'center', background: '#0f172a', borderRadius: '0.3rem', padding: '2px 6px', border: '1px solid #334155' }}>
-                                                                            <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#10b981', marginRight: '4px' }}>LB</span>
-                                                                            <select
-                                                                                value={group.lBlock || 0}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'lBlock', e.target.value)}
-                                                                                style={{ width: '100%', background: 'transparent', border: 'none', color: '#fff', fontWeight: 800, fontSize: '0.8rem', outline: 'none' }}
-                                                                            >
-                                                                                {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
-                                                                            </select>
-                                                                        </div>
-
-                                                                        {/* DAY */}
-                                                                        <div style={{ width: '105px', flexShrink: 0, display: 'flex', alignItems: 'center', background: '#0f172a', borderRadius: '0.3rem', padding: '2px 6px', border: '1px solid #334155' }}>
-                                                                            <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#3b82f6', marginRight: '4px' }}>DAY</span>
-                                                                            <select
-                                                                                value={group.preferredDay || 'Any'}
-                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'preferredDay', e.target.value)}
-                                                                                style={{ width: '100%', background: 'transparent', border: 'none', color: '#fff', fontWeight: 800, fontSize: '0.8rem', outline: 'none' }}
-                                                                            >
-                                                                                {['Any', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => <option key={d} value={d}>{d}</option>)}
-                                                                            </select>
-                                                                        </div>
-
-                                                                        {/* FB (Fixed Block) Toggle */}
-                                                                        <div
-                                                                            onClick={() => updateAllotmentGroup(row.id, gIdx, 'isFixedBlock', !group.isFixedBlock)}
-                                                                            title="Toggle Fixed Block"
-                                                                            style={{
-                                                                                padding: '2px 6px',
-                                                                                background: group.isFixedBlock ? '#4f46e5' : '#0f172a',
-                                                                                borderRadius: '0.3rem',
-                                                                                cursor: 'pointer',
-                                                                                fontSize: '0.6rem',
-                                                                                fontWeight: 900,
-                                                                                color: group.isFixedBlock ? '#fff' : '#6366f1',
-                                                                                border: '1px solid #4f46e5',
-                                                                                transition: 'all 0.2s'
-                                                                            }}
-                                                                        >FB</div>
-
-                                                                        {group.isFixedBlock && (
-                                                                            <div style={{ display: 'flex', gap: '2px', alignItems: 'center', background: '#4c1d95', borderRadius: '0.3rem', padding: '2px 4px' }}>
-                                                                                <select
-                                                                                    value={group.fixedBlockFrom || 'P1'}
-                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'fixedBlockFrom', e.target.value)}
-                                                                                    style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.75rem', fontWeight: 800, outline: 'none' }}
-                                                                                >
-                                                                                    {['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map(p => <option key={p} value={p}>{p}</option>)}
-                                                                                </select>
-                                                                                <span style={{ fontSize: '0.7rem', color: '#fff' }}>-</span>
-                                                                                <select
-                                                                                    value={group.fixedBlockTo || 'P2'}
-                                                                                    onChange={e => updateAllotmentGroup(row.id, gIdx, 'fixedBlockTo', e.target.value)}
-                                                                                    style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.75rem', fontWeight: 800, outline: 'none' }}
-                                                                                >
-                                                                                    {['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map(p => <option key={p} value={p}>{p}</option>)}
-                                                                                </select>
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* Delete Allotment */}
-                                                                        <div
-                                                                            onClick={(e) => { e.stopPropagation(); deleteAllotmentGroup(row.id, gIdx); }}
-                                                                            style={{ padding: '0 6px', color: '#ef4444', cursor: 'pointer', fontWeight: 900, fontSize: '1rem', marginLeft: '4px' }}
-                                                                            title="Delete Allotment"
-                                                                        >×</div>
-                                                                    </div>
-                                                                );
-                                                            })}
-
-                                                            {/* Add Group Button (Inline) */}
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    if (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) {
-                                                                        const rect = e.target.getBoundingClientRect();
-                                                                        const firstGroup = row.allotments[selectedGroups[0].groupIndex];
-                                                                        const g = firstGroup.classes[0].match(/\d+/)?.[0];
-                                                                        setMergePopup({ rowId: row.id, groupIndices: selectedGroups.map(s => s.groupIndex), grade: g, rect });
-                                                                    } else {
-                                                                        addAllotmentGroup(row.id);
-                                                                    }
-                                                                }}
-                                                                style={{
-                                                                    flexShrink: 0,
-                                                                    padding: '0.4rem 1rem',
-                                                                    background: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#fbbf24' : 'rgba(79, 70, 229, 0.1)',
-                                                                    color: (selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '#000' : '#818cf8',
-                                                                    border: '1px dashed #4f46e5',
-                                                                    borderRadius: '0.6rem',
-                                                                    cursor: 'pointer',
-                                                                    fontSize: '0.8rem',
-                                                                    fontWeight: '800',
-                                                                    height: '34px',
-                                                                    whiteSpace: 'nowrap',
-                                                                    transition: 'all 0.2s'
-                                                                }}
-                                                            >
-                                                                {(selectedGroups.length > 1 && selectedGroups[0].rowId === row.id) ? '🔗 Merge Selected' : '＋ Add Group'}
-                                                            </button>
-                                                        </div>
+                                                                    <button
+                                                                        onClick={() => setEditingTeacherId(null)}
+                                                                        style={{
+                                                                            padding: '0.6rem 1.2rem',
+                                                                            background: '#334155',
+                                                                            color: 'white',
+                                                                            border: 'none',
+                                                                            borderRadius: '0.5rem',
+                                                                            fontSize: '0.85rem',
+                                                                            fontWeight: '800',
+                                                                            cursor: 'pointer'
+                                                                        }}
+                                                                    >
+                                                                        ✕ Close Editor
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             );
