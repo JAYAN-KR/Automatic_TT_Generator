@@ -37,6 +37,9 @@ import FormatTTPreview from '../components/FormatTTPreview';
 import { db } from '../firebase';
 import { doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 
+// Utils
+import { findAvailableDestinations as getAvailableDestinations } from '../utils/chainSwapUtils';
+
 // --- Constants ---
 const COMMON_SUBJECTS = [
     'ENGLISH', 'MATHEMATICS', 'PHYSICS', 'BIOLOGY', 'CHEMISTRY',
@@ -506,7 +509,26 @@ export default function TimetablePage() {
     const [isChainComplete, setIsChainComplete] = useState(false);
     const [chainValidation, setChainValidation] = useState(null);
     const [chainCoords, setChainCoords] = useState([]);
+    const [availableDestinations, setAvailableDestinations] = useState([]);
     const formatTTContainerRef = useRef(null);
+
+    const findAvailableDestinations = (cls, sourceItem, gTT, currentChain) => {
+        return getAvailableDestinations(cls, sourceItem, gTT, currentChain, activeGradeSubTab);
+    };
+
+    useEffect(() => {
+        if (!chainSwapMode || swapChain.length === 0 || isChainComplete) {
+            setAvailableDestinations([]);
+            return;
+        }
+        const lastStepLen = swapChainSteps[swapChainSteps.length - 1];
+        const currentSource = swapChain[swapChain.length - lastStepLen];
+        if (currentSource) {
+            setAvailableDestinations(findAvailableDestinations(currentSource.cls, currentSource, generatedTimetable, swapChain));
+        } else {
+            setAvailableDestinations([]);
+        }
+    }, [swapChain, chainSwapMode, isChainComplete]);
 
     const validateChain = () => {
         if (!swapChain.length || !isChainComplete) {
@@ -5475,10 +5497,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 const isSource = getBlockEntries(cls, day[1], 'CT').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
                                                                             } else if (swapChain.length > 0) {
-                                                                                // Special case: only one selection made so far
                                                                                 const source = swapChain[0];
                                                                                 const isSource = getBlockEntries(cls, day[1], 'CT').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
+                                                                            }
+
+                                                                            if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'CT')) {
+                                                                                return '3px solid #90EE90';
                                                                             }
 
                                                                             return '1px solid #64748b';
@@ -5532,10 +5557,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S1').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
                                                                             } else if (swapChain.length > 0) {
-                                                                                // Special case: only one selection made so far
                                                                                 const source = swapChain[0];
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S1').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
+                                                                            }
+
+                                                                            if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'S1')) {
+                                                                                return '3px solid #90EE90';
                                                                             }
 
                                                                             return '1px solid #64748b';
@@ -5589,10 +5617,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S2').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
                                                                             } else if (swapChain.length > 0) {
-                                                                                // Special case: only one selection made so far
                                                                                 const source = swapChain[0];
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S2').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
+                                                                            }
+
+                                                                            if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'S2')) {
+                                                                                return '3px solid #90EE90';
                                                                             }
 
                                                                             return '1px solid #64748b';
@@ -5654,10 +5685,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S4').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
                                                                             } else if (swapChain.length > 0) {
-                                                                                // Special case: only one selection made so far
                                                                                 const source = swapChain[0];
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S4').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
+                                                                            }
+
+                                                                            if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'S4')) {
+                                                                                return '3px solid #90EE90';
                                                                             }
 
                                                                             return '1px solid #64748b';
@@ -5711,10 +5745,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S5').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
                                                                             } else if (swapChain.length > 0) {
-                                                                                // Special case: only one selection made so far
                                                                                 const source = swapChain[0];
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S5').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
+                                                                            }
+
+                                                                            if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'S5')) {
+                                                                                return '3px solid #90EE90';
                                                                             }
 
                                                                             return '1px solid #64748b';
@@ -5768,10 +5805,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S6').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
                                                                             } else if (swapChain.length > 0) {
-                                                                                // Special case: only one selection made so far
                                                                                 const source = swapChain[0];
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S6').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
+                                                                            }
+
+                                                                            if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'S6')) {
+                                                                                return '3px solid #90EE90';
                                                                             }
 
                                                                             return '1px solid #64748b';
@@ -5833,10 +5873,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S8').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
                                                                             } else if (swapChain.length > 0) {
-                                                                                // Special case: only one selection made so far
                                                                                 const source = swapChain[0];
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S8').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
+                                                                            }
+
+                                                                            if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'S8')) {
+                                                                                return '3px solid #90EE90';
                                                                             }
 
                                                                             return '1px solid #64748b';
@@ -5902,10 +5945,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                                 const isSource = getBlockEntries(cls, day[1], 'S10').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                                 if (isSource) return '3px solid #3b82f6';
                                                                                             } else if (swapChain.length > 0) {
-                                                                                                // Special case: only one selection made so far
                                                                                                 const source = swapChain[0];
                                                                                                 const isSource = getBlockEntries(cls, day[1], 'S10').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                                 if (isSource) return '3px solid #3b82f6';
+                                                                                            }
+
+                                                                                            if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'S10')) {
+                                                                                                return '3px solid #90EE90';
                                                                                             }
 
                                                                                             return '1px solid #64748b';
@@ -5964,10 +6010,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                                 const isSource = getBlockEntries(cls, day[1], 'S9').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                                 if (isSource) return '3px solid #3b82f6';
                                                                                             } else if (swapChain.length > 0) {
-                                                                                                // Special case: only one selection made so far
                                                                                                 const source = swapChain[0];
                                                                                                 const isSource = getBlockEntries(cls, day[1], 'S9').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                                 if (isSource) return '3px solid #3b82f6';
+                                                                                            }
+
+                                                                                            if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'S9')) {
+                                                                                                return '3px solid #90EE90';
                                                                                             }
 
                                                                                             return '1px solid #64748b';
@@ -6031,10 +6080,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S11').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
                                                                             } else if (swapChain.length > 0) {
-                                                                                // Special case: only one selection made so far
                                                                                 const source = swapChain[0];
                                                                                 const isSource = getBlockEntries(cls, day[1], 'S11').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
                                                                                 if (isSource) return '3px solid #3b82f6';
+                                                                            }
+
+                                                                            if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'S11')) {
+                                                                                return '3px solid #90EE90';
                                                                             }
 
                                                                             return '1px solid #64748b';
