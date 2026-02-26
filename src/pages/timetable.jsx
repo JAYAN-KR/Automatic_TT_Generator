@@ -2677,28 +2677,57 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const tasks = [];
             row.allotments.forEach(group => {
                 const total = Number(group.periods) || 0;
+                let remainingTotal = total;
+                const groupDay = group.preferredDay || 'Any';
+
+                // 1. Identify Fixed Block (Highest Priority Task)
+                // Use fallbacks for fixedBlockFrom/To because state might not have default values yet
+                if (group.isFixedBlock && groupDay !== 'Any') {
+                    const fromP = group.fixedBlockFrom || 'P1';
+                    const toP = group.fixedBlockTo || 'P2';
+                    const startP = parseInt(fromP.replace('P', ''));
+                    const endP = parseInt(toP.replace('P', ''));
+                    const fixedPeriodCount = Math.abs(endP - startP) + 1;
+
+                    tasks.push({
+                        teacher,
+                        subject: group.subject,
+                        classes: group.classes,
+                        preferredDay: groupDay,
+                        labGroup: group.labGroup || 'None',
+                        targetLabCount: Number(group.lBlock) || 0,
+                        type: 'FIXED',
+                        fixedFrom: fromP,
+                        fixedTo: toP
+                    });
+                    remainingTotal -= fixedPeriodCount;
+                }
+
+                if (remainingTotal <= 0 && total > 0) return;
+
+                // 2. Normal Blocks and Singles for REMAINING periods
+                // For remaining periods, we reset preferredDay to 'Any' UNLESS specifically requested,
+                // to prevent cramming everything onto the same day as the fixed block.
+                const currentRemaining = Math.max(0, remainingTotal);
                 const totalRequestedTB = Number(group.tBlock) || 0;
                 const totalRequestedLB = Number(group.lBlock) || 0;
 
-                // Calculate blocks based on requested periods (e.g. 2 periods = 1 block)
-                const tBlocksCount = Math.floor(totalRequestedTB / 2);
-                const lBlocksCount = Math.floor(totalRequestedLB / 2);
-                const singles = Math.max(0, total - (tBlocksCount * 2) - (lBlocksCount * 2));
+                // Deduct fixed periods from block counts if they were meant to be blocks
+                const tBlocksCount = Math.floor(Math.min(currentRemaining, totalRequestedTB) / 2);
+                const lBlocksCount = Math.floor(Math.min(currentRemaining - (tBlocksCount * 2), totalRequestedLB) / 2);
+                const singles = Math.max(0, currentRemaining - (tBlocksCount * 2) - (lBlocksCount * 2));
 
-                const pDay = group.preferredDay || 'Any';
-
-                // When creating tasks, we pass the totalRequestedLB to the engine
                 const taskMetadata = {
                     teacher,
                     subject: group.subject,
                     classes: group.classes,
-                    preferredDay: pDay,
+                    preferredDay: 'Any', // Reset for non-fixed periods to allow spread
                     labGroup: group.labGroup || 'None',
                     targetLabCount: totalRequestedLB
                 };
 
                 for (let i = 0; i < tBlocksCount; i++) tasks.push({ ...taskMetadata, type: 'TBLOCK' });
-                for (let i = 0; i < lBlocksCount; i++) tasks.push({ ...taskMetadata, type: 'LBLOCK', preferredDay: 'Any' });
+                for (let i = 0; i < lBlocksCount; i++) tasks.push({ ...taskMetadata, type: 'LBLOCK' });
                 for (let i = 0; i < singles; i++) tasks.push({ ...taskMetadata, type: 'SINGLE' });
             });
 
@@ -2813,6 +2842,98 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
             let placedCount = 0;
             const placements = [];
+
+            // ════════════════════════════════════════════════════════════════════
+            // PHASE 0 — FIXED BLOCKS (Absolute Priority & Exact Slots)
+            // ════════════════════════════════════════════════════════════════════
+            const fixedTasks = tasks.filter(t => t.type === 'FIXED');
+            if (fixedTasks.length > 0) {
+                addMessage(`\n🔍 Phase 0: Placing ${fixedTasks.length} Fixed Block(s)...`);
+                await sleep(200);
+
+                const getInternalSlot = (pStr) => {
+                    const pNum = parseInt(pStr.replace('P', ''));
+                    // Mapping: P1->S1, P2->S2, P3->S4, P4->S5, P5->S6, P6->S8, P7->(S9/S10), P8->S11
+                    return AVAILABLE_SLOTS[pNum - 1];
+                };
+
+                for (const task of fixedTasks) {
+                    const d = DMAP[task.preferredDay] || task.preferredDay;
+                    const pStart = getInternalSlot(task.fixedFrom);
+                    const pEnd = getInternalSlot(task.fixedTo);
+
+                    if (!pStart || !pEnd) {
+                        addMessage(`❌ Invalid slots for ${task.subject}: ${task.fixedFrom}-${task.fixedTo}`);
+                        setCreationStatus(prev => ({ ...prev, isError: true }));
+                        return;
+                    }
+
+                    const sIdx1 = PRDS.indexOf(pStart);
+                    const sIdx2 = PRDS.indexOf(pEnd);
+                    const slotsInRange = [];
+                    for (let si = Math.min(sIdx1, sIdx2); si <= Math.max(sIdx1, sIdx2); si++) {
+                        slotsInRange.push(PRDS[si]);
+                    }
+
+                    // 1. Validation: consecutive (no breaks/lunch)
+                    const hasBreak = slotsInRange.some(p => !AVAILABLE_SLOTS.includes(p));
+                    if (hasBreak) {
+                        addMessage(`❌ Fixed block ${task.fixedFrom}-${task.fixedTo} crosses a break/lunch!`);
+                        setCreationStatus(prev => ({ ...prev, isError: true }));
+                        return;
+                    }
+
+                    // 2. Validation: slots are free
+                    const conflicts = slotsInRange.filter(p => !slotFree(d, p, task.classes, task.labGroup, task.subject));
+                    if (conflicts.length > 0) {
+                        const conflictLabels = conflicts.map(p => {
+                            const availableIdx = AVAILABLE_SLOTS.indexOf(p);
+                            return availableIdx !== -1 ? `P${availableIdx + 1}` : p;
+                        });
+                        addMessage(`❌ Slot(s) ${conflictLabels.join(', ')} on ${task.preferredDay} not available for ${task.subject}.`);
+                        setCreationStatus(prev => ({ ...prev, isError: true }));
+                        return;
+                    }
+
+                    // 3. Commit Placement
+                    const abbr = getAbbreviation(task.subject);
+                    const labStatusData = { className: task.classes[0], subject: task.subject, labGroup: task.labGroup, targetLabCount: task.targetLabCount };
+
+                    slotsInRange.forEach(p => {
+                        const isLab = determineLabStatus(tt.classTimetables, labStatusData, d, p);
+                        const displaySub = task.subject.length > 20 ? abbr : task.subject;
+                        task.classes.forEach(cn => {
+                            tt.classTimetables[cn][d][p] = {
+                                subject: displaySub,
+                                teacher,
+                                fullSubject: task.subject,
+                                isBlock: slotsInRange.length > 1,
+                                isTBlock: slotsInRange.length > 1 && !isLab,
+                                labGroup: task.labGroup,
+                                targetLabCount: task.targetLabCount,
+                                isLabPeriod: isLab
+                            };
+                        });
+                        tt.teacherTimetables[teacher][d][p] = {
+                            className: task.classes.join('/'),
+                            subject: displaySub,
+                            fullSubject: task.subject,
+                            isBlock: slotsInRange.length > 1,
+                            isTBlock: slotsInRange.length > 1 && !isLab,
+                            labGroup: task.labGroup,
+                            targetLabCount: task.targetLabCount,
+                            isLabPeriod: isLab
+                        };
+                        tt.teacherTimetables[teacher][d].periodCount += 1;
+                        tt.teacherTimetables[teacher].weeklyPeriods += 1;
+                    });
+
+                    placements.push({ day: d, period: `${task.fixedFrom}-${task.fixedTo}`, type: 'FIXED' });
+                    addMessage(`✅ Fixed Block placed: ${SHORT[d]} ${task.fixedFrom}-${task.fixedTo}`);
+                    placedCount++;
+                    await sleep(150);
+                }
+            }
 
             // ════════════════════════════════════════════════════════════════════
             // PHASE 1A — THEORY BLOCKS
