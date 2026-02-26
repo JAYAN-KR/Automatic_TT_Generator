@@ -515,7 +515,7 @@ export default function TimetablePage() {
         }
 
         const conflicts = [];
-        const movingOut = new Set(swapChain.map(p => `${p.cls}|${p.day}|${p.period}`));
+        const movingOut = new Set(swapChain.filter(p => p != null).map(p => `${p.cls}|${p.day}|${p.period}`));
         const movingIn = new Map(); // key: "cls|day|period", value: content
 
         const steps = [];
@@ -532,8 +532,9 @@ export default function TimetablePage() {
         for (let i = 0; i < numUnits; i++) {
             const sourceU = steps[i];
             const destU = steps[(i + 1) % numUnits];
-            sourceU.forEach((src, idx) => {
+            sourceU.filter(src => src != null).forEach((src, idx) => {
                 const dst = destU[idx] || destU[0];
+                if (!dst) return;
                 const content = generatedTimetable.classTimetables[src.cls]?.[src.day]?.[src.period];
                 if (content && content.subject) {
                     movingIn.set(`${dst.cls}|${dst.day}|${dst.period}`, content);
@@ -549,8 +550,9 @@ export default function TimetablePage() {
             const sU = steps[i];
             const dU = steps[(i + 1) % numUnits];
 
-            sU.forEach((source, idx) => {
+            sU.filter(source => source != null).forEach((source, idx) => {
                 const dest = dU[idx] || dU[0];
+                if (!dest) return;
                 const cellContent = generatedTimetable.classTimetables[source.cls]?.[source.day]?.[source.period];
                 if (!cellContent || !cellContent.subject) return;
 
@@ -712,7 +714,7 @@ export default function TimetablePage() {
                 const sourceContent = originalContents[sourceIdx];
                 const destUnit = steps[destIdx];
 
-                destUnit.forEach((p, pIdx) => {
+                destUnit.filter(p => p != null).forEach((p, pIdx) => {
                     const contentToMove = sourceContent[pIdx] || { subject: '', teacher: '' };
                     if (!next.classTimetables[p.cls]) next.classTimetables[p.cls] = {};
                     if (!next.classTimetables[p.cls][p.day]) next.classTimetables[p.cls][p.day] = {};
@@ -5438,7 +5440,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     <th style={ttCellDay()}>{day[0]}</th>
                                                                     <td style={ttCell({
                                                                         background: (() => {
-                                                                            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'CT') ? idx : -1).filter(i => i !== -1);
+                                                                            const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'CT') ? idx : -1).filter(i => i !== -1);
                                                                             if (indices.length === 0) return '#1e293b';
                                                                             if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
                                                                             if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
@@ -5495,7 +5497,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     }}>{renderCell(day[1], 'CT')}</td>
                                                                     <td style={ttCell({
                                                                         background: (() => {
-                                                                            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S1') ? idx : -1).filter(i => i !== -1);
+                                                                            const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S1') ? idx : -1).filter(i => i !== -1);
                                                                             if (indices.length === 0) return '#1e293b';
                                                                             if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
                                                                             if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
@@ -5552,7 +5554,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     }}>{renderCell(day[1], 'S1')}</td>
                                                                     <td style={ttCell({
                                                                         background: (() => {
-                                                                            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S2') ? idx : -1).filter(i => i !== -1);
+                                                                            const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S2') ? idx : -1).filter(i => i !== -1);
                                                                             if (indices.length === 0) return '#1e293b';
                                                                             if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
                                                                             if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
@@ -5617,7 +5619,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                                                     <td style={ttCell({
                                                                         background: (() => {
-                                                                            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S4') ? idx : -1).filter(i => i !== -1);
+                                                                            const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S4') ? idx : -1).filter(i => i !== -1);
                                                                             if (indices.length === 0) return '#1e293b';
                                                                             if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
                                                                             if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
@@ -5674,7 +5676,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     }}>{renderCell(day[1], 'S4')}</td>
                                                                     <td style={ttCell({
                                                                         background: (() => {
-                                                                            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S5') ? idx : -1).filter(i => i !== -1);
+                                                                            const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S5') ? idx : -1).filter(i => i !== -1);
                                                                             if (indices.length === 0) return '#1e293b';
                                                                             if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
                                                                             if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
@@ -5731,7 +5733,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     }}>{renderCell(day[1], 'S5')}</td>
                                                                     <td style={ttCell({
                                                                         background: (() => {
-                                                                            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S6') ? idx : -1).filter(i => i !== -1);
+                                                                            const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S6') ? idx : -1).filter(i => i !== -1);
                                                                             if (indices.length === 0) return '#1e293b';
                                                                             if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
                                                                             if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
@@ -5796,7 +5798,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                                                     <td style={ttCell({
                                                                         background: (() => {
-                                                                            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S8') ? idx : -1).filter(i => i !== -1);
+                                                                            const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S8') ? idx : -1).filter(i => i !== -1);
                                                                             if (indices.length === 0) return '#1e293b';
                                                                             if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
                                                                             if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
@@ -5865,7 +5867,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                     ) : null}
                                                                                     <td style={ttCell({
                                                                                         background: (() => {
-                                                                                            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S10') ? idx : -1).filter(i => i !== -1);
+                                                                                            const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S10') ? idx : -1).filter(i => i !== -1);
                                                                                             if (indices.length === 0) return '#1e293b';
                                                                                             if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
                                                                                             if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
@@ -5927,7 +5929,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 <>
                                                                                     <td style={ttCell({
                                                                                         background: (() => {
-                                                                                            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S9') ? idx : -1).filter(i => i !== -1);
+                                                                                            const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S9') ? idx : -1).filter(i => i !== -1);
                                                                                             if (indices.length === 0) return '#1e293b';
                                                                                             if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
                                                                                             if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
@@ -5994,7 +5996,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                                                     <td style={ttCell({
                                                                         background: (() => {
-                                                                            const indices = swapChain.map((s, idx) => (s.cls === cls && s.day === day[1] && s.period === 'S11') ? idx : -1).filter(i => i !== -1);
+                                                                            const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S11') ? idx : -1).filter(i => i !== -1);
                                                                             if (indices.length === 0) return '#1e293b';
                                                                             if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
                                                                             if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
@@ -6101,7 +6103,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                             <div style={{ background: '#0f172a', borderRadius: '1rem', padding: '1rem', marginBottom: '2rem', textAlign: 'left', border: '1px solid #334155', maxHeight: '150px', overflowY: 'auto' }}>
                                                 <h4 style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Chain Sequence:</h4>
-                                                {swapChain.map((p, i) => (
+                                                {swapChain.filter(p => p != null).map((p, i) => (
                                                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.4rem 0', borderBottom: i < swapChain.length - 1 ? '1px dashed #334155' : 'none' }}>
                                                         <span style={{ color: '#10b981', fontWeight: 900, fontSize: '0.8rem', width: '20px' }}>{i + 1}.</span>
                                                         <span style={{ color: '#f1f5f9', fontWeight: 700, fontSize: '0.9rem' }}>{p.cls}</span>
