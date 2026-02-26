@@ -1914,7 +1914,7 @@ export default function TimetablePage() {
     // toast messages
     const [toasts, setToasts] = useState([]);
     const addToast = (msg, type = 'success') => {
-        const id = Date.now();
+        const id = Date.now() + Math.random();
         setToasts(prev => [...prev, { id, msg, type }]);
         setTimeout(() => {
             setToasts(prev => prev.filter(t => t.id !== id));
@@ -2528,8 +2528,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             addMessage(`→ Placing ${periodsToPlace} periods for stream ${stream.name}`);
 
             // Diagonal walk for distribution
-            // Exclude Saturday for streams as requested
-            const PRIORITY_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+            // Include Saturday for streams as well
+            const PRIORITY_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
             // Start from a random day to ensure rotation
             const rotationOffset = Math.floor(Math.random() * PRIORITY_DAYS.length);
@@ -2559,7 +2559,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     const d = ROTATED_DAYS[walkIdx % D_LEN];
                     const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
 
-                    if (placements.some(placement => placement.day === d)) continue;
+                    // Try to avoid same-day if we have enough days, otherwise allow it
+                    if (periodsToPlace <= D_LEN && placements.some(placement => placement.day === d)) continue;
 
                     if (streamFree(d, p)) {
                         pick = { d, p };
@@ -2847,8 +2848,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 return !classes.some(cn => detectLabConflict(tt.classTimetables, cn, d, p, labGroup, subject));
             };
 
-            const slotFree = (d, p, classes, labGroup = 'None', subject = '') =>
-                AVAILABLE_SLOTS.includes(p) && tFree(d, p) && cFree(d, p, classes) && labFree(d, p, classes, labGroup, subject);
+            const slotFree = (d, p, classes, labGroup = 'None', subject = '') => {
+                if (!AVAILABLE_SLOTS.includes(p)) return false;
+                return tFree(d, p) && cFree(d, p, classes) && labFree(d, p, classes, labGroup, subject);
+            };
             const teacherDayLoad = (d) => AVAILABLE_SLOTS.filter(p => !tFree(d, p)).length;
 
             // Returns true if the given day already has ANY block period for these classes
@@ -2994,7 +2997,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             // ════════════════════════════════════════════════════════════════════
             if (tBlockTasks.length > 0) {
                 const ALL_BLOCK_PAIRS = VALID_BLOCK_PAIRS;
-                const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+                const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday', 'Saturday'];
 
                 let existingBlockPeriods = 0;
                 for (const tName of Object.keys(tt.teacherTimetables)) {
@@ -3051,11 +3054,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                     // Commit Theory Block
                     task.classes.forEach(cn => {
-                        tt.classTimetables[cn][best.d][best.p1] = { subject: task.subject, teacher, isBlock: true, isTBlock: true };
-                        tt.classTimetables[cn][best.d][best.p2] = { subject: task.subject, teacher, isBlock: true, isTBlock: true };
+                        tt.classTimetables[cn][best.d][best.p1] = { subject: task.subject, fullSubject: task.subject, teacher, isBlock: true, isTBlock: true };
+                        tt.classTimetables[cn][best.d][best.p2] = { subject: task.subject, fullSubject: task.subject, teacher, isBlock: true, isTBlock: true };
                     });
-                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, isTBlock: true };
-                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject: task.subject, isBlock: true, isTBlock: true };
+                    tt.teacherTimetables[teacher][best.d][best.p1] = { className: task.classes.join('/'), subject: task.subject, fullSubject: task.subject, isBlock: true, isTBlock: true };
+                    tt.teacherTimetables[teacher][best.d][best.p2] = { className: task.classes.join('/'), subject: task.subject, fullSubject: task.subject, isBlock: true, isTBlock: true };
                     tt.teacherTimetables[teacher][best.d].periodCount += 2;
                     tt.teacherTimetables[teacher].weeklyPeriods += 2;
 
@@ -3072,7 +3075,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             // ════════════════════════════════════════════════════════════════════
             if (lBlockTasks.length > 0) {
                 const ALL_BLOCK_PAIRS = VALID_BLOCK_PAIRS;
-                const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+                const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday', 'Saturday'];
 
                 addMessage(`\n🔍 Phase 1B: Placing ${lBlockTasks.length} Lab Block(s)...`);
                 await sleep(200);
@@ -3093,7 +3096,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         if (subjectOnDay(d)) continue; // Prefer days with nothing for this subject
 
                         for (const [fp1, fp2] of ALL_BLOCK_PAIRS) {
-                            if (slotFree(d, fp1, task.classes) && slotFree(d, fp2, task.classes)) {
+                            if (slotFree(d, fp1, task.classes, task.labGroup, task.subject) && slotFree(d, fp2, task.classes, task.labGroup, task.subject)) {
                                 best = { d, p1: fp1, p2: fp2 };
                                 break outer_l;
                             }
@@ -3162,7 +3165,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 addMessage(`\n🔍 Phase 2: Placing ${singleTasks.length} single period(s)...`);
                 await sleep(200);
 
-                const PRIORITY_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+                const PRIORITY_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday', 'Saturday'];
                 const PRIORITY_PRDS = AVAILABLE_SLOTS;
                 const TOTAL_PRIORITY_SLOTS = PRIORITY_DAYS.length * PRIORITY_PRDS.length;
 
@@ -3245,13 +3248,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     }
 
                     const abbr = getAbbreviation(task.subject);
+                    const displaySub = abbr; // Use abbr for display subject
                     const labStatusData = { className: task.classes[0], subject: task.subject, labGroup: task.labGroup, targetLabCount: task.targetLabCount };
                     const isLab = determineLabStatus(tt.classTimetables, labStatusData, pick.d, pick.p);
 
                     task.classes.forEach(cn => {
-                        tt.classTimetables[cn][pick.d][pick.p] = { subject: abbr, teacher, fullSubject: task.subject, isBlock: false, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab };
+                        tt.classTimetables[cn][pick.d][pick.p] = { subject: displaySub, fullSubject: task.subject, teacher, isBlock: false, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab };
                     });
-                    tt.teacherTimetables[teacher][pick.d][pick.p] = { className: task.classes.join('/'), subject: task.subject, fullSubject: task.subject, isBlock: false, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab };
+                    tt.teacherTimetables[teacher][pick.d][pick.p] = { className: task.classes.join('/'), subject: displaySub, fullSubject: task.subject, isBlock: false, labGroup: task.labGroup, targetLabCount: task.targetLabCount, isLabPeriod: isLab };
                     tt.teacherTimetables[teacher][pick.d].periodCount += 1;
                     tt.teacherTimetables[teacher].weeklyPeriods += 1;
 
@@ -3356,25 +3360,30 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             }
         }
 
-        if (currentTT) {
-            for (let i = 0; i < rowsToProcess.length; i++) {
-                const row = rowsToProcess[i];
-                const streamOffset = streamsToProcess.length;
+        // Process teachers
+        for (let i = 0; i < rowsToProcess.length; i++) {
+            const row = rowsToProcess[i];
+            const streamOffset = streamsToProcess.length;
 
-                setCreationStatus(prev => ({
-                    ...(prev || { messages: [], teacher: 'Batch', subject: label }),
-                    batchProgress: `Teacher ${i + streamOffset + 1} of ${totalToProcess}: ${row.teacher}`
-                }));
+            setCreationStatus(prev => ({
+                ...(prev || { messages: [], teacher: 'Batch', subject: label }),
+                batchProgress: `Teacher ${i + streamOffset + 1} of ${totalToProcess}: ${row.teacher}`
+            }));
 
-                const result = await handleCreateSpecific(row, currentTT, true);
-                if (result) {
-                    currentTT = result;
-                    generatedCount++;
-                } else {
-                    addToast(`Batch stopped at ${row.teacher} due to an error.`, 'error');
-                    break;
-                }
+            const result = await handleCreateSpecific(row, currentTT, true);
+            if (result) {
+                currentTT = result;
+                generatedCount++;
+            } else {
+                addToast(`Batch stopped at ${row.teacher} due to an error.`, 'error');
+                break;
             }
+        }
+
+        if (currentTT) {
+            // Final Sync: Ensure all teacher timetables are fully updated from class timetables
+            const finalTT = syncLabTimetables(rebuildTeacherTimetables(currentTT, allotmentRows));
+            setGeneratedTimetable(finalTT);
         }
 
         // Final summary on ribbon
@@ -4170,7 +4179,17 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 <div style={{ height: '28px', width: '1px', background: '#334155' }}></div>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                                                                     <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Total Load:</span>
-                                                                    <span style={{ background: '#0284c7', color: 'white', padding: '2px 10px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 900, boxShadow: '0 2px 4px rgba(2,132,199,0.3)' }}>
+                                                                    <span style={{
+                                                                        background: grandTotal > 0 ? '#0ea5e9' : 'rgba(255,255,255,0.03)',
+                                                                        color: grandTotal > 0 ? 'white' : '#64748b',
+                                                                        border: grandTotal > 0 ? 'none' : '1px solid #334155',
+                                                                        padding: '2px 10px',
+                                                                        borderRadius: '6px',
+                                                                        fontSize: '0.85rem',
+                                                                        fontWeight: 900,
+                                                                        boxShadow: grandTotal > 0 ? '0 2px 8px rgba(14,165,233,0.4)' : 'none',
+                                                                        transition: 'all 0.3s ease'
+                                                                    }}>
                                                                         {grandTotal}
                                                                         {streamPeriods > 0 && <span style={{ fontSize: '0.65rem', marginLeft: '4px', opacity: 0.8 }}>({streamPeriods} [S])</span>}
                                                                     </span>
@@ -4347,7 +4366,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                                 onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
                                                                                                 style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px' }}
                                                                                             >
-                                                                                                {[0, 2, 4, 6].map(n => <option key={n} value={n}>{n} Periods</option>)}
+                                                                                                {[0, 1, 2, 4, 6].map(n => <option key={n} value={n}>{n} Periods</option>)}
                                                                                             </select>
                                                                                         </div>
                                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -4376,7 +4395,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                                 onChange={e => updateAllotmentGroup(row.id, gIdx, 'lBlock', e.target.value)}
                                                                                                 style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px' }}
                                                                                             >
-                                                                                                {[0, 2, 4].map(n => <option key={n} value={n}>{n} Periods</option>)}
+                                                                                                {[0, 1, 2, 4, 6].map(n => <option key={n} value={n}>{n} Periods</option>)}
                                                                                             </select>
                                                                                         </div>
                                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

@@ -106,11 +106,12 @@ export const detectLabConflict = (classTimetables, className, day, period, labGr
             const otherLab = getLabForSubject(otherClassName, slot.fullSubject || slot.subject);
             if (otherLab === targetLab) {
                 // Shared Lab Groups (like Multiple Teachers in same lab at same time)
-                // If they are in the SAME lab group, it's NOT a conflict
+                // If they are in the SAME lab group, it's NOT a conflict WITH THIS CLASS
                 if (labGroup && labGroup !== 'None' && slot.labGroup === labGroup) {
-                    return false;
+                    // Continue checking other classes
+                } else {
+                    return true;
                 }
-                return true;
             }
         }
 
