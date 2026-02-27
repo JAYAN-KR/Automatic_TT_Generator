@@ -382,7 +382,8 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                 isBlock: isBlock,
                 labGroup: task.labGroup || 'None',
                 targetLabCount: task.targetLabCount,
-                isLabPeriod: isLab
+                isLabPeriod: isLab,
+                otherClasses: task.classes.filter(c => c !== cn)
             };
         });
 
@@ -394,8 +395,8 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
             targetLabCount: task.targetLabCount,
             isLabPeriod: isLab
         };
-        teacherTimetables[task.teacher][day].periodCount++;
-        teacherTimetables[task.teacher].weeklyPeriods++;
+        teacherTimetables[task.teacher][day].periodCount += 1; // Fixed: Only 1 period for the teacher
+        teacherTimetables[task.teacher].weeklyPeriods += 1;     // Fixed: Only 1 period for the teacher
     }
 
     function placeStreamTask(task, day, period) {

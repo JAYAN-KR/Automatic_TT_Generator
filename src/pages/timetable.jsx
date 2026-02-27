@@ -39,6 +39,13 @@ import { doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 
 // Utils
 import { findAvailableDestinations as getAvailableDestinations } from '../utils/chainSwapUtils';
+import { calculateTotalLoad } from '../utils/allotmentHelpers';
+
+// Components
+import TeacherGroupEditor from '../components/TeacherGroupEditor';
+import ClassTTCell from '../components/ClassTTCell';
+import ClassTTFooter from '../components/ClassTTFooter';
+import { getCombinedSubjectsForClass } from '../utils/classTTUtils';
 
 // --- Constants ---
 const COMMON_SUBJECTS = [
@@ -153,6 +160,7 @@ const rebuildTeacherTimetables = (tt, allotmentRows) => {
                             const classes = existing.className.split('/').map(c => c.trim());
                             if (!classes.includes(cn)) {
                                 existing.className = [...classes, cn].join('/');
+                                // No longer incrementing load metrics here because clubbed classes share the same period
                             }
                         } else {
                             teacherTimetables[tName][day][p] = {
@@ -968,8 +976,8 @@ export default function TimetablePage() {
             const newGroups = [...r.allotments];
             const updatedGroup = { ...newGroups[groupIndex] };
 
-            if (field === 'class') {
-                updatedGroup.classes = [value];
+            if (field === 'classes') {
+                updatedGroup.classes = value;
             } else if (field === 'subject') {
                 updatedGroup.subject = value;
             } else if (field === 'periods') {
@@ -998,34 +1006,36 @@ export default function TimetablePage() {
             return {
                 ...r,
                 allotments: newGroups,
-                total: newGroups.reduce((sum, g) => sum + (Number(g.periods) || 0), 0)
+                total: calculateTotalLoad(newGroups)
             };
         }));
     };
     const addAllotmentGroup = (rowId) => {
         setAllotmentRows(prev => prev.map(r => {
             if (r.id !== rowId) return r;
+            const newGroups = [...r.allotments, {
+                id: Date.now() + Math.random(),
+                subject: '',
+                classes: ['6A'],
+                periods: 0,
+                tBlock: 0,
+                tbDay: 'Any',
+                lBlock: 0,
+                lbDay: 'Any',
+                preferredDay: 'Any',
+                isMerged: false,
+                labGroup: 'None',
+                isFixedBlock: false,
+                fixedDay: 'Mon',
+                fixedBlockFrom: 'P1',
+                fixedBlockTo: 'P2',
+                forceCount: 0,
+                forceDay: 'Any'
+            }];
             return {
                 ...r,
-                allotments: [...r.allotments, {
-                    id: Date.now() + Math.random(),
-                    subject: '',
-                    classes: ['6A'],
-                    periods: 0,
-                    tBlock: 0,
-                    tbDay: 'Any',
-                    lBlock: 0,
-                    lbDay: 'Any',
-                    preferredDay: 'Any',
-                    isMerged: false,
-                    labGroup: 'None',
-                    isFixedBlock: false,
-                    fixedDay: 'Mon',
-                    fixedBlockFrom: 'P1',
-                    fixedBlockTo: 'P2',
-                    forceCount: 0,
-                    forceDay: 'Any'
-                }]
+                allotments: newGroups,
+                total: calculateTotalLoad(newGroups)
             };
         }));
     };
@@ -1049,7 +1059,7 @@ export default function TimetablePage() {
             return {
                 ...r,
                 allotments: newGroups,
-                total: newGroups.reduce((sum, g) => sum + (Number(g.periods) || 0), 0)
+                total: calculateTotalLoad(newGroups)
             };
         }));
     };
@@ -4143,14 +4153,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 color: '#f1f5f9'
                             }}>
                                 <thead>
-                                    <tr style={{ background: '#1e293b' }}>
-                                        <th colSpan={5} style={{
-                                            padding: '0.75rem',
-                                            textAlign: 'left',
-                                            background: '#1e293b',
-                                            zIndex: 20,
-                                            borderBottom: '1px solid #334155'
-                                        }}>Teacher Allotments</th>
+                                    <tr style={{ background: '#0f172a', borderBottom: '2px solid #334155' }}>
+                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Dept / Subject</th>
+                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Teacher Name</th>
+                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Total Load (Weekly)</th>
+                                        <th style={{ padding: '1rem', textAlign: 'right', fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Actions / Management</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -4215,7 +4222,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                             return (
                                                 <tr key={row.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                                                    <td colSpan={5} style={{ padding: '0.4rem 0.6rem' }}>
+                                                    <td colSpan={4} style={{ padding: '0.4rem 0.6rem' }}>
                                                         {/* Modern Teacher Header */}
                                                         <div style={{
                                                             display: 'flex',
@@ -4278,7 +4285,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         transition: 'all 0.2s'
                                                                     }}
                                                                 >
-                                                                    {editingTeacherId === row.id ? '✕ Close' : '📝 Edit Groups'}
+                                                                    {editingTeacherId === row.id ? '✕ Close Editor' : '🔗 Edit / Club Classes'}
                                                                 </button>
 
                                                                 <div style={{ width: '1px', height: '20px', background: '#334155', margin: '0 4px' }}></div>
@@ -4319,251 +4326,25 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
                                                                 animation: 'fadeInScale 0.2s ease-out'
                                                             }}>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                                                    {(row.allotments || []).map((group, gIdx) => (
-                                                                        <div key={group.id} style={{
-                                                                            display: 'flex',
-                                                                            flexDirection: 'column',
-                                                                            background: '#0f172a',
-                                                                            padding: '1rem',
-                                                                            borderRadius: '0.8rem',
-                                                                            border: '1px solid #334155',
-                                                                            gap: '1rem'
-                                                                        }}>
-                                                                            {/* Header: Class, Subject, PPS & Delete */}
-                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.8rem' }}>
-                                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8' }}>CLASS:</span>
-                                                                                    <select
-                                                                                        value={group.classes[0]}
-                                                                                        onChange={e => updateAllotmentGroup(row.id, gIdx, 'class', e.target.value)}
-                                                                                        style={{ background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontWeight: 800, fontSize: '0.85rem', borderRadius: '0.4rem', padding: '6px 10px', outline: 'none' }}
-                                                                                    >
-                                                                                        {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-                                                                                    </select>
-                                                                                </div>
-                                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8' }}>SUBJECT:</span>
-                                                                                    <select
-                                                                                        value={group.subject || ''}
-                                                                                        onChange={e => updateAllotmentGroup(row.id, gIdx, 'subject', e.target.value)}
-                                                                                        style={{ background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontWeight: 800, fontSize: '0.85rem', borderRadius: '0.4rem', padding: '6px 10px', minWidth: '150px', outline: 'none' }}
-                                                                                    >
-                                                                                        <option value="">-- Select Subject --</option>
-                                                                                        {subjects.map(s => <option key={s} value={s}>{s}</option>)}
-                                                                                    </select>
-                                                                                </div>
-                                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#1e293b', padding: '4px 12px', borderRadius: '2rem', border: '1px solid #334155' }}>
-                                                                                    <span style={{ fontSize: '0.75rem', fontWeight: 900, color: '#38bdf8' }}>PPS:</span>
-                                                                                    <select
-                                                                                        value={group.periods || 0}
-                                                                                        onChange={e => updateAllotmentGroup(row.id, gIdx, 'periods', e.target.value)}
-                                                                                        style={{ background: 'transparent', border: 'none', color: 'white', fontWeight: 900, fontSize: '0.9rem', outline: 'none', cursor: 'pointer' }}
-                                                                                    >
-                                                                                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => <option key={n} value={n} style={{ color: '#000' }}>{n}</option>)}
-                                                                                    </select>
-                                                                                </div>
-                                                                                <button
-                                                                                    onClick={() => deleteAllotmentGroup(row.id, gIdx)}
-                                                                                    style={{ marginLeft: 'auto', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', height: '32px', width: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, cursor: 'pointer', transition: 'all 0.2s' }}
-                                                                                    onMouseEnter={e => e.currentTarget.style.background = '#ef4444' + '22'}
-                                                                                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
-                                                                                    title="Delete Group"
-                                                                                >×</button>
-                                                                            </div>
-
-                                                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-                                                                                {/* Card: Fixed Block (FB) */}
-                                                                                <div style={{ background: 'rgba(79, 70, 229, 0.05)', border: '1px solid #312e81', borderRadius: '0.6rem', padding: '0.8rem' }}>
-                                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.8rem' }}>
-                                                                                        <input
-                                                                                            type="checkbox"
-                                                                                            checked={!!group.isFixedBlock}
-                                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'isFixedBlock', e.target.checked)}
-                                                                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                                                                                        />
-                                                                                        <span style={{ fontSize: '0.75rem', fontWeight: 900, color: '#818cf8', textTransform: 'uppercase' }}>Fixed Block (FB)</span>
-                                                                                    </div>
-                                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', opacity: group.isFixedBlock ? 1 : 0.4, pointerEvents: group.isFixedBlock ? 'auto' : 'none' }}>
-                                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                                            <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, minWidth: '40px' }}>Day:</span>
-                                                                                            <select
-                                                                                                value={group.fixedDay || 'Mon'}
-                                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'fixedDay', e.target.value)}
-                                                                                                style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px' }}
-                                                                                            >
-                                                                                                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => <option key={d} value={d}>{d}</option>)}
-                                                                                            </select>
-                                                                                        </div>
-                                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                                            <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, minWidth: '40px' }}>From:</span>
-                                                                                            <select
-                                                                                                value={group.fixedBlockFrom || 'P1'}
-                                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'fixedBlockFrom', e.target.value)}
-                                                                                                style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px' }}
-                                                                                            >
-                                                                                                {['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map(p => <option key={p} value={p}>{p}</option>)}
-                                                                                            </select>
-                                                                                            <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700 }}>To:</span>
-                                                                                            <select
-                                                                                                value={group.fixedBlockTo || 'P2'}
-                                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'fixedBlockTo', e.target.value)}
-                                                                                                style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px' }}
-                                                                                            >
-                                                                                                {['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map(p => <option key={p} value={p}>{p}</option>)}
-                                                                                            </select>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-
-                                                                                {/* Card: Theory Block (TB) */}
-                                                                                <div style={{ background: 'rgba(245, 158, 11, 0.05)', border: '1px solid #78350f', borderRadius: '0.6rem', padding: '0.8rem' }}>
-                                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.8rem' }}>
-                                                                                        <span style={{ fontSize: '0.75rem', fontWeight: 900, color: '#f59e0b', textTransform: 'uppercase' }}>Theory Block (TB)</span>
-                                                                                    </div>
-                                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                                            <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, minWidth: '40px' }}>Count:</span>
-                                                                                            <select
-                                                                                                value={group.tBlock || 0}
-                                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'tBlock', e.target.value)}
-                                                                                                style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px' }}
-                                                                                            >
-                                                                                                {[0, 1, 2, 4, 6].map(n => <option key={n} value={n}>{n} Periods</option>)}
-                                                                                            </select>
-                                                                                        </div>
-                                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                                            <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, minWidth: '40px' }}>Day:</span>
-                                                                                            <select
-                                                                                                value={group.tbDay || 'Any'}
-                                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'tbDay', e.target.value)}
-                                                                                                style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px' }}
-                                                                                            >
-                                                                                                {['Any', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => <option key={d} value={d}>{d}</option>)}
-                                                                                            </select>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-
-                                                                                {/* Card: Lab Block (LB) */}
-                                                                                <div style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid #064e3b', borderRadius: '0.6rem', padding: '0.8rem' }}>
-                                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.8rem' }}>
-                                                                                        <span style={{ fontSize: '0.75rem', fontWeight: 900, color: '#10b981', textTransform: 'uppercase' }}>Lab Block (LB)</span>
-                                                                                    </div>
-                                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                                            <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, minWidth: '40px' }}>Count:</span>
-                                                                                            <select
-                                                                                                value={group.lBlock || 0}
-                                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'lBlock', e.target.value)}
-                                                                                                style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px' }}
-                                                                                            >
-                                                                                                {[0, 1, 2, 4, 6].map(n => <option key={n} value={n}>{n} Periods</option>)}
-                                                                                            </select>
-                                                                                        </div>
-                                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                                            <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, minWidth: '40px' }}>Day:</span>
-                                                                                            <select
-                                                                                                value={group.lbDay || 'Any'}
-                                                                                                onChange={e => updateAllotmentGroup(row.id, gIdx, 'lbDay', e.target.value)}
-                                                                                                style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px' }}
-                                                                                            >
-                                                                                                {['Any', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => <option key={d} value={d}>{d}</option>)}
-                                                                                            </select>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-
-                                                                                {/* Card: Normal Periods */}
-                                                                                <div style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1px solid #1e3a8a', borderRadius: '0.6rem', padding: '0.8rem' }}>
-                                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.8rem' }}>
-                                                                                        <span style={{ fontSize: '0.75rem', fontWeight: 900, color: '#3b82f6', textTransform: 'uppercase' }}>Normal Periods</span>
-                                                                                    </div>
-                                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                                                                        {(() => {
-                                                                                            const fbPeriods = group.isFixedBlock ? (parseInt(group.fixedBlockTo?.replace('P', '')) - parseInt(group.fixedBlockFrom?.replace('P', '')) + 1 || 0) : 0;
-                                                                                            const tbPeriods = Number(group.tBlock) || 0;
-                                                                                            const lbPeriods = Number(group.lBlock) || 0;
-                                                                                            const remaining = Math.max(0, (Number(group.periods) || 0) - fbPeriods - tbPeriods - lbPeriods);
-
-                                                                                            return (
-                                                                                                <>
-                                                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                                                        <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, minWidth: '40px' }}>Force:</span>
-                                                                                                        <select
-                                                                                                            value={group.forceCount || 0}
-                                                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'forceCount', e.target.value)}
-                                                                                                            style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px' }}
-                                                                                                        >
-                                                                                                            {Array.from({ length: remaining + 1 }, (_, i) => i).map(n => <option key={n} value={n}>{n} to Day</option>)}
-                                                                                                        </select>
-                                                                                                        <select
-                                                                                                            value={group.forceDay || 'Any'}
-                                                                                                            onChange={e => updateAllotmentGroup(row.id, gIdx, 'forceDay', e.target.value)}
-                                                                                                            style={{ flex: 1, background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', fontSize: '0.8rem', fontWeight: 800, padding: '4px 8px', borderRadius: '4px', opacity: group.forceCount > 0 ? 1 : 0.5 }}
-                                                                                                        >
-                                                                                                            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => <option key={d} value={d}>{d}</option>)}
-                                                                                                        </select>
-                                                                                                    </div>
-                                                                                                    <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px dashed #334155' }}>
-                                                                                                        <span style={{ fontSize: '0.65rem', fontWeight: 800, color: remaining - group.forceCount > 0 ? '#10b981' : '#64748b' }}>
-                                                                                                            REMAINING: {Math.max(0, remaining - (group.forceCount || 0))} on Any Other Days
-                                                                                                        </span>
-                                                                                                    </div>
-                                                                                                </>
-                                                                                            );
-                                                                                        })()}
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.2rem', borderTop: '1px solid #334155', paddingTop: '1rem' }}>
-                                                                    <button
-                                                                        onClick={() => addAllotmentGroup(row.id)}
-                                                                        style={{
-                                                                            padding: '0.6rem 1.2rem',
-                                                                            background: 'rgba(16, 185, 129, 0.1)',
-                                                                            color: '#10b981',
-                                                                            border: '1px dashed #10b981',
-                                                                            borderRadius: '0.5rem',
-                                                                            fontSize: '0.85rem',
-                                                                            fontWeight: '800',
-                                                                            cursor: 'pointer',
-                                                                            transition: 'all 0.2s'
-                                                                        }}
-                                                                    >
-                                                                        ＋ Add Group
-                                                                    </button>
-
-                                                                    <button
-                                                                        onClick={() => setEditingTeacherId(null)}
-                                                                        style={{
-                                                                            padding: '0.6rem 1.2rem',
-                                                                            background: '#334155',
-                                                                            color: 'white',
-                                                                            border: 'none',
-                                                                            borderRadius: '0.5rem',
-                                                                            fontSize: '0.85rem',
-                                                                            fontWeight: '800',
-                                                                            cursor: 'pointer'
-                                                                        }}
-                                                                    >
-                                                                        ✕ Close Editor
-                                                                    </button>
-                                                                </div>
+                                                                <TeacherGroupEditor
+                                                                    row={row}
+                                                                    subjects={subjects}
+                                                                    classOptions={CLASSROOMS}
+                                                                    onUpdateGroup={updateAllotmentGroup}
+                                                                    onDeleteGroup={deleteAllotmentGroup}
+                                                                    onAddGroup={addAllotmentGroup}
+                                                                    onClose={() => setEditingTeacherId(null)}
+                                                                />
                                                             </div>
                                                         )}
-                                                    </td>
-                                                </tr>
+                                                    </td >
+                                                </tr >
                                             );
                                         });
                                     })()}
-                                </tbody>
-                            </table>
-                        </div>
+                                </tbody >
+                            </table >
+                        </div >
 
                         {/* Merge Popup */}
                         {
@@ -5354,53 +5135,15 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             const change = timetableChanges.diffs.find(d => d.class === cls && d.day === dayKey && d.period === periodKey);
                                             const isChanged = !!change;
 
-                                            if (cell.isStream) {
-                                                return (
-                                                    <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
-                                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
-                                                        height: '100%', width: '100%', minHeight: '40px'
-                                                    }}>
-                                                        <span style={{ fontWeight: 800, fontSize: '0.85em', color: '#fbbf24', lineHeight: 1.1, textAlign: 'center' }}>{cell.subject}</span>
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', justifyContent: 'center', maxWidth: '100%' }}>
-                                                            {(cell.subjects || []).map((s, idx) => (
-                                                                <span key={idx} style={{ fontSize: '0.55em', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                                                                    {s.subject}{s.isLabPeriod ? ' [LAB]' : (s.labGroup && s.labGroup !== 'None' ? ' [TH]' : '')}{idx < (cell.subjects.length - 1) ? ',' : ''}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                        {isChanged && <div className="tt-change-badge" />}
-                                                    </div>
-                                                );
-                                            }
-
-                                            const sub = cell.subject.toUpperCase();
-                                            const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
-                                            const teacherFirst = cell.teacher
-                                                ? (() => { const pts = cell.teacher.trim().split(/\s+/); const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : ''; const si = pts[1] ? pts[1][0].toUpperCase() : ''; return si ? `${fn} ${si}` : fn; })()
-                                                : '';
+                                            // Updated to use ClassTTCell component
                                             return (
-                                                <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
-                                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
-                                                    height: '100%', width: '100%', minHeight: '40px'
-                                                }}>
-                                                    <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>
-                                                        {abbr}{cell.isLabPeriod ? ' [LAB]' : (cell.labGroup && cell.labGroup !== 'None' ? ' [TH]' : '')}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}
-                                                    </span>
-                                                    {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1 }}>{teacherFirst}</span>}
-
-                                                    {isChanged && (
-                                                        <>
-                                                            <div className="tt-change-badge" />
-                                                            <div className="tt-tooltip">
-                                                                <div style={{ fontWeight: 700, color: '#f97316', marginBottom: '4px' }}>Modification Identified</div>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                                    <span style={{ color: '#94a3b8' }}>Was: <span style={{ color: '#f1f5f9' }}>{change.old.subject} ({change.old.teacher || 'None'})</span></span>
-                                                                    <span style={{ color: '#94a3b8' }}>Now: <span style={{ color: '#f1f5f9' }}>{change.new.subject} ({change.new.teacher || 'None'})</span></span>
-                                                                </div>
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                </div>
+                                                <ClassTTCell
+                                                    cell={cell}
+                                                    currentClass={cls}
+                                                    SUBJECT_ABBR={SUBJECT_ABBR}
+                                                    isChanged={isChanged}
+                                                    change={change}
+                                                />
                                             );
                                         };
 
@@ -6108,6 +5851,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         </tbody>
                                                     </table>
                                                 </div>
+
+                                                {/* Added Footnote for Clubbed Classes */}
+                                                <ClassTTFooter
+                                                    academicYear={academicYear}
+                                                    combinedSubjects={getCombinedSubjectsForClass(generatedTimetable?.classTimetables?.[cls], SUBJECT_ABBR, cls)}
+                                                />
                                             </div>
                                         );
                                     })}

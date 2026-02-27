@@ -1,5 +1,6 @@
 // Timetable Print Layout Generator
 // 6 timetables per A4 page, print-optimized
+import { getClubbingIndicator, getCombinedSubjectsForClass } from './classTTUtils';
 
 export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, academicYear, bellTimings, isMiddle) => {
     const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -281,7 +282,11 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
             const subject = cell.subject;
             const teacher = cell.teacher;
             const badge = (cell.isBlock || cell.type === 'BLOCK') ? '<div class="block-badge">BLOCK</div>' : '';
-            return `${badge}${subject}<br><span class="tr-code">${teacher || ''}</span>`;
+            const indicator = getClubbingIndicator(cell, className);
+            const withClasses = indicator
+                ? `<div style="font-size: 5.5pt; color: #475569; font-weight: 700; background: #f1f5f9; padding: 1px 2px; border-radius: 2px; margin-top: 2px;">${indicator.trim()}</div>`
+                : '';
+            return `${badge}${subject}${withClasses}<br><span class="tr-code">${teacher || ''}</span>`;
         };
 
         const cells = [
@@ -351,8 +356,32 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
             <tbody>${tableBody}</tbody>
         </table>
         <div class="card-footer">
-            <span>Academic Year ${academicYear}</span>
-            <span style="font-style: italic; color: black;">jkrdomain</span>
+            ${(() => {
+            const combined = getCombinedSubjectsForClass(classTimetables[className], {}, className);
+            if (combined.length === 0) return '';
+
+            let footnote = '';
+            if (combined.length === 1) {
+                const item = combined[0];
+                const withText = item.indicator.includes('/')
+                    ? `division${item.others.length > 1 ? 's' : ''} ${item.others.map(o => o.replace(/^\d+/, '')).join(' & ')}`
+                    : `class${item.others.length > 1 ? 'es' : ''} ${item.others.join(', ')}`;
+                footnote = `<b>${item.abbr}${item.indicator}</b> indicates ${item.name} is taught as a combined class with ${withText}.`;
+            } else {
+                const itemsText = combined.map(item => `<b>${item.abbr}${item.indicator}</b>`).join(', ').replace(/, ([^,]+)$/, ' and $1');
+                footnote = `${itemsText} indicate subjects taught as combined classes.`;
+            }
+
+            return `
+                    <div style="font-size: 6pt; color: #475569; margin-bottom: 4px; font-style: italic;">
+                        <span style="color: #475569; font-weight: 800;">Note:</span> ${footnote}
+                    </div>
+                `;
+        })()}
+            <div style="display: flex; justify-content: space-between; width: 100%;">
+                <span>Academic Year ${academicYear}</span>
+                <span style="font-style: italic; color: black;">jkrdomain</span>
+            </div>
         </div>
     </div>
     `;
