@@ -42,7 +42,7 @@ import { findAvailableDestinations as getAvailableDestinations } from '../utils/
 import { calculateTotalLoad } from '../utils/allotmentHelpers';
 
 // Components
-import TeacherGroupEditor from '../components/TeacherGroupEditor';
+import TeacherGroupEditor, { MultiClassSelector } from '../components/TeacherGroupEditor';
 import ClassTTCell from '../components/ClassTTCell';
 import ClassTTFooter from '../components/ClassTTFooter';
 import { getCombinedSubjectsForClass } from '../utils/classTTUtils';
@@ -1185,8 +1185,8 @@ export default function TimetablePage() {
     };
 
     const handleSaveStream = () => {
-        if (!streamForm.name || !streamForm.className || !streamForm.periods || streamForm.subjects.some(s => !s.teacher || !s.subject)) {
-            addToast('Please fill all stream details correctly (Name, Class, Periods, and all Teacher/Subject pairs)', 'error');
+        if (!streamForm.name || !streamForm.targetClasses || streamForm.targetClasses.length === 0 || !streamForm.periods || streamForm.subjects.some(s => !s.teacher || !s.subject)) {
+            addToast('Please fill all stream details correctly (Name, Classes, Periods, and all Teacher/Subject pairs)', 'error');
             return;
         }
 
@@ -1202,7 +1202,7 @@ export default function TimetablePage() {
         saveStreams(updated);
         setShowStreamModal(false);
         setEditingStreamId(null);
-        setStreamForm({ name: '', abbreviation: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '', groupName: '' }] });
+        setStreamForm({ name: '', abbreviation: '', targetClasses: [], periods: 4, subjects: [{ teacher: '', subject: '', groupName: '' }] });
         addToast('✅ Stream saved successfully', 'success');
         return updatedStream;
     };
@@ -1939,8 +1939,7 @@ export default function TimetablePage() {
     const [editingStreamId, setEditingStreamId] = useState(null);
     const [streamForm, setStreamForm] = useState({
         name: '',
-        abbreviation: '',
-        className: '6A',
+        targetClasses: [],
         periods: 4,
         subjects: [{ teacher: '', subject: '', groupName: '', labGroup: 'None', targetLabCount: 2 }]
     });
@@ -2499,11 +2498,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             currentTT = { classTimetables: cTimetables, teacherTimetables: tTimetables, academicYear, bellTimings };
         }
 
+        const targetClasses = stream.targetClasses || (stream.className ? [stream.className] : []);
+
         setCreationStatus({
             teacher: 'STREAM', subject: stream.name,
             messages: [
                 `═══════════════════════════════════════`,
-                `CREATING STREAM: ${stream.name} (${stream.className})`,
+                `CREATING STREAM: ${stream.name} (${targetClasses.join(', ')})`,
                 `═══════════════════════════════════════`
             ],
             progress: 0, completedCount: completedCreations.size + 1, isError: false
@@ -2519,8 +2520,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             const PRDS = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
 
-            // Level determination
-            const isMiddle = parseInt(stream.className) < 11;
+            const targetClasses = stream.targetClasses || (stream.className ? [stream.className] : []);
+            const isMiddle = targetClasses.length > 0 && parseInt(targetClasses[0]) < 11;
             const AVAILABLE_SLOTS = isMiddle
                 ? ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S10', 'S11']
                 : ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S11'];
@@ -2538,21 +2539,24 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             };
 
             const streamFree = (d, p) => {
-                const classFree = (tt.classTimetables[stream.className]?.[d]?.[p]?.subject ?? '') === '';
+                const classesFree = targetClasses.every(cn => (tt.classTimetables[cn]?.[d]?.[p]?.subject ?? '') === '');
                 const teachersFree = stream.subjects.every(s => tFree(s.teacher, d, p));
 
                 // Lab conflict check (Global)
                 let labConflict = false;
                 for (const s of stream.subjects) {
                     if (s.labGroup && s.labGroup !== 'None') {
-                        if (detectLabConflict(tt.classTimetables, stream.className, d, p, s.labGroup)) {
-                            labConflict = true;
-                            break;
+                        for (const cn of targetClasses) {
+                            if (detectLabConflict(tt.classTimetables, cn, d, p, s.labGroup)) {
+                                labConflict = true;
+                                break;
+                            }
                         }
                     }
+                    if (labConflict) break;
                 }
 
-                return classFree && teachersFree && !labConflict;
+                return classesFree && teachersFree && !labConflict;
             };
 
             const periodsToPlace = Number(stream.periods) || 0;
@@ -2617,18 +2621,20 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                 if (pick) {
                     const abbr = stream.abbreviation || getAbbreviation(stream.name);
-                    tt.classTimetables[stream.className][pick.d][pick.p] = {
-                        subject: abbr,
-                        isStream: true,
-                        streamName: stream.name,
-                        subjects: stream.subjects
-                    };
+                    targetClasses.forEach(cn => {
+                        tt.classTimetables[cn][pick.d][pick.p] = {
+                            subject: abbr,
+                            isStream: true,
+                            streamName: stream.name,
+                            subjects: stream.subjects
+                        };
+                    });
 
                     stream.subjects.forEach(s => {
                         const trimmedT = s.teacher?.trim();
                         if (!trimmedT) return;
                         const labStatusData = {
-                            className: stream.className,
+                            className: targetClasses[0],
                             subject: s.subject,
                             labGroup: s.labGroup || 'None',
                             targetLabCount: s.targetLabCount
@@ -2636,7 +2642,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         const isLab = determineLabStatus(tt.classTimetables, labStatusData, pick.d, pick.p);
 
                         tt.teacherTimetables[trimmedT][pick.d][pick.p] = {
-                            className: stream.className,
+                            className: targetClasses.join('/'),
                             subject: s.subject,
                             fullSubject: s.subject,
                             groupName: s.groupName,
@@ -2647,13 +2653,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             isLabPeriod: isLab
                         };
 
-                        // Also update class timetable slot with the first subject's lab info for display
-                        // In streams, all subjects usually share the same lab/theory status if they are in the same stream
-                        // but we'll store it on the class slot as well
-                        if (!tt.classTimetables[stream.className][pick.d][pick.p].labGroup) {
-                            tt.classTimetables[stream.className][pick.d][pick.p].labGroup = s.labGroup || 'None';
-                            tt.classTimetables[stream.className][pick.d][pick.p].isLabPeriod = isLab;
-                        }
+                        targetClasses.forEach(cn => {
+                            if (!tt.classTimetables[cn][pick.d][pick.p].labGroup) {
+                                tt.classTimetables[cn][pick.d][pick.p].labGroup = s.labGroup || 'None';
+                                tt.classTimetables[cn][pick.d][pick.p].isLabPeriod = isLab;
+                            }
+                        });
 
                         tt.teacherTimetables[trimmedT][pick.d].periodCount++;
                         tt.teacherTimetables[trimmedT].weeklyPeriods++;
@@ -2742,6 +2747,24 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
         try {
             const teacher = row.teacher?.trim();
+            let currentTT = baseTT || generatedTimetable;
+
+            // --- Connect Parallel Streams --- 
+            // If this teacher belongs to any pending streams, handle them first to ensure slot consistency
+            const pendingStreams = subjectStreams.filter(st =>
+                !completedCreations.has(st.id) &&
+                (st.subjects || st.groups || []).some(s => (s.teacher || '').trim() === teacher)
+            );
+
+            if (pendingStreams.length > 0) {
+                addMessage(`🔍 Found ${pendingStreams.length} pending parallel stream(s) involving ${teacher}...`);
+                for (const st of pendingStreams) {
+                    const streamResult = await handleCreateStreamSpecific(st, currentTT);
+                    if (streamResult) {
+                        currentTT = streamResult;
+                    }
+                }
+            }
 
             // ── Build tasks list ────────────────────────────────────────────────
             const tasks = [];
@@ -3389,10 +3412,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
         const streamsToProcess = subjectStreams.filter(st => {
             if (completedCreations.has(st.id)) return false;
+            const targetClasses = st.targetClasses || (st.className ? [st.className] : []);
             if (criteria === 'FULL') return true;
-            if (criteria === 'MID') return /^[678]/.test(st.className);
-            if (criteria === 'MAIN') return /^(9|10|11|12)/.test(st.className);
-            return st.className.startsWith(criteria);
+            if (criteria === 'MID') return targetClasses.some(c => /^[678]/.test(c));
+            if (criteria === 'MAIN') return targetClasses.some(c => /^(9|10|11|12)/.test(c));
+            return targetClasses.some(c => c.startsWith(criteria));
         });
 
         const totalToProcess = rowsToProcess.length + streamsToProcess.length;
@@ -4001,7 +4025,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                                 <div>
                                                     <div style={{ fontWeight: 900, color: '#f1f5f9' }}>{stream.name}</div>
-                                                    <div style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 700 }}>{stream.className} • {stream.periods} Periods/Week</div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 700 }}>{(stream.targetClasses || []).join(', ') || stream.className} • {stream.periods} Periods/Week</div>
                                                 </div>
                                                 <div style={{ display: 'flex', gap: '0.4rem' }}>
                                                     <button
@@ -8125,14 +8149,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     />
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Target Class</label>
-                                    <select
-                                        value={streamForm.className}
-                                        onChange={e => setStreamForm({ ...streamForm, className: e.target.value })}
-                                        style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
-                                    >
-                                        {CLASS_OPTIONS.map(c => <option key={c} value={c} style={{ color: '#000', background: '#fff' }}>{c}</option>)}
-                                    </select>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Classes (Club)</label>
+                                    <MultiClassSelector
+                                        selectedClasses={streamForm.targetClasses || []}
+                                        options={CLASS_OPTIONS}
+                                        onChange={newSel => setStreamForm({ ...streamForm, targetClasses: newSel })}
+                                    />
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Weekly Load</label>

@@ -139,6 +139,26 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         });
     });
 
+    // STREAM processing
+    streams.forEach(stream => {
+        const total = Number(stream.periods) || Number(stream.weeklyLoad) || 0;
+        const targetClasses = stream.targetClasses || (stream.className ? [stream.className] : []);
+        const subjects = stream.subjects || stream.groups || [];
+
+        if (targetClasses.length === 0 || subjects.length === 0) return;
+
+        for (let t = 0; t < total; t++) {
+            allTasks.push({
+                type: 'STREAM',
+                name: stream.name || stream.streamName,
+                className: targetClasses[0],
+                classes: targetClasses,
+                subjects: subjects,
+                preferredDay: 'Any'
+            });
+        }
+    });
+
     // Debugging: Track how many tasks were created for each teacher
     const teacherTaskCounts = {};
     allTasks.forEach(t => {
@@ -154,26 +174,11 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
 
     Object.keys(teacherTimetables).forEach(t => {
         if (!teacherTaskCounts[t]) {
-            console.warn(`⚠️ Teacher "${t}" has 0 periods identified for generation.`);
+            console.warn(`\u26a0\ufe0f Teacher "${t}" has 0 periods identified for generation.`);
         }
     });
 
-    console.log(`📋 Total generation tasks: ${allTasks.length}`);
-
-    // STREAM processing
-    streams.forEach(stream => {
-        const total = Number(stream.periods) || 0;
-        for (let t = 0; t < total; t++) {
-            allTasks.push({
-                type: 'STREAM',
-                name: stream.name,
-                className: stream.className,
-                classes: [stream.className],
-                subjects: stream.subjects,
-                preferredDay: 'Any'
-            });
-        }
-    });
+    console.log(`\ud83d\udccb Total generation tasks: ${allTasks.length}`);
 
     // ============ PRIORITY SORTING ============
     const getGradeNum = (className) => {
@@ -185,10 +190,10 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         const getTaskPriorityScore = (t) => {
             // Priority 1: Fixed Day
             if (t.preferredDay && t.preferredDay !== 'Any') return 1;
-            // Priority 2: Block Periods
-            if (t.type === 'BLOCK') return 2;
-            // Priority 3: Streams (Parallel)
-            if (t.type === 'STREAM') return 3;
+            // Priority 2: Streams (Parallel) - Highly constrained, must place early
+            if (t.type === 'STREAM') return 2;
+            // Priority 3: Block Periods
+            if (t.type === 'BLOCK') return 3;
             // Priority 4: Single Periods
             return 4;
         };

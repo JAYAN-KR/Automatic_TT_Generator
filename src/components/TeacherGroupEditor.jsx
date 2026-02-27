@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
  * MultiClassSelector Component
  * Handles selection of multiple classes with checkboxes and tag display.
  */
-const MultiClassSelector = ({ selectedClasses, options, onChange }) => {
+export const MultiClassSelector = ({ selectedClasses, options, onChange }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
 
