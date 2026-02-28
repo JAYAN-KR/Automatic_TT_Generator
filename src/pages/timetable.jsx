@@ -1575,6 +1575,86 @@ export default function TimetablePage() {
         setDeletePopup(null);
     };
 
+    const handleDeleteClassTT = (teacher, classKey, rowId) => {
+        if (!generatedTimetable || !confirm(`Delete all generated timetable periods for ${teacher} in class(es) ${classKey}?`)) return;
+
+        const isMatch = (cn, key) => {
+            const m = cn.match(/^(\d+)([A-Z]+)/i) || cn.match(/^(\d+)$/i);
+            if (!m) return cn === key;
+            const num = m[1];
+            const div = m[2] || '';
+            const keyNumMatch = key.match(/^(\d+)/);
+            if (!keyNumMatch || keyNumMatch[1] !== num) return cn === key;
+            const letters = key.replace(num, '');
+            if (!letters) return cn === key;
+            return letters.includes(div);
+        };
+
+        const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const PERIODS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+
+        let deletedCount = 0;
+        setGeneratedTimetable(prev => {
+            if (!prev) return prev;
+            const next = {
+                ...prev,
+                classTimetables: JSON.parse(JSON.stringify(prev.classTimetables || {})),
+                teacherTimetables: JSON.parse(JSON.stringify(prev.teacherTimetables || {}))
+            };
+
+            DAYS_ORDER.forEach(d => {
+                PERIODS.forEach(p => {
+                    const tSlot = next.teacherTimetables[teacher]?.[d]?.[p];
+                    if (tSlot) {
+                        const originalClasses = (tSlot.className || '').split('/').map(s => s.trim()).filter(Boolean);
+
+                        const classesToDelete = originalClasses.filter(cn => isMatch(cn, classKey));
+                        if (classesToDelete.length === 0) return;
+
+                        classesToDelete.forEach(cn => {
+                            const cSlot = next.classTimetables[cn]?.[d]?.[p];
+                            if (cSlot && (cSlot.teacher === teacher || (cSlot.isStream && cSlot.subjects?.some(s => s.teacher === teacher)))) {
+                                if (cSlot.isStream) {
+                                    cSlot.subjects = cSlot.subjects.filter(s => s.teacher !== teacher);
+                                    if (cSlot.subjects.length === 0) {
+                                        delete next.classTimetables[cn][d][p];
+                                    }
+                                } else {
+                                    delete next.classTimetables[cn][d][p];
+                                }
+                            }
+                        });
+
+                        const remainingClasses = originalClasses.filter(cn => !isMatch(cn, classKey));
+                        if (remainingClasses.length > 0) {
+                            next.teacherTimetables[teacher][d][p] = { ...tSlot, className: remainingClasses.join('/') };
+                        } else {
+                            delete next.teacherTimetables[teacher][d][p];
+                            if (next.teacherTimetables[teacher][d].periodCount > 0) next.teacherTimetables[teacher][d].periodCount--;
+                            if (next.teacherTimetables[teacher].weeklyPeriods > 0) next.teacherTimetables[teacher].weeklyPeriods--;
+                        }
+                        deletedCount += classesToDelete.length;
+                    }
+                });
+            });
+            return next;
+        });
+
+        setTimeout(() => {
+            if (deletedCount > 0) {
+                addToast(`✅ Deleted ${deletedCount} period slot(s) for ${classKey}`, 'success');
+                setCompletedCreations(prev => {
+                    const next = new Set(prev);
+                    next.delete(rowId);
+                    return next;
+                });
+            } else {
+                addToast(`No generated periods found for ${classKey} with this teacher.`, 'info');
+            }
+        }, 100);
+    };
+
+
     // Persistent Storage Management for Allotments
     const saveAllotments = async (rows) => {
         const dataToSave = rows || allotmentRows;
@@ -2891,6 +2971,36 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         try {
             const teacher = row.teacher?.trim();
 
+            // ── Pre‑clear existing slots for this teacher so edits will take effect
+            if (teacher && currentTT) {
+                const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                const PRDS = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+
+                // remove teacher name from all class timetables
+                Object.keys(currentTT.classTimetables || {}).forEach(cn => {
+                    DAYS.forEach(d => {
+                        PRDS.forEach(p => {
+                            const slot = currentTT.classTimetables[cn][d][p];
+                            if (slot && slot.teacher === teacher) {
+                                currentTT.classTimetables[cn][d][p] = { subject: '', teacher: '' };
+                            }
+                        });
+                    });
+                });
+                // clear teacher's own timetable entry
+                if (currentTT.teacherTimetables && currentTT.teacherTimetables[teacher]) {
+                    DAYS.forEach(d => {
+                        PRDS.forEach(p => {
+                            if (currentTT.teacherTimetables[teacher][d]?.[p]) {
+                                currentTT.teacherTimetables[teacher][d][p] = '';
+                            }
+                        });
+                        currentTT.teacherTimetables[teacher][d].periodCount = 0;
+                    });
+                    currentTT.teacherTimetables[teacher].weeklyPeriods = 0;
+                }
+            }
+
             // ── Build tasks list ────────────────────────────────────────────────
             const tasks = [];
             row.allotments.forEach(group => {
@@ -4155,7 +4265,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 <div style={{ display: 'flex', gap: '0.4rem' }}>
                                                     <button
                                                         onClick={() => handleCreateStreamSpecific(stream)}
-                                                        disabled={completedCreations.has(stream.id)}
                                                         style={{
                                                             padding: '0.3rem 0.6rem',
                                                             background: completedCreations.has(stream.id) ? '#10b981' : '#3b82f6',
@@ -4164,7 +4273,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             borderRadius: '0.4rem',
                                                             fontSize: '0.7rem',
                                                             fontWeight: 'bold',
-                                                            cursor: completedCreations.has(stream.id) ? 'not-allowed' : 'pointer'
+                                                            cursor: 'pointer'
                                                         }}
                                                     >
                                                         {completedCreations.has(stream.id) ? '✅ CREATED' : 'CREATE'}
@@ -4398,15 +4507,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     )}
                                                                 </div>
                                                                 {/* Class Breakdown Line */}
-                                                                <div style={{ fontSize: '0.95rem', color: '#64748b', marginTop: '0.25rem', fontWeight: 700, fontFamily: 'monospace', textAlign: 'left', marginLeft: '0' }}>
+                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.5rem', marginBottom: '0.5rem' }}>
                                                                     {(() => {
-                                                                        const classBreakdown = [];
                                                                         const classMap = {};
-                                                                        
+
                                                                         (row.allotments || []).forEach(a => {
-                                                                            const clsList = (a.classes || []).filter(c=>c).sort();
+                                                                            const clsList = (a.classes || []).filter(c => c).sort();
                                                                             if (clsList.length === 0) return;
-                                                                            // build normalized key: number once, letters concatenated
                                                                             const parts = clsList.map(c => {
                                                                                 const m = c.match(/^(\d+)([A-Z])$/i);
                                                                                 return m ? { num: m[1], div: m[2] } : null;
@@ -4414,7 +4521,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                             let key;
                                                                             if (parts.length > 0) {
                                                                                 const num = parts[0].num;
-                                                                                const letters = parts.map(p=>p.div).join('');
+                                                                                const letters = parts.map(p => p.div).join('');
                                                                                 key = num + letters;
                                                                             } else {
                                                                                 key = clsList.join('');
@@ -4435,18 +4542,54 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 classMap[key].saturday = 1;
                                                                             }
                                                                         });
-                                                                        
-                                                                        Object.keys(classMap).sort().forEach(cls => {
+
+                                                                        return Object.keys(classMap).sort().map((cls, idx) => {
                                                                             const data = classMap[cls];
                                                                             const subAbbr = data.subject ? (data.subject.length > 4 ? data.subject.substring(0, 3).toLowerCase() : data.subject.toLowerCase()) : '';
-                                                                            classBreakdown.push(`${cls}-${subAbbr}-${data.periods}-${data.tBlock}-${data.lBlock}${data.saturday ? '-1' : ''}`);
+                                                                            const label = `${cls}-${subAbbr}-${data.periods}-${data.tBlock}-${data.lBlock}${data.saturday ? '-1' : ''}`;
+                                                                            const isGenerated = completedCreations.has(row.id);
+                                                                            return (
+                                                                                <div key={idx} style={{
+                                                                                    display: 'inline-flex',
+                                                                                    alignItems: 'center',
+                                                                                    background: isGenerated ? 'rgba(16, 185, 129, 0.15)' : 'rgba(30, 41, 59, 1)',
+                                                                                    border: `1px solid ${isGenerated ? 'rgba(16, 185, 129, 0.4)' : '#334155'}`,
+                                                                                    borderRadius: '0.4rem',
+                                                                                    padding: '0.2rem 0.4rem',
+                                                                                    fontSize: '0.8rem',
+                                                                                    fontWeight: 700,
+                                                                                    color: isGenerated ? '#a7f3d0' : '#94a3b8',
+                                                                                    fontFamily: 'monospace'
+                                                                                }}>
+                                                                                    <span>{label}</span>
+                                                                                    {isGenerated && (
+                                                                                        <button
+                                                                                            onClick={() => handleDeleteClassTT(row.teacher, cls, row.id)}
+                                                                                            title={`Delete generated TT for ${cls}`}
+                                                                                            style={{
+                                                                                                background: 'transparent',
+                                                                                                border: 'none',
+                                                                                                color: '#f87171',
+                                                                                                marginLeft: '0.4rem',
+                                                                                                padding: '0 0.2rem',
+                                                                                                cursor: 'pointer',
+                                                                                                fontSize: '0.85rem',
+                                                                                                display: 'flex',
+                                                                                                alignItems: 'center',
+                                                                                                justifyContent: 'center',
+                                                                                                lineHeight: 1
+                                                                                            }}
+                                                                                        >
+                                                                                            ✕
+                                                                                        </button>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
                                                                         });
-                                                                        
-                                                                        return classBreakdown.join(', ');
                                                                     })()}
                                                                 </div>
                                                             </div>
-                                                            
+
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                                                                 <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Total Load:</span>
                                                                 <span style={{
@@ -4491,7 +4634,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                                                 <button
                                                                     onClick={() => handleCreateSpecific(row)}
-                                                                    disabled={creationStatus || completedCreations.has(row.id)}
+                                                                    disabled={creationStatus}
                                                                     style={{
                                                                         padding: '0.4rem 1rem',
                                                                         background: completedCreations.has(row.id) ? '#10b981' : '#3b82f6',
@@ -4500,7 +4643,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         borderRadius: '0.4rem',
                                                                         fontSize: '0.75rem',
                                                                         fontWeight: '900',
-                                                                        cursor: 'pointer',
+                                                                        cursor: creationStatus ? 'not-allowed' : 'pointer',
                                                                         transition: 'all 0.2s',
                                                                         boxShadow: '0 2px 4px rgba(59, 130, 246, 0.2)'
                                                                     }}
@@ -5176,115 +5319,132 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         })}
                                     </svg>
                                 )}
-                                {/* Grade Tabs */}
-                                <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.2rem', background: '#1e293b', padding: '0.8rem', borderRadius: '0.8rem', border: '1px solid #334155', flexWrap: 'wrap' }}>
-                                    {[6, 7, 8, 9, 10, 11, 12].map(grade => (
-                                        <button key={grade}
-                                            onClick={() => setActiveGradeSubTab(grade.toString())}
-                                            style={{
-                                                padding: '0.6rem 1.1rem', border: 'none', borderRadius: '0.6rem', cursor: 'pointer',
-                                                background: activeGradeSubTab === grade.toString() ? '#4f46e5' : '#334155',
-                                                color: 'white', fontWeight: 700, fontSize: '0.9rem', transition: 'all 0.2s',
-                                                boxShadow: activeGradeSubTab === grade.toString() ? '0 4px 12px rgba(79,70,229,0.3)' : 'none',
-                                                transform: activeGradeSubTab === grade.toString() ? 'translateY(-2px)' : 'none'
-                                            }}
-                                        >Grade {grade}</button>
-                                    ))}
+                                {/* Grade Tabs and Actions */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', background: '#1e293b', padding: '0.8rem', borderRadius: '0.8rem', border: '1px solid #334155', flexWrap: 'wrap', gap: '1rem' }}>
+                                    <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                                        {[6, 7, 8, 9, 10, 11, 12].map(grade => (
+                                            <button key={grade}
+                                                onClick={() => setActiveGradeSubTab(grade.toString())}
+                                                style={{
+                                                    padding: '0.6rem 1.1rem', border: 'none', borderRadius: '0.6rem', cursor: 'pointer',
+                                                    background: activeGradeSubTab === grade.toString() ? '#4f46e5' : '#334155',
+                                                    color: 'white', fontWeight: 700, fontSize: '0.9rem', transition: 'all 0.2s',
+                                                    boxShadow: activeGradeSubTab === grade.toString() ? '0 4px 12px rgba(79,70,229,0.3)' : 'none',
+                                                    transform: activeGradeSubTab === grade.toString() ? 'translateY(-2px)' : 'none'
+                                                }}
+                                            >Grade {grade}</button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => saveAllotments()}
+                                        disabled={isSaving}
+                                        style={{
+                                            padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none',
+                                            borderRadius: '0.5rem', cursor: isSaving ? 'not-allowed' : 'pointer', fontWeight: 700,
+                                            fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: isSaving ? 0.7 : 1
+                                        }}
+                                    >
+                                        💾 {isSaving ? 'Saving...' : 'Save Data'}
+                                    </button>
                                 </div>
 
                                 {/* Change Summary Panel */}
-                                {timetableChanges.count > 0 && (
-                                    <div style={{
-                                        marginBottom: '2rem', padding: '1.5rem', background: 'rgba(249, 115, 22, 0.05)',
-                                        borderRadius: '1rem', border: '1px solid rgba(249, 115, 22, 0.2)',
-                                        display: 'flex', flexDirection: 'column', gap: '1.2rem'
-                                    }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                                <div style={{ background: '#f97316', color: 'white', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontWeight: 900, fontSize: '0.9rem' }}>
-                                                    {timetableChanges.count} CHANGES DETECTED
+                                {
+                                    timetableChanges.count > 0 && (
+                                        <div style={{
+                                            marginBottom: '2rem', padding: '1.5rem', background: 'rgba(249, 115, 22, 0.05)',
+                                            borderRadius: '1rem', border: '1px solid rgba(249, 115, 22, 0.2)',
+                                            display: 'flex', flexDirection: 'column', gap: '1.2rem'
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                    <div style={{ background: '#f97316', color: 'white', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontWeight: 900, fontSize: '0.9rem' }}>
+                                                        {timetableChanges.count} CHANGES DETECTED
+                                                    </div>
+                                                    <button
+                                                        onClick={() => {
+                                                            const firstChange = timetableChanges.diffs.find(d => {
+                                                                const gradeMatch = cls.startsWith(activeGradeSubTab); // Simplified check
+                                                                return true; // Just find the first one in the diffs for now and scroll its ID
+                                                            });
+                                                            if (firstChange) {
+                                                                const el = document.getElementById(`class-card-${firstChange.class}`);
+                                                                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                            }
+                                                        }}
+                                                        style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
+                                                    >Scroll to First Change</button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setBaselineTimetable(JSON.parse(JSON.stringify(generatedTimetable)));
+                                                            addToast('Baseline reset to current state', 'success');
+                                                        }}
+                                                        style={{ background: '#334155', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
+                                                    >Reset Baseline</button>
                                                 </div>
-                                                <button
-                                                    onClick={() => {
-                                                        const firstChange = timetableChanges.diffs.find(d => {
-                                                            const gradeMatch = cls.startsWith(activeGradeSubTab); // Simplified check
-                                                            return true; // Just find the first one in the diffs for now and scroll its ID
-                                                        });
-                                                        if (firstChange) {
-                                                            const el = document.getElementById(`class-card-${firstChange.class}`);
-                                                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                                        }
-                                                    }}
-                                                    style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
-                                                >Scroll to First Change</button>
-                                                <button
-                                                    onClick={() => {
-                                                        setBaselineTimetable(JSON.parse(JSON.stringify(generatedTimetable)));
-                                                        addToast('Baseline reset to current state', 'success');
-                                                    }}
-                                                    style={{ background: '#334155', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
-                                                >Reset Baseline</button>
+
+                                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                                        <input type="checkbox" checked={showChangesOnly} onChange={e => setShowChangesOnly(e.target.checked)} />
+                                                        Show changes only
+                                                    </label>
+                                                    <select
+                                                        value={highlightTeacher || ''}
+                                                        onChange={e => setHighlightTeacher(e.target.value || null)}
+                                                        style={{ background: '#0f172a', border: '1px solid #334155', color: 'white', padding: '0.4rem', borderRadius: '0.4rem', fontSize: '0.85rem' }}
+                                                    >
+                                                        <option value="">Filter by Teacher...</option>
+                                                        {[...new Set(timetableChanges.diffs.map(d => d.new.teacher))].sort().map(t => (
+                                                            <option key={t} value={t}>{t}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
                                             </div>
 
-                                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem', cursor: 'pointer' }}>
-                                                    <input type="checkbox" checked={showChangesOnly} onChange={e => setShowChangesOnly(e.target.checked)} />
-                                                    Show changes only
-                                                </label>
-                                                <select
-                                                    value={highlightTeacher || ''}
-                                                    onChange={e => setHighlightTeacher(e.target.value || null)}
-                                                    style={{ background: '#0f172a', border: '1px solid #334155', color: 'white', padding: '0.4rem', borderRadius: '0.4rem', fontSize: '0.85rem' }}
-                                                >
-                                                    <option value="">Filter by Teacher...</option>
-                                                    {[...new Set(timetableChanges.diffs.map(d => d.new.teacher))].sort().map(t => (
-                                                        <option key={t} value={t}>{t}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>
-
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
-                                            <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #1e293b' }}>
-                                                <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Impacted Classes</div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                                                    {Object.entries(timetableChanges.diffs.reduce((acc, d) => { acc[d.class] = (acc[d.class] || 0) + 1; return acc; }, {}))
-                                                        .map(([c, count]) => (
-                                                            <span key={c} style={{ fontSize: '0.75rem', background: '#1e293b', padding: '0.1rem 0.4rem', borderRadius: '0.3rem', color: '#cbd5e1' }}>
-                                                                {c} <b style={{ color: '#f97316' }}>{count}</b>
-                                                            </span>
-                                                        ))}
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
+                                                <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #1e293b' }}>
+                                                    <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Impacted Classes</div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                                        {Object.entries(timetableChanges.diffs.reduce((acc, d) => { acc[d.class] = (acc[d.class] || 0) + 1; return acc; }, {}))
+                                                            .map(([c, count]) => (
+                                                                <span key={c} style={{ fontSize: '0.75rem', background: '#1e293b', padding: '0.1rem 0.4rem', borderRadius: '0.3rem', color: '#cbd5e1' }}>
+                                                                    {c} <b style={{ color: '#f97316' }}>{count}</b>
+                                                                </span>
+                                                            ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #1e293b' }}>
-                                                <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Affected Teachers</div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                                                    {Object.entries(timetableChanges.diffs.reduce((acc, d) => {
-                                                        const t = d.new.teacher || 'Unassigned';
-                                                        acc[t] = (acc[t] || 0) + 1;
-                                                        return acc;
-                                                    }, {}))
-                                                        .map(([t, count]) => (
-                                                            <span key={t} style={{ fontSize: '0.75rem', background: '#1e293b', padding: '0.1rem 0.4rem', borderRadius: '0.3rem', color: '#cbd5e1' }}>
-                                                                {t} <b style={{ color: '#f97316' }}>{count}</b>
-                                                            </span>
-                                                        ))}
+                                                <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #1e293b' }}>
+                                                    <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Affected Teachers</div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                                        {Object.entries(timetableChanges.diffs.reduce((acc, d) => {
+                                                            const t = d.new.teacher || 'Unassigned';
+                                                            acc[t] = (acc[t] || 0) + 1;
+                                                            return acc;
+                                                        }, {}))
+                                                            .map(([t, count]) => (
+                                                                <span key={t} style={{ fontSize: '0.75rem', background: '#1e293b', padding: '0.1rem 0.4rem', borderRadius: '0.3rem', color: '#cbd5e1' }}>
+                                                                    {t} <b style={{ color: '#f97316' }}>{count}</b>
+                                                                </span>
+                                                            ))}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
+                                    )
+                                }
 
                                 {/* Baseline Capture Prompt (if none exists) */}
-                                {!baselineTimetable && generatedTimetable && (
-                                    <div style={{ marginBottom: '2rem', padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Capture current state as baseline to track future changes?</span>
-                                        <button
-                                            onClick={() => setBaselineTimetable(JSON.parse(JSON.stringify(generatedTimetable)))}
-                                            style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 700 }}
-                                        >Enable Change Tracking</button>
-                                    </div>
-                                )}
+                                {
+                                    !baselineTimetable && generatedTimetable && (
+                                        <div style={{ marginBottom: '2rem', padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Capture current state as baseline to track future changes?</span>
+                                            <button
+                                                onClick={() => setBaselineTimetable(JSON.parse(JSON.stringify(generatedTimetable)))}
+                                                style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 700 }}
+                                            >Enable Change Tracking</button>
+                                        </div>
+                                    )
+                                }
 
                                 {/* Page heading */}
                                 <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -6063,85 +6223,87 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     })}
                                 </div>
 
-                                {isChainComplete && (
-                                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.85)', backdropFilter: 'blur(12px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', animation: 'fadeIn 0.3s ease-out' }}>
-                                        <div style={{ background: '#1e293b', border: chainValidation?.success ? '2px solid #10b981' : '2px solid #ef4444', borderRadius: '1.5rem', padding: '2.5rem', maxWidth: '600px', width: '100%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', textAlign: 'center' }}>
-                                            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>{chainValidation?.success ? '✅' : '❌'}</div>
+                                {
+                                    isChainComplete && (
+                                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.85)', backdropFilter: 'blur(12px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', animation: 'fadeIn 0.3s ease-out' }}>
+                                            <div style={{ background: '#1e293b', border: chainValidation?.success ? '2px solid #10b981' : '2px solid #ef4444', borderRadius: '1.5rem', padding: '2.5rem', maxWidth: '600px', width: '100%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', textAlign: 'center' }}>
+                                                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>{chainValidation?.success ? '✅' : '❌'}</div>
 
-                                            {chainValidation?.success ? (
-                                                <h2 style={{ color: '#10b981', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Validation Passed</h2>
-                                            ) : (
-                                                <h2 style={{ color: '#ef4444', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Validation Failed</h2>
-                                            )}
+                                                {chainValidation?.success ? (
+                                                    <h2 style={{ color: '#10b981', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Validation Passed</h2>
+                                                ) : (
+                                                    <h2 style={{ color: '#ef4444', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Validation Failed</h2>
+                                                )}
 
-                                            <p style={{ color: '#94a3b8', fontSize: '1rem', marginBottom: '1.5rem' }}>
-                                                {chainValidation?.success
-                                                    ? "All resource checks passed. Ready to commit the changes."
-                                                    : "Conflicts detected in DPT or Lab resources. Please resolve them to proceed."}
-                                            </p>
+                                                <p style={{ color: '#94a3b8', fontSize: '1rem', marginBottom: '1.5rem' }}>
+                                                    {chainValidation?.success
+                                                        ? "All resource checks passed. Ready to commit the changes."
+                                                        : "Conflicts detected in DPT or Lab resources. Please resolve them to proceed."}
+                                                </p>
 
-                                            {!chainValidation?.success && chainValidation?.conflicts.length > 0 && (
-                                                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '1rem', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'left' }}>
-                                                    <h3 style={{ color: '#ef4444', marginBottom: '0.8rem', fontWeight: 800, fontSize: '0.9rem' }}>Conflicts detected:</h3>
-                                                    <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                                                        {chainValidation.conflicts.map((c, i) => (
-                                                            <div key={i} style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '0.4rem', paddingLeft: '1rem', position: 'relative' }}>
-                                                                <span style={{ position: 'absolute', left: 0 }}>•</span> {c}
-                                                            </div>
-                                                        ))}
+                                                {!chainValidation?.success && chainValidation?.conflicts.length > 0 && (
+                                                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '1rem', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'left' }}>
+                                                        <h3 style={{ color: '#ef4444', marginBottom: '0.8rem', fontWeight: 800, fontSize: '0.9rem' }}>Conflicts detected:</h3>
+                                                        <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                                                            {chainValidation.conflicts.map((c, i) => (
+                                                                <div key={i} style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '0.4rem', paddingLeft: '1rem', position: 'relative' }}>
+                                                                    <span style={{ position: 'absolute', left: 0 }}>•</span> {c}
+                                                                </div>
+                                                            ))}
+                                                        </div>
                                                     </div>
+                                                )}
+
+                                                {chainValidation?.success && (
+                                                    <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid #10b981', borderRadius: '1rem', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'left' }}>
+                                                        <div style={{ color: '#a7f3d0', fontSize: '0.9rem' }}>
+                                                            <div style={{ marginBottom: '0.3rem' }}>✓ DPT Check: All teachers available</div>
+                                                            <div style={{ marginBottom: '0.3rem' }}>✓ Lab Check: All resources available</div>
+                                                            <div>✓ Class Check: All slots available</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div style={{ background: '#0f172a', borderRadius: '1rem', padding: '1rem', marginBottom: '2rem', textAlign: 'left', border: '1px solid #334155', maxHeight: '150px', overflowY: 'auto' }}>
+                                                    <h4 style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Chain Sequence:</h4>
+                                                    {swapChain.filter(p => p != null).map((p, i) => (
+                                                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.4rem 0', borderBottom: i < swapChain.length - 1 ? '1px dashed #334155' : 'none' }}>
+                                                            <span style={{ color: '#10b981', fontWeight: 900, fontSize: '0.8rem', width: '20px' }}>{i + 1}.</span>
+                                                            <span style={{ color: '#f1f5f9', fontWeight: 700, fontSize: '0.9rem' }}>{p.cls}</span>
+                                                            <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{p.day}</span>
+                                                            <span style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.85rem' }}>{getPeriodLabel(p.cls, p.period)}</span>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                            )}
 
-                                            {chainValidation?.success && (
-                                                <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid #10b981', borderRadius: '1rem', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'left' }}>
-                                                    <div style={{ color: '#a7f3d0', fontSize: '0.9rem' }}>
-                                                        <div style={{ marginBottom: '0.3rem' }}>✓ DPT Check: All teachers available</div>
-                                                        <div style={{ marginBottom: '0.3rem' }}>✓ Lab Check: All resources available</div>
-                                                        <div>✓ Class Check: All slots available</div>
-                                                    </div>
+                                                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                                                    <button
+                                                        onClick={() => {
+                                                            setSwapChain([]);
+                                                            setSwapChainSteps([]);
+                                                            setIsChainComplete(false);
+                                                        }}
+                                                        style={{ background: '#334155', color: 'white', border: 'none', padding: '0.8rem 1.8rem', borderRadius: '0.7rem', fontSize: '1rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
+                                                    >Cancel</button>
+                                                    <button
+                                                        onClick={executeChainSwap}
+                                                        disabled={!chainValidation?.success}
+                                                        style={{
+                                                            background: chainValidation?.success ? '#f97316' : '#1e293b',
+                                                            color: 'white', border: 'none', padding: '0.8rem 2rem',
+                                                            borderRadius: '0.7rem', fontSize: '1rem', fontWeight: 900,
+                                                            cursor: chainValidation?.success ? 'pointer' : 'not-allowed',
+                                                            transition: 'all 0.2s',
+                                                            boxShadow: chainValidation?.success ? '0 4px 12px rgba(249,115,22,0.3)' : 'none',
+                                                            opacity: chainValidation?.success ? 1 : 0.5,
+                                                            border: chainValidation?.success ? 'none' : '1px solid #334155'
+                                                        }}
+                                                    >Execute Swap</button>
                                                 </div>
-                                            )}
-
-                                            <div style={{ background: '#0f172a', borderRadius: '1rem', padding: '1rem', marginBottom: '2rem', textAlign: 'left', border: '1px solid #334155', maxHeight: '150px', overflowY: 'auto' }}>
-                                                <h4 style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Chain Sequence:</h4>
-                                                {swapChain.filter(p => p != null).map((p, i) => (
-                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.4rem 0', borderBottom: i < swapChain.length - 1 ? '1px dashed #334155' : 'none' }}>
-                                                        <span style={{ color: '#10b981', fontWeight: 900, fontSize: '0.8rem', width: '20px' }}>{i + 1}.</span>
-                                                        <span style={{ color: '#f1f5f9', fontWeight: 700, fontSize: '0.9rem' }}>{p.cls}</span>
-                                                        <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{p.day}</span>
-                                                        <span style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.85rem' }}>{getPeriodLabel(p.cls, p.period)}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-
-                                            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-                                                <button
-                                                    onClick={() => {
-                                                        setSwapChain([]);
-                                                        setSwapChainSteps([]);
-                                                        setIsChainComplete(false);
-                                                    }}
-                                                    style={{ background: '#334155', color: 'white', border: 'none', padding: '0.8rem 1.8rem', borderRadius: '0.7rem', fontSize: '1rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
-                                                >Cancel</button>
-                                                <button
-                                                    onClick={executeChainSwap}
-                                                    disabled={!chainValidation?.success}
-                                                    style={{
-                                                        background: chainValidation?.success ? '#f97316' : '#1e293b',
-                                                        color: 'white', border: 'none', padding: '0.8rem 2rem',
-                                                        borderRadius: '0.7rem', fontSize: '1rem', fontWeight: 900,
-                                                        cursor: chainValidation?.success ? 'pointer' : 'not-allowed',
-                                                        transition: 'all 0.2s',
-                                                        boxShadow: chainValidation?.success ? '0 4px 12px rgba(249,115,22,0.3)' : 'none',
-                                                        opacity: chainValidation?.success ? 1 : 0.5,
-                                                        border: chainValidation?.success ? 'none' : '1px solid #334155'
-                                                    }}
-                                                >Execute Swap</button>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
+                                    )
+                                }
                             </div>
                         );
                     })()
@@ -7202,11 +7364,24 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
                                 {/* Header */}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-                                    <div>
-                                        <h2 style={{ color: '#f1f5f9', fontSize: '1.4rem', fontWeight: 900, margin: 0 }}>🕒 DPT — {dptViewType} View</h2>
-                                        <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
-                                            {dptViewType === 'Teachers' ? 'Showing class engagement per teacher.' : 'Showing subject engagement per class.'}
-                                        </p>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        <div>
+                                            <h2 style={{ color: '#f1f5f9', fontSize: '1.4rem', fontWeight: 900, margin: 0 }}>🕒 DPT — {dptViewType} View</h2>
+                                            <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
+                                                {dptViewType === 'Teachers' ? 'Showing class engagement per teacher.' : 'Showing subject engagement per class.'}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => saveAllotments()}
+                                            disabled={isSaving}
+                                            style={{
+                                                padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none',
+                                                borderRadius: '0.5rem', cursor: isSaving ? 'not-allowed' : 'pointer', fontWeight: 700,
+                                                fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: isSaving ? 0.7 : 1
+                                            }}
+                                        >
+                                            💾 {isSaving ? 'Saving...' : 'Save Data'}
+                                        </button>
                                     </div>
 
                                     <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -7402,7 +7577,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#475569', textAlign: 'right' }}>
                                     {rowItems.length} {dptViewType} · {DPT_DAYS.length} days · {DPT_PERIODS.length} periods/day
                                 </div>
-                            </div>
+                            </div >
                         );
                     })()
                 }
@@ -7718,12 +7893,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         const nextPeriod = nextPeriodIdx < PERIODS.length ? PERIODS[nextPeriodIdx] : null;
                                                         const currentSlot = tTT?.[day]?.[p];
                                                         const nextSlot = nextPeriod ? tTT?.[day]?.[nextPeriod] : null;
-                                                        
+
                                                         // Check if current and next periods have same content (indicating a lab period pair)
-                                                        const isDoublePeriodStart = currentSlot && nextSlot && 
+                                                        const isDoublePeriodStart = currentSlot && nextSlot &&
                                                             JSON.stringify(currentSlot) === JSON.stringify(nextSlot) &&
                                                             !(p === 'S2' || p === 'S5' || p === 'S9' || p === 'S11'); // Skip if this is the "end" of a pair
-                                                        
+
                                                         // Check if this is second period of a double (to handle border styling)
                                                         let isDoublePeriodEnd = false;
                                                         if (p === 'S2' || p === 'S5' || p === 'S9' || p === 'S11') {
@@ -7826,27 +8001,40 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         return (
                             <div style={{ animation: 'fadeIn 0.3s ease-out', maxWidth: '1440px', margin: '0 auto' }}>
                                 {/* Sub-tab Headers */}
-                                <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.5rem', background: '#1e293b', padding: '0.8rem', borderRadius: '1rem', border: '1px solid #334155' }}>
-                                    {['Middle', 'Senior'].map(m => (
-                                        <button
-                                            key={m}
-                                            onClick={() => { setTeacherTTSubTab(m); setTeacherTTPage(1); }}
-                                            style={{
-                                                padding: '0.7rem 1.4rem',
-                                                background: teacherTTSubTab === m ? '#4f46e5' : '#334155',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '0.7rem',
-                                                cursor: 'pointer',
-                                                fontWeight: '800',
-                                                fontSize: '0.9rem',
-                                                transition: 'all 0.2s',
-                                                boxShadow: teacherTTSubTab === m ? '0 4px 12px rgba(79, 70, 229, 0.4)' : 'none'
-                                            }}
-                                        >
-                                            {m} School TT ({m === 'Middle' ? uniqueMiddle.length : uniqueSenior.length} teachers)
-                                        </button>
-                                    ))}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', background: '#1e293b', padding: '0.8rem', borderRadius: '1rem', border: '1px solid #334155', flexWrap: 'wrap', gap: '1rem' }}>
+                                    <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                                        {['Middle', 'Senior'].map(m => (
+                                            <button
+                                                key={m}
+                                                onClick={() => { setTeacherTTSubTab(m); setTeacherTTPage(1); }}
+                                                style={{
+                                                    padding: '0.7rem 1.4rem',
+                                                    background: teacherTTSubTab === m ? '#4f46e5' : '#334155',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '0.7rem',
+                                                    cursor: 'pointer',
+                                                    fontWeight: '800',
+                                                    fontSize: '0.9rem',
+                                                    transition: 'all 0.2s',
+                                                    boxShadow: teacherTTSubTab === m ? '0 4px 12px rgba(79, 70, 229, 0.4)' : 'none'
+                                                }}
+                                            >
+                                                {m} School TT ({m === 'Middle' ? uniqueMiddle.length : uniqueSenior.length} teachers)
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => saveAllotments()}
+                                        disabled={isSaving}
+                                        style={{
+                                            padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none',
+                                            borderRadius: '0.5rem', cursor: isSaving ? 'not-allowed' : 'pointer', fontWeight: 700,
+                                            fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: isSaving ? 0.7 : 1
+                                        }}
+                                    >
+                                        💾 {isSaving ? 'Saving...' : 'Save Data'}
+                                    </button>
                                 </div>
 
                                 {/* Header with Page Controls & Print Button */}
@@ -7931,7 +8119,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         jkrdomain — Page {teacherTTPage}/{totalPages}
                                     </div>
                                 </div>
-                            </div>
+                            </div >
                         );
                     })()
                 }
@@ -8382,13 +8570,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 </div>
                                 <div>
                                     <div className="target-classes-section">
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>TARGET CLASSES (CLUB):</label>
-                                    <MultiClassSelector
-                                        selectedClasses={streamSelectedClasses}
-                                        onClassesChange={setStreamSelectedClasses}
-                                        availableClasses={CLASS_OPTIONS}
-                                    />
-                                </div>
+                                        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>TARGET CLASSES (CLUB):</label>
+                                        <MultiClassSelector
+                                            selectedClasses={streamSelectedClasses}
+                                            onClassesChange={setStreamSelectedClasses}
+                                            availableClasses={CLASS_OPTIONS}
+                                        />
+                                    </div>
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Weekly Load</label>
@@ -8401,40 +8589,40 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     </select>
                                 </div>
                             </div>
-                                                {/* Normal period distribution controls */}
-                                                <div className="normal-distribution-section">
-                                                    <h3 style={{ margin: '0 0 0.5rem 0', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase' }}>NORMAL PERIOD DISTRIBUTION</h3>
-                                                    <div className="distribution-controls">
-                                                        <label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
-                                                            Force:
-                                                            <select 
-                                                                value={forceCount} 
-                                                                onChange={(e) => setForceCount(Number(e.target.value))}
-                                                            >
-                                                                {[0,1,2,3,4,5,6].map(num => (
-                                                                    <option key={num} value={num}>{num}</option>
-                                                                ))}
-                                                            </select>
-                                                            period(s) to
-                                                        </label>
-                            
-                                                        <select 
-                                                            value={forceDay} 
-                                                            onChange={(e) => setForceDay(e.target.value)}
-                                                        >
-                                                            <option value="Monday">Monday</option>
-                                                            <option value="Tuesday">Tuesday</option>
-                                                            <option value="Wednesday">Wednesday</option>
-                                                            <option value="Thursday">Thursday</option>
-                                                            <option value="Friday">Friday</option>
-                                                            <option value="Saturday">Saturday</option>
-                                                        </select>
-                            
-                                                        <label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
-                                                            Remaining: {streamForm.periods - forceCount} on Any Other Days
-                                                        </label>
-                                                    </div>
-                                                </div>
+                            {/* Normal period distribution controls */}
+                            <div className="normal-distribution-section">
+                                <h3 style={{ margin: '0 0 0.5rem 0', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase' }}>NORMAL PERIOD DISTRIBUTION</h3>
+                                <div className="distribution-controls">
+                                    <label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
+                                        Force:
+                                        <select
+                                            value={forceCount}
+                                            onChange={(e) => setForceCount(Number(e.target.value))}
+                                        >
+                                            {[0, 1, 2, 3, 4, 5, 6].map(num => (
+                                                <option key={num} value={num}>{num}</option>
+                                            ))}
+                                        </select>
+                                        period(s) to
+                                    </label>
+
+                                    <select
+                                        value={forceDay}
+                                        onChange={(e) => setForceDay(e.target.value)}
+                                    >
+                                        <option value="Monday">Monday</option>
+                                        <option value="Tuesday">Tuesday</option>
+                                        <option value="Wednesday">Wednesday</option>
+                                        <option value="Thursday">Thursday</option>
+                                        <option value="Friday">Friday</option>
+                                        <option value="Saturday">Saturday</option>
+                                    </select>
+
+                                    <label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
+                                        Remaining: {streamForm.periods - forceCount} on Any Other Days
+                                    </label>
+                                </div>
+                            </div>
 
                             <div style={{ minHeight: 'auto', marginBottom: '2rem', paddingRight: '0.5rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
