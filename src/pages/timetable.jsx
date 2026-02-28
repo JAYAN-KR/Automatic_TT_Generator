@@ -975,12 +975,25 @@ export default function TimetablePage() {
             if (prev.length <= 1) return prev; // keep at least one
             return prev.filter(r => r.id !== id);
         });
+        // also clear completed creations for this row
+        markRowDirty(id);
     };
+    // When a row is edited we need to mark it as dirty so
+    // completedCreations no longer prevents regeneration.
+    const markRowDirty = (rowId) => {
+        setCompletedCreations(prev => {
+            const next = new Set(prev);
+            next.delete(rowId);
+            return next;
+        });
+    };
+
     const updateAllotmentField = (id, field, value) => {
         setAllotmentRows(prev => prev.map(r => {
             if (r.id !== id) return r;
             return { ...r, [field]: value };
         }));
+        markRowDirty(id);
     };
     const updateAllotmentGroup = (rowId, groupIndex, field, value) => {
         setAllotmentRows(prev => prev.map(r => {
@@ -1021,6 +1034,7 @@ export default function TimetablePage() {
                 total: calculateTotalLoad(newGroups)
             };
         }));
+        markRowDirty(rowId);
     };
     const addAllotmentGroup = (rowId) => {
         setAllotmentRows(prev => prev.map(r => {
@@ -1050,6 +1064,7 @@ export default function TimetablePage() {
                 total: calculateTotalLoad(newGroups)
             };
         }));
+        markRowDirty(rowId);
     };
     const deleteAllotmentGroup = (rowId, groupIndex) => {
         setAllotmentRows(prev => prev.map(r => {
@@ -1074,6 +1089,7 @@ export default function TimetablePage() {
                 total: calculateTotalLoad(newGroups)
             };
         }));
+        markRowDirty(rowId);
     };
     const moveAllotmentGroup = (rowId, fromIndex, toIndex) => {
         setAllotmentRows(prev => prev.map(r => {
@@ -1083,6 +1099,7 @@ export default function TimetablePage() {
             newAllotments.splice(toIndex, 0, moved);
             return { ...r, allotments: newAllotments };
         }));
+        markRowDirty(rowId);
     };
 
     const unmergeGroup = (rowId, groupIndex) => {
@@ -1612,6 +1629,7 @@ export default function TimetablePage() {
                     setAllotmentRows(data.rows);
                     localStorage.setItem('tt_allotments', JSON.stringify({ rows: data.rows }));
                     addToast('☁️ Loaded from Cloud', 'success');
+                    allotmentsLoadedRef.current = true;
                     setIsLoading(false);
                     return true;
                 }
@@ -1623,6 +1641,7 @@ export default function TimetablePage() {
                 const data = JSON.parse(localSaved);
                 if (data.rows && data.rows.length > 0) {
                     setAllotmentRows(data.rows);
+                    allotmentsLoadedRef.current = true;
                     addToast('📋 Loaded from Browser backup', 'success');
                     setIsLoading(false);
                     return true;
@@ -1632,6 +1651,7 @@ export default function TimetablePage() {
             console.error('Data load error:', e);
             addToast('❌ Failed to load cloud data', 'error');
         } finally {
+            allotmentsLoadedRef.current = true;
             setIsLoading(false);
         }
         return false;
@@ -2039,18 +2059,29 @@ export default function TimetablePage() {
     }, [teacherSubjectMappings, subjects, teachers, hasNewExtraction, activeTab]);
 
     // --- Auto-save allotmentRows to cloud (debounced 3s) ---
+    const allotmentsLoadedRef = useRef(false); // set true after loadAllotments finishes
     useEffect(() => {
-        if (!allotmentRows || allotmentRows.length === 0) return;
+        if (!allotmentsLoadedRef.current) {
+            // skip autosave until initial load complete
+            return;
+        }
+        if (!allotmentRows) return;
         const timer = setTimeout(() => {
-            // silent save: write to localStorage + Firestore without toast
+            // silent save: write to localStorage + Firestore
             try { localStorage.setItem('tt_allotments', JSON.stringify({ rows: allotmentRows })); } catch { }
             const docRef = doc(db, 'allotments', academicYear);
             setDoc(docRef, { rows: allotmentRows, lastUpdated: new Date().toISOString(), academicYear })
-                .then(() => console.log('☁️ [AutoSave] allotments synced'))
-                .catch(e => console.warn('⚠️ [AutoSave] allotments cloud failed:', e.message));
+                .then(() => {
+                    console.log('☁️ [AutoSave] allotments synced');
+                    addToast('🔄 Allotments auto-saved', 'success');
+                })
+                .catch(e => {
+                    console.warn('⚠️ [AutoSave] allotments cloud failed:', e.message);
+                    addToast(`⚠️ Auto-save failed: ${e.message}`, 'error');
+                });
         }, 3000);
         return () => clearTimeout(timer);
-    }, [allotmentRows]);
+    }, [allotmentRows, academicYear]);
 
     // --- Auto-save Teachers & Subjects to cloud (debounced 3s) ---
     useEffect(() => {
@@ -4235,10 +4266,10 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 </button>
                             ))}
                             <div style={{ width: '1px', height: '1.2rem', background: '#334155', margin: '0 0.4rem' }} />
-                            <button onClick={() => handleBatchGenerate('Middle School', 'MID')} title="Generate timetable for all middle school grades (6-10) automatically" style={{ padding: '0.4rem 0.8rem', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
+                            <button onClick={() => handleBatchGenerate('Middle School', 'MID')} title="Generate timetable for middle school grades only (6‑8)" style={{ padding: '0.4rem 0.8rem', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
                                 GenMid
                             </button>
-                            <button onClick={() => handleBatchGenerate('Main School', 'MAIN')} title="Generate timetable for main school (grades 11-12) automatically" style={{ padding: '0.4rem 0.8rem', background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
+                            <button onClick={() => handleBatchGenerate('Main School', 'MAIN')} title="Generate timetable for main & senior school (grades 9‑12)" style={{ padding: '0.4rem 0.8rem', background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
                                 GenMain
                             </button>
                             <button onClick={() => handleBatchGenerate('Full School', 'FULL')} title="Generate complete timetable for entire school (all grades) - Includes fixed, block, stream and single assignments" style={{ padding: '0.4rem 1.2rem', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 900, cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(245, 158, 11, 0.3)' }}>
@@ -4348,43 +4379,90 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         <div style={{
                                                             display: 'flex',
                                                             justifyContent: 'space-between',
-                                                            alignItems: 'center',
+                                                            alignItems: 'flex-start',
                                                             background: 'linear-gradient(90deg, #1e293b, #0f172a)',
                                                             padding: '0.5rem 1rem',
                                                             borderRadius: '0.6rem',
                                                             marginBottom: editingTeacherId === row.id ? '0.5rem' : '0.2rem',
                                                             border: '1px solid #334155',
                                                             boxShadow: '0 4px 6px -1px rgba(0,0,0,0.2)',
-                                                            transition: 'all 0.3s ease'
+                                                            transition: 'all 0.3s ease',
+                                                            gap: '1.2rem'
                                                         }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.2rem' }}>
-                                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-                                                                        <span style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{(mappingRows.find(m => (m.teacher || '').trim().toLowerCase() === (row.teacher || '').trim().toLowerCase())?.subjects?.[0] || 'No Subject')} - </span>
-                                                                        <span style={{ fontWeight: 900, color: '#f8fafc', fontSize: '1rem', letterSpacing: '0.01em' }}>{row.teacher || '(No Teacher)'}</span>
-                                                                        {subjects.length > 1 && (
-                                                                            <span style={{ fontSize: '0.75rem', color: '#6366f1', fontWeight: 800 }}> • {subjects.slice(1).join(', ')}</span>
-                                                                        )}
-                                                                    </div>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                                                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                                                                    <span style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{(mappingRows.find(m => (m.teacher || '').trim().toLowerCase() === (row.teacher || '').trim().toLowerCase())?.subjects?.[0] || 'No Subject')} - </span>
+                                                                    <span style={{ fontWeight: 900, color: '#f8fafc', fontSize: '1rem', letterSpacing: '0.01em' }}>{row.teacher || '(No Teacher)'}</span>
+                                                                    {subjects.length > 1 && (
+                                                                        <span style={{ fontSize: '0.75rem', color: '#6366f1', fontWeight: 800 }}> • {subjects.slice(1).join(', ')}</span>
+                                                                    )}
                                                                 </div>
-                                                                <div style={{ height: '28px', width: '1px', background: '#334155' }}></div>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Total Load:</span>
-                                                                    <span style={{
-                                                                        background: grandTotal > 0 ? '#0ea5e9' : 'rgba(255,255,255,0.03)',
-                                                                        color: grandTotal > 0 ? 'white' : '#64748b',
-                                                                        border: grandTotal > 0 ? 'none' : '1px solid #334155',
-                                                                        padding: '2px 10px',
-                                                                        borderRadius: '6px',
-                                                                        fontSize: '0.85rem',
-                                                                        fontWeight: 900,
-                                                                        boxShadow: grandTotal > 0 ? '0 2px 8px rgba(14,165,233,0.4)' : 'none',
-                                                                        transition: 'all 0.3s ease'
-                                                                    }}>
-                                                                        {grandTotal}
-                                                                        {streamPeriods > 0 && <span style={{ fontSize: '0.65rem', marginLeft: '4px', opacity: 0.8 }}>({streamPeriods} [S])</span>}
-                                                                    </span>
+                                                                {/* Class Breakdown Line */}
+                                                                <div style={{ fontSize: '0.95rem', color: '#64748b', marginTop: '0.25rem', fontWeight: 700, fontFamily: 'monospace', textAlign: 'left', marginLeft: '0' }}>
+                                                                    {(() => {
+                                                                        const classBreakdown = [];
+                                                                        const classMap = {};
+                                                                        
+                                                                        (row.allotments || []).forEach(a => {
+                                                                            const clsList = (a.classes || []).filter(c=>c).sort();
+                                                                            if (clsList.length === 0) return;
+                                                                            // build normalized key: number once, letters concatenated
+                                                                            const parts = clsList.map(c => {
+                                                                                const m = c.match(/^(\d+)([A-Z])$/i);
+                                                                                return m ? { num: m[1], div: m[2] } : null;
+                                                                            }).filter(Boolean);
+                                                                            let key;
+                                                                            if (parts.length > 0) {
+                                                                                const num = parts[0].num;
+                                                                                const letters = parts.map(p=>p.div).join('');
+                                                                                key = num + letters;
+                                                                            } else {
+                                                                                key = clsList.join('');
+                                                                            }
+                                                                            if (!classMap[key]) {
+                                                                                classMap[key] = {
+                                                                                    subject: a.subject || '',
+                                                                                    periods: 0,
+                                                                                    tBlock: 0,
+                                                                                    lBlock: 0,
+                                                                                    saturday: 0
+                                                                                };
+                                                                            }
+                                                                            classMap[key].periods += Number(a.periods) || 0;
+                                                                            classMap[key].tBlock += Number(a.tBlock) || 0;
+                                                                            classMap[key].lBlock += Number(a.lBlock) || 0;
+                                                                            if (a.tbDay === 'Saturday' || a.lbDay === 'Saturday' || a.fixedDay === 'Saturday' || a.preferredDay === 'Saturday') {
+                                                                                classMap[key].saturday = 1;
+                                                                            }
+                                                                        });
+                                                                        
+                                                                        Object.keys(classMap).sort().forEach(cls => {
+                                                                            const data = classMap[cls];
+                                                                            const subAbbr = data.subject ? (data.subject.length > 4 ? data.subject.substring(0, 3).toLowerCase() : data.subject.toLowerCase()) : '';
+                                                                            classBreakdown.push(`${cls}-${subAbbr}-${data.periods}-${data.tBlock}-${data.lBlock}${data.saturday ? '-1' : ''}`);
+                                                                        });
+                                                                        
+                                                                        return classBreakdown.join(', ');
+                                                                    })()}
                                                                 </div>
+                                                            </div>
+                                                            
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                                                <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Total Load:</span>
+                                                                <span style={{
+                                                                    background: grandTotal > 0 ? '#0ea5e9' : 'rgba(255,255,255,0.03)',
+                                                                    color: grandTotal > 0 ? 'white' : '#64748b',
+                                                                    border: grandTotal > 0 ? 'none' : '1px solid #334155',
+                                                                    padding: '2px 10px',
+                                                                    borderRadius: '6px',
+                                                                    fontSize: '0.85rem',
+                                                                    fontWeight: 900,
+                                                                    boxShadow: grandTotal > 0 ? '0 2px 8px rgba(14,165,233,0.4)' : 'none',
+                                                                    transition: 'all 0.3s ease'
+                                                                }}>
+                                                                    {grandTotal}
+                                                                    {streamPeriods > 0 && <span style={{ fontSize: '0.65rem', marginLeft: '4px', opacity: 0.8 }}>({streamPeriods} [S])</span>}
+                                                                </span>
                                                             </div>
 
                                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
