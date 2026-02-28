@@ -2576,8 +2576,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             addMessage(`→ Placing ${periodsToPlace} periods for stream ${stream.name}`);
 
             // Diagonal walk for distribution
-            // Include Saturday for streams as well
-            const PRIORITY_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            // Only weekdays are prioritized for stream placement by default
+            const PRIORITY_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
             // Start from a random day to ensure rotation
             const rotationOffset = Math.floor(Math.random() * PRIORITY_DAYS.length);
@@ -8291,8 +8291,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     onClick={async () => {
                                         const savedStream = handleSaveStream();
                                         if (savedStream) {
-                                            // Automatically trigger placement (deployment) into the timetable
-                                            await handleCreateStreamSpecific(savedStream);
+                                            // Automatically trigger placement (deployment) into the timetable.
+                                            // supply existing timetable if available so fixed/blocks remain intact
+                                            await handleCreateStreamSpecific(savedStream, generatedTimetable || null);
                                         }
                                     }}
                                     style={{
