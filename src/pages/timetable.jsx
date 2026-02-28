@@ -1953,6 +1953,8 @@ export default function TimetablePage() {
     });
     // classes chosen via the MultiClassSelector within the stream modal
     const [streamSelectedClasses, setStreamSelectedClasses] = useState([]);
+    const [forceCount, setForceCount] = useState(1);
+    const [forceDay, setForceDay] = useState('Saturday');
 
     // toast messages
     const [toasts, setToasts] = useState([]);
@@ -8173,6 +8175,40 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     </select>
                                 </div>
                             </div>
+                                                {/* Normal period distribution controls */}
+                                                <div className="normal-distribution-section">
+                                                    <h3 style={{ margin: '0 0 0.5rem 0', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase' }}>NORMAL PERIOD DISTRIBUTION</h3>
+                                                    <div className="distribution-controls">
+                                                        <label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
+                                                            Force:
+                                                            <select 
+                                                                value={forceCount} 
+                                                                onChange={(e) => setForceCount(Number(e.target.value))}
+                                                            >
+                                                                {[0,1,2,3,4,5,6].map(num => (
+                                                                    <option key={num} value={num}>{num}</option>
+                                                                ))}
+                                                            </select>
+                                                            period(s) to
+                                                        </label>
+                            
+                                                        <select 
+                                                            value={forceDay} 
+                                                            onChange={(e) => setForceDay(e.target.value)}
+                                                        >
+                                                            <option value="Monday">Monday</option>
+                                                            <option value="Tuesday">Tuesday</option>
+                                                            <option value="Wednesday">Wednesday</option>
+                                                            <option value="Thursday">Thursday</option>
+                                                            <option value="Friday">Friday</option>
+                                                            <option value="Saturday">Saturday</option>
+                                                        </select>
+                            
+                                                        <label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
+                                                            Remaining: {streamForm.periods - forceCount} on Any Other Days
+                                                        </label>
+                                                    </div>
+                                                </div>
 
                             <div style={{ flex: 1, overflowY: 'auto', marginBottom: '2rem', paddingRight: '0.5rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>

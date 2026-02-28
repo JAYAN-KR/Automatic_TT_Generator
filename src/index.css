@@ -53,6 +53,26 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* Styling for normal period distribution controls in stream modal */
+.normal-distribution-section {
+  margin: 20px 0;
+  padding: 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+}
+
+.distribution-controls {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.distribution-controls select {
+  padding: 4px 8px;
+  margin: 0 5px;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
