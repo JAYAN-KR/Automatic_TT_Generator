@@ -2591,6 +2591,44 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             let placed = 0;
             const placements = [];
 
+            // CLEANUP: Remove all existing periods from this stream (for regeneration after edits)
+            const deletedCount = { classes: 0, teachers: 0 };
+            for (const cn of Object.keys(tt.classTimetables)) {
+                for (const d of DAYS) {
+                    for (const p of PRDS) {
+                        const slot = tt.classTimetables[cn][d][p];
+                        if (slot && slot.isStream && slot.streamName === stream.name) {
+                            // Remove from class timetable
+                            delete tt.classTimetables[cn][d][p];
+                            deletedCount.classes++;
+
+                            // Remove from corresponding teacher timetables
+                            if (slot.streamClasses) {
+                                stream.subjects.forEach(s => {
+                                    const tName = s.teacher?.trim();
+                                    if (tName && tt.teacherTimetables[tName]?.[d]?.[p]) {
+                                        const tSlot = tt.teacherTimetables[tName][d][p];
+                                        if (tSlot.isStream && tSlot.streamName === stream.name) {
+                                            delete tt.teacherTimetables[tName][d][p];
+                                            if (tt.teacherTimetables[tName][d].periodCount > 0) {
+                                                tt.teacherTimetables[tName][d].periodCount--;
+                                            }
+                                            if (tt.teacherTimetables[tName].weeklyPeriods > 0) {
+                                                tt.teacherTimetables[tName].weeklyPeriods--;
+                                            }
+                                            deletedCount.teachers++;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            if (deletedCount.classes > 0) {
+                addMessage(`🗑️ Removed ${deletedCount.classes} old period(s) for stream ${stream.name}`);
+            }
+
             addMessage(`→ Placing ${periodsToPlace} periods for stream ${stream.name}`);
 
             // Diagonal walk for distribution
