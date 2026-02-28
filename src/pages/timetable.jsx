@@ -4165,6 +4165,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
                             <button
                                 onClick={() => saveAllotments()}
+                                title="Save all teacher allotments and timetable data to cloud storage"
                                 style={{
                                     padding: '0.75rem 1.5rem',
                                     background: '#10b981',
@@ -4184,6 +4185,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             </button>
                             <button
                                 onClick={loadAllotments}
+                                title="Load teacher allotments from cloud storage to replace current data"
                                 style={{
                                     padding: '0.75rem 1.5rem',
                                     background: '#334155',
@@ -4198,6 +4200,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             </button>
                             <button
                                 onClick={clearAllotments}
+                                title="Delete all saved timetable data from cloud storage"
                                 style={{
                                     padding: '0.75rem 1.5rem',
                                     background: 'transparent',
@@ -4227,18 +4230,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         }}>
                             <span style={{ fontSize: '0.75rem', fontWeight: 900, color: '#64748b', marginRight: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>⚡ Batch Gen:</span>
                             {['6', '7', '8', '9', '10', '11', '12'].map(g => (
-                                <button key={g} onClick={() => handleBatchGenerate(`Grade ${g}`, g)} style={{ padding: '0.4rem 0.8rem', background: '#334155', color: '#e2e8f0', border: '1px solid #475569', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }} onMouseOver={e => e.currentTarget.style.background = '#475569'} onMouseOut={e => e.currentTarget.style.background = '#334155'}>
+                                <button key={g} onClick={() => handleBatchGenerate(`Grade ${g}`, g)} title={`Generate timetable for Grade ${g} automatically`} style={{ padding: '0.4rem 0.8rem', background: '#334155', color: '#e2e8f0', border: '1px solid #475569', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }} onMouseOver={e => e.currentTarget.style.background = '#475569'} onMouseOut={e => e.currentTarget.style.background = '#334155'}>
                                     Gen{g}
                                 </button>
                             ))}
                             <div style={{ width: '1px', height: '1.2rem', background: '#334155', margin: '0 0.4rem' }} />
-                            <button onClick={() => handleBatchGenerate('Middle School', 'MID')} style={{ padding: '0.4rem 0.8rem', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
+                            <button onClick={() => handleBatchGenerate('Middle School', 'MID')} title="Generate timetable for all middle school grades (6-10) automatically" style={{ padding: '0.4rem 0.8rem', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
                                 GenMid
                             </button>
-                            <button onClick={() => handleBatchGenerate('Main School', 'MAIN')} style={{ padding: '0.4rem 0.8rem', background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
+                            <button onClick={() => handleBatchGenerate('Main School', 'MAIN')} title="Generate timetable for main school (grades 11-12) automatically" style={{ padding: '0.4rem 0.8rem', background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
                                 GenMain
                             </button>
-                            <button onClick={() => handleBatchGenerate('Full School', 'FULL')} style={{ padding: '0.4rem 1.2rem', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 900, cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(245, 158, 11, 0.3)' }}>
+                            <button onClick={() => handleBatchGenerate('Full School', 'FULL')} title="Generate complete timetable for entire school (all grades) - Includes fixed, block, stream and single assignments" style={{ padding: '0.4rem 1.2rem', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 900, cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(245, 158, 11, 0.3)' }}>
                                 🚀 GenFull
                             </button>
 
@@ -4919,8 +4922,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             {/* Bulk actions bar */}
                                             <div style={{ padding: '0.6rem 1.5rem', background: '#1e293b', borderBottom: '1px solid #0f172a', display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}>
                                                 <span style={{ fontSize: '0.78rem', color: '#64748b', flexGrow: 1 }}>Select periods to remove:</span>
-                                                <button onClick={selectAll} style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Select All</button>
-                                                <button onClick={deselectAll} style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Deselect All</button>
+                                                <button onClick={selectAll} title="Check all periods for deletion" style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Select All</button>
+                                                <button onClick={deselectAll} title="Uncheck all periods" style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Deselect All</button>
                                             </div>
                                             {/* Classes list */}
                                             <div style={{ overflowY: 'auto', flexGrow: 1, padding: '0.75rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -4988,8 +4991,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     {totalSel > 0 ? `${totalSel} period${totalSel !== 1 ? 's' : ''} selected` : 'Nothing selected'}
                                                 </span>
                                                 <div style={{ display: 'flex', gap: '0.55rem' }}>
-                                                    <button onClick={() => setDeletePopup(null)} style={{ padding: '0.55rem 1.1rem', background: 'transparent', border: '1px solid #334155', borderRadius: '0.55rem', color: '#94a3b8', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}>Cancel</button>
-                                                    <button onClick={executeDelete} disabled={totalSel === 0} style={{
+                                                    <button onClick={() => setDeletePopup(null)} title="Close dialog without deleting" style={{ padding: '0.55rem 1.1rem', background: 'transparent', border: '1px solid #334155', borderRadius: '0.55rem', color: '#94a3b8', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}>Cancel</button>
+                                                    <button onClick={executeDelete} title="Permanently delete selected periods" disabled={totalSel === 0} style={{
                                                         padding: '0.55rem 1.25rem',
                                                         background: totalSel === 0 ? '#1e293b' : 'linear-gradient(135deg, #dc2626, #b91c1c)',
                                                         border: `1px solid ${totalSel === 0 ? '#334155' : '#dc2626'}`,
@@ -5010,6 +5013,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
                             <button
                                 onClick={addAllotmentRow}
+                                title="Add a new teacher allotment row"
                                 style={{
                                     padding: '0.75rem 1.5rem',
                                     background: '#4f46e5',
@@ -5022,6 +5026,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             >+ Add Row</button>
                             <button
                                 onClick={() => saveAllotments()}
+                                title="Save all changes to teacher allotments"
                                 style={{
                                     padding: '0.75rem 1.5rem',
                                     background: '#10b981',
@@ -7630,6 +7635,27 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             }
                                                         }
 
+                                                        // Detect if this is a double (lab) period by checking if next period has same content
+                                                        const nextPeriodIdx = pi + 1;
+                                                        const nextPeriod = nextPeriodIdx < PERIODS.length ? PERIODS[nextPeriodIdx] : null;
+                                                        const currentSlot = tTT?.[day]?.[p];
+                                                        const nextSlot = nextPeriod ? tTT?.[day]?.[nextPeriod] : null;
+                                                        
+                                                        // Check if current and next periods have same content (indicating a lab period pair)
+                                                        const isDoublePeriodStart = currentSlot && nextSlot && 
+                                                            JSON.stringify(currentSlot) === JSON.stringify(nextSlot) &&
+                                                            !(p === 'S2' || p === 'S5' || p === 'S9' || p === 'S11'); // Skip if this is the "end" of a pair
+                                                        
+                                                        // Check if this is second period of a double (to handle border styling)
+                                                        let isDoublePeriodEnd = false;
+                                                        if (p === 'S2' || p === 'S5' || p === 'S9' || p === 'S11') {
+                                                            const prevPeriod = PERIODS[pi - 1];
+                                                            const prevSlot = tTT?.[day]?.[prevPeriod];
+                                                            if (prevSlot && currentSlot && JSON.stringify(prevSlot) === JSON.stringify(currentSlot)) {
+                                                                isDoublePeriodEnd = true; // This is the end of a merged pair
+                                                            }
+                                                        }
+
                                                         const slot = tTT?.[day]?.[p];
                                                         const isObj = slot && typeof slot === 'object';
                                                         let displayClass = isObj ? slot.className : (slot || '-');
@@ -7638,7 +7664,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         // Extract Lab/Theory indicator
                                                         let labType = '';
                                                         if (isObj && slot.labGroup && slot.labGroup !== 'None') {
-                                                            labType = slot.isLabPeriod ? '(L)' : '(T)';
+                                                            labType = slot.isLabPeriod ? 'Lab' : 'Th';
                                                         }
 
                                                         displaySub = getSubAbbr(displaySub);
@@ -7648,9 +7674,41 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         const indicatorSpan = typeIndicator ? <sub style={{ fontSize: '0.55rem', verticalAlign: 'super', fontWeight: 500, marginLeft: '1px' }}>{typeIndicator}</sub> : null;
                                                         const isCombined = div && div.length <= 3;
 
+                                                        // Determine border styling for merged periods
+                                                        let cellBorderRight = '1px solid black';
+                                                        let cellBorderLeft = '1px solid black';
+                                                        if (isDoublePeriodStart) {
+                                                            cellBorderRight = 'none'; // Hide right border for first of pair
+                                                        } else if (isDoublePeriodEnd) {
+                                                            cellBorderLeft = 'none'; // Hide left border for second of pair
+                                                        }
+
+                                                        // second half of a double should be empty
+                                                        if (isDoublePeriodEnd) {
+                                                            return (
+                                                                <td key={p} style={{
+                                                                    borderTop: '1px solid black',
+                                                                    borderBottom: '1px solid black',
+                                                                    borderLeft: cellBorderLeft,
+                                                                    borderRight: cellBorderRight,
+                                                                    textAlign: 'center',
+                                                                    height: '42px',
+                                                                    background: isLunch ? '#fff1f2' : 'white',
+                                                                    padding: '1px',
+                                                                    color: 'black',
+                                                                    verticalAlign: 'middle'
+                                                                }}>
+                                                                    {/* blank - merged with previous */}
+                                                                </td>
+                                                            );
+                                                        }
+
                                                         return (
                                                             <td key={p} style={{
-                                                                border: '1px solid black',
+                                                                borderTop: '1px solid black',
+                                                                borderBottom: '1px solid black',
+                                                                borderLeft: cellBorderLeft,
+                                                                borderRight: cellBorderRight,
                                                                 textAlign: 'center',
                                                                 height: '42px',
                                                                 background: isLunch ? '#fff1f2' : 'white',
@@ -7658,7 +7716,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 color: 'black',
                                                                 verticalAlign: 'middle'
                                                             }}>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px' }}>
+                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px', height: '100%', width: isDoublePeriodStart ? '200%' : '100%', justifyContent: 'center' }}>
                                                                     <div style={{ fontSize: '11.5px', color: 'black', lineHeight: '1.1' }}>
                                                                         <span style={{ fontWeight: 600 }}>{num}{div}</span>
                                                                     </div>
@@ -7984,6 +8042,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             printWindow.document.close();
                                         }}
                                         disabled={!generatedTimetable}
+                                        title="Print individual timetables for all teachers (6 per page format suitable for A4 paper)"
                                         style={{
                                             padding: '1rem',
                                             background: generatedTimetable ? '#4f46e5' : '#64748b',
@@ -8034,6 +8093,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             printWindow.document.close();
                                         }}
                                         disabled={!generatedTimetable}
+                                        title="Print timetables for all classes (6 per page format suitable for A4 paper)"
                                         style={{
                                             padding: '1rem',
                                             background: generatedTimetable ? '#059669' : '#64748b',
@@ -8395,6 +8455,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             </div>
                                             <button
                                                 onClick={() => removeSubjectFromStream(idx)}
+                                                title="Remove this subject group from the stream"
                                                 style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.1rem' }}
                                                 onMouseEnter={(e) => { e.target.style.color = '#ef4444'; }}
                                                 onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; }}
@@ -8407,6 +8468,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', borderTop: '1px solid #334155', paddingTop: '1.75rem', marginTop: 'auto' }}>
                                 <button
                                     onClick={() => setShowStreamModal(false)}
+                                    title="Close the stream editor without saving"
                                     style={{ padding: '0.85rem 1.75rem', background: 'transparent', border: '1px solid #475569', borderRadius: '0.85rem', color: '#94a3b8', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s' }}
                                     onMouseEnter={(e) => { e.target.style.color = '#f1f5f9'; e.target.style.borderColor = '#94a3b8'; }}
                                     onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; e.target.style.borderColor = '#475569'; }}
@@ -8420,6 +8482,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             await handleCreateStreamSpecific(savedStream, generatedTimetable || null);
                                         }
                                     }}
+                                    title={editingStreamId ? "Save changes and regenerate this parallel stream in the timetable" : "Save the new parallel stream and automatically place it in the timetable"}
                                     style={{
                                         padding: '0.85rem 2rem',
                                         background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
