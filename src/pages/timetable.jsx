@@ -135,11 +135,22 @@ const rebuildTeacherTimetables = (tt, allotmentRows) => {
                 if (!slot || !slot.subject || slot.subject === 'BREAK' || slot.subject === 'LUNCH') return;
 
                 if (slot.isStream && slot.subjects) {
+                    // determine combined class list: prefer explicit streamClasses property,
+                    // fall back to scanning all class timetables for same streamName (legacy support)
+                    let combinedClasses = slot.streamClasses || '';
+                    if (!combinedClasses && slot.streamName) {
+                        const matches = Object.keys(tt.classTimetables).filter(otherCn => {
+                            const otherSlot = tt.classTimetables[otherCn][day][p];
+                            return otherSlot && otherSlot.isStream && otherSlot.streamName === slot.streamName;
+                        });
+                        if (matches.length > 0) combinedClasses = matches.join('/');
+                    }
+
                     slot.subjects.forEach(s => {
                         const tName = s.teacher?.trim();
                         if (tName && teacherTimetables[tName]) {
                             teacherTimetables[tName][day][p] = {
-                                className: cn,
+                                className: combinedClasses || cn,
                                 subject: s.subject,
                                 fullSubject: s.subject,
                                 groupName: s.groupName,
@@ -1193,7 +1204,7 @@ export default function TimetablePage() {
             return;
         }
 
-        const updatedStream = { ...streamForm, id: editingStreamId || Date.now(), className: classesString };
+        const updatedStream = { ...streamForm, id: editingStreamId || Date.now(), className: classesString, forceCount, forceDay };
         let updated;
         if (editingStreamId) {
             updated = subjectStreams.map(s => s.id === editingStreamId ? updatedStream : s);
@@ -1207,6 +1218,8 @@ export default function TimetablePage() {
         setEditingStreamId(null);
         setStreamForm({ name: '', abbreviation: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '', groupName: '' }] });
         setStreamSelectedClasses([]);
+        setForceCount(1);
+        setForceDay('Saturday');
         addToast('✅ Stream saved successfully', 'success');
         return updatedStream;
     };
@@ -1225,6 +1238,9 @@ export default function TimetablePage() {
         // split slash-separated class names into array for selector
         const classes = stream.className ? stream.className.split('/').map(s => s.trim()).filter(Boolean) : [];
         setStreamSelectedClasses(classes);
+        // load forced day settings if available
+        setForceCount(stream.forceCount || 1);
+        setForceDay(stream.forceDay || 'Saturday');
         setShowStreamModal(true);
     };
 
@@ -2601,32 +2617,64 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             const D_LEN = ROTATED_DAYS.length;
             const P_LEN = AVAILABLE_SLOTS.length;
 
+            // Extract forced day settings
+            const forceCount = stream.forceCount || 0;
+            const forceDay = stream.forceDay || 'Saturday';
+
+            let forcedPlaced = 0;
+
             for (let i = 0; i < stream.periods; i++) {
                 let pick = null;
-                // Walk DIAGONALLY (incrementing both day and period)
-                for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
-                    const walkIdx = existingStreamCount + i + attempt;
-                    const d = ROTATED_DAYS[walkIdx % D_LEN];
-                    const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
+                const shouldBeForcedDay = forcedPlaced < forceCount;
 
-                    // Try to avoid same-day if we have enough days, otherwise allow it
-                    if (periodsToPlace <= D_LEN && placements.some(placement => placement.day === d)) continue;
-
-                    if (streamFree(d, p)) {
-                        pick = { d, p };
-                        break;
+                if (shouldBeForcedDay) {
+                    // Try to place on the forced day
+                    for (let attempt = 0; attempt < P_LEN; attempt++) {
+                        const p = AVAILABLE_SLOTS[attempt];
+                        if (streamFree(forceDay, p)) {
+                            pick = { d: forceDay, p };
+                            forcedPlaced++;
+                            break;
+                        }
                     }
-                }
-
-                if (!pick) {
-                    // Fallback: ignore same-day constraint but keep diagonal walk
+                    // If forced day has no slots, try any day (but don't count it as forcedPlaced)
+                    if (!pick) {
+                        for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
+                            const walkIdx = existingStreamCount + i + attempt;
+                            const d = ROTATED_DAYS[walkIdx % D_LEN];
+                            const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
+                            if (streamFree(d, p)) {
+                                pick = { d, p };
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // Normal diagonal walk, but avoid forced day if possible
                     for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
                         const walkIdx = existingStreamCount + i + attempt;
                         const d = ROTATED_DAYS[walkIdx % D_LEN];
                         const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
+
+                        // Skip forced day unless we have no choice
+                        if (d === forceDay && (periodsToPlace - placed) > (D_LEN - 1)) continue;
+
                         if (streamFree(d, p)) {
                             pick = { d, p };
                             break;
+                        }
+                    }
+
+                    if (!pick) {
+                        // Fallback: ignore forced day constraint but keep diagonal walk
+                        for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
+                            const walkIdx = existingStreamCount + i + attempt;
+                            const d = ROTATED_DAYS[walkIdx % D_LEN];
+                            const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
+                            if (streamFree(d, p)) {
+                                pick = { d, p };
+                                break;
+                            }
                         }
                     }
                 }
@@ -2639,9 +2687,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             subject: abbr,
                             isStream: true,
                             streamName: stream.name,
-                            subjects: stream.subjects
+                            subjects: stream.subjects,
+                            // keep full slash‑separated class list for later reconstruction
+                            streamClasses: stream.className
                         };
                     });
+                    placed++;
 
                     stream.subjects.forEach(s => {
                         const trimmedT = s.teacher?.trim();
@@ -2689,7 +2740,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     });
 
                     placements.push(pick);
-                    placed++;
                     addMessage(`✅ Placed ${placed}/${periodsToPlace}: ${pick.d} ${pick.p}`);
                     await sleep(100);
                 } else {
@@ -8096,8 +8146,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             borderRadius: '1.5rem',
                             width: '95%',
                             maxWidth: '850px',
-                            maxHeight: '90vh',
-                            overflow: 'hidden',
+                            maxHeight: '95vh',
+                            overflow: 'auto',
                             padding: '2.5rem',
                             border: '1px solid rgba(255, 255, 255, 0.1)',
                             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
@@ -8210,7 +8260,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     </div>
                                                 </div>
 
-                            <div style={{ flex: 1, overflowY: 'auto', marginBottom: '2rem', paddingRight: '0.5rem' }}>
+                            <div style={{ minHeight: 'auto', marginBottom: '2rem', paddingRight: '0.5rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                                     <label style={{ color: '#818cf8', fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Parallel Group Assignments</label>
                                     <button
