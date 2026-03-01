@@ -463,8 +463,8 @@ export const generatePrintCSS = (bellTimings) => `
             height: 4.5mm !important;
         }
         .v-break-head, .v-break-sub, .v-break-body { 
-            border-left: 2pt solid #000 !important;
-            border-right: 2pt solid #000 !important;
+            border-left: 4pt solid #000 !important;
+            border-right: 4pt solid #000 !important;
             background: #fff;
         }
 
@@ -581,7 +581,7 @@ export const generatePrintCSSPortrait = (bellTimings) => `
         .timetable-table { width: 100%; border-collapse: collapse; table-layout: fixed; flex-grow: 1; empty-cells: show; border: 2px solid #000; }
         .timetable-table th, .timetable-table td { border: 1px solid #000 !important; text-align: center; vertical-align: middle; padding: 1px; font-size: 7.5pt; height: 7mm; overflow: hidden; word-wrap: break-word; box-sizing: border-box; }
         .time-row th { font-size: 5pt; font-weight: normal; height: 4.5mm !important; }
-        .v-break-head, .v-break-sub, .v-break-body { border-left: 2pt solid #000 !important; border-right: 2pt solid #000 !important; background: #fff; }
+        .v-break-head, .v-break-sub, .v-break-body { border-left: 4pt solid #000 !important; border-right: 4pt solid #000 !important; background: #fff; }
         .v-break-head { font-size: 7.5pt; font-weight: bold; padding: 1px; }
         .v-break-sub { font-size: 5pt !important; font-weight: normal; }
         .v-break-body { writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); font-size: 8.5pt; font-weight: bold; padding: 0; text-align: center; }
