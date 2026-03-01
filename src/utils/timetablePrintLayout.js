@@ -440,7 +440,9 @@ export const generatePrintCSS = (bellTimings) => `
         }
         .timetable-table {
             width: 100%;
-            border-collapse: collapse;
+            /* Use separate borders so very thick break-column borders render reliably */
+            border-collapse: separate;
+            border-spacing: 0;
             table-layout: fixed;
             flex-grow: 1;
             empty-cells: show;
@@ -466,6 +468,11 @@ export const generatePrintCSS = (bellTimings) => `
             border-left: 4pt solid #000 !important;
             border-right: 4pt solid #000 !important;
             background: #fff;
+            /* ensure break cells appear above adjacent collapsed borders */
+            position: relative;
+            z-index: 3;
+            /* fallback: an inset shadow to guarantee a visible left line in some printers */
+            box-shadow: inset 4pt 0 0 0 #000;
         }
 
         .v-break-head {
