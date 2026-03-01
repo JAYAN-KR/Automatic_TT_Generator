@@ -44,7 +44,7 @@ import { calculateTotalLoad } from '../utils/allotmentHelpers';
 
 // Components
 import TeacherGroupEditor from '../components/TeacherGroupEditor';
-// import { MultiClassSelector } from './modules/shared/components/MultiClassSelector';
+import MultiClassSelector from '../components/MultiClassSelector';
 import ClassTTCell from '../components/ClassTTCell';
 import ClassTTFooter from '../components/ClassTTFooter';
 import { getCombinedSubjectsForClass } from '../utils/classTTUtils';
@@ -8588,8 +8588,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>TARGET CLASSES (CLUB):</label>
                                         <MultiClassSelector
                                             selectedClasses={streamSelectedClasses}
-                                            onClassesChange={setStreamSelectedClasses}
-                                            availableClasses={CLASS_OPTIONS}
+                                            options={CLASS_OPTIONS}
+                                            onChange={setStreamSelectedClasses}
                                         />
                                     </div>
                                 </div>
