@@ -43,6 +43,7 @@ import { calculateTotalLoad } from '../utils/allotmentHelpers';
 
 // Components
 import TeacherGroupEditor from '../components/TeacherGroupEditor';
+import ClassTTTab from './ClassTTTab';
 // import { MultiClassSelector } from './modules/shared/components/MultiClassSelector';
 import ClassTTCell from '../components/ClassTTCell';
 import ClassTTFooter from '../components/ClassTTFooter';
@@ -3865,8 +3866,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         { id: 2, label: '📊 Distribution' },
         { id: 3, label: '🕒 DPT' },
         { id: 4, label: '🎓 Format TT' },
-        { id: 5, label: '👩‍🏫 TeacherTT' },
-        { id: 6, label: '⚙️ Generate' }
+        { id: 5, label: '� Class TT' },
+        { id: 6, label: '👩‍🏫 TeacherTT' },
+        { id: 7, label: '⚙️ Generate' }
     ];
 
     return (
@@ -7585,9 +7587,20 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     })()
                 }
 
-                {/* Tab 5: TeacherTT (Teacher Timetables) */}
+                {/* Tab 5: Class TT (class timetables for A4 portrait) */}
                 {
-                    activeTab === 5 && (() => {
+                    activeTab === 5 && (
+                        <ClassTTTab
+                            generatedTimetable={generatedTimetable}
+                            bellTimings={bellTimings}
+                            academicYear={academicYear}
+                        />
+                    )
+                }
+
+                {/* Tab 6: TeacherTT (Teacher Timetables) */}
+                {
+                    activeTab === 6 && (() => {
                         const teacherTTDict = generatedTimetable?.teacherTimetables || {};
 
                         // Comprehensive teacher discovery: include from TT, mappings, and allotments
@@ -8123,7 +8136,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                 {/* Tab 6: Generate */}
                 {
-                    activeTab === 6 && (
+                    activeTab === 7 && (
                         <div style={{ animation: 'fadeIn 0.3s ease-out', padding: '2rem 0' }}>
                             <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
                                 <button

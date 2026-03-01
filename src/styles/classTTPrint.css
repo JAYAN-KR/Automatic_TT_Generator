@@ -1,0 +1,77 @@
+/* print-friendly black & white styles for Class TT tab */
+
+.class-tt-container {
+    color: black;
+    background: white;
+    padding: 0.5rem;
+    font-family: Arial, sans-serif;
+}
+
+.grade-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.grade-selector button {
+    background: white;
+    color: black;
+    border: 1px solid black;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.9rem;
+    font-weight: bold;
+    cursor: pointer;
+}
+.grade-selector button.active {
+    background: black;
+    color: white;
+}
+
+.nav-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+}
+.nav-row button {
+    background: white;
+    color: black;
+    border: 1px solid black;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+.nav-row button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.page-group {
+    /* two cards stacked vertically and then break the page */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+    page-break-after: always;
+}
+
+.class-card {
+    /* the helper already produces its own inner styling */
+    margin-bottom: 1rem;
+    flex: 1 1 auto;
+}
+
+
+/* Ensure orientation is portrait when printing */
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 5mm;
+    }
+
+    .grade-selector,
+    .nav-row {
+        display: none;
+    }
+}
