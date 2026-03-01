@@ -4,7 +4,8 @@ import { extractSubjectsFromPDF } from '../utils/pdfExtractor';
 import {
     generateTeacherTimetableHTML,
     generateClassTimetableHTML,
-    generateFullPrintHTML
+    generateFullPrintHTML,
+    generatePortraitPrintHTML
 } from '../utils/timetablePrintLayout';
 import { generateTimetable } from '../utils/timetableGenerator';
 import { detectLabConflict, determineLabStatus, LAB_GROUPS, getLabForSubject, LAB_SYSTEM } from '../utils/labSharingValidation';
@@ -5476,6 +5477,27 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     >
                                         {chainSwapMode ? '🚫 Cancel Chain' : '🔗 Start Chain'}
                                     </button>
+                                    {/* PRINT FOR FORMAT TT: portrait A4 2-up */}
+                                    <button
+                                        onClick={() => {
+                                            if (!generatedTimetable) { addToast('Please generate timetable first', 'warning'); return; }
+                                            // Build class cards for current grade
+                                            const classList = (GRADE_CLASSES[activeGradeSubTab] || []).filter(cn => generatedTimetable.classTimetables[cn]);
+                                            const cards = classList.map(className => generateClassTimetableHTML(
+                                                generatedTimetable.classTimetables,
+                                                className,
+                                                academicYear,
+                                                bellTimings
+                                            ));
+                                            const printHTML = generatePortraitPrintHTML(cards, 'class', academicYear, bellTimings);
+                                            const win = window.open('', '_blank');
+                                            win.document.write(printHTML);
+                                            win.document.close();
+                                        }}
+                                        disabled={!generatedTimetable}
+                                        title="Print current grade Class Timetables (A4 portrait, 2 per page)"
+                                        style={{ marginLeft: '0.5rem', padding: '0.5rem 0.9rem', background: '#059669', color: 'white', border: 'none', borderRadius: '0.5rem', cursor: generatedTimetable ? 'pointer' : 'not-allowed', fontWeight: 700 }}
+                                    >🖨️ Print Grade (2 per A4)</button>
                                     {chainSwapMode && (
                                         <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
                                             {isChainComplete

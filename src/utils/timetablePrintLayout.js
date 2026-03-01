@@ -566,3 +566,56 @@ export const generateFullPrintHTML = (cards, type = 'teacher', academicYear = '2
 </body>
 </html>`;
 };
+
+// Portrait helpers: A4 portrait, 2 cards per page
+export const generatePrintCSSPortrait = (bellTimings) => `
+<style>
+    @media print {
+        @page { size: A4 portrait; margin: 5mm; }
+        body { font-family: 'Arial', sans-serif; background: white; color: black; padding: 0; margin: 0; }
+        .page-container { display: grid; grid-template-rows: 1fr 1fr; gap: 4mm; width: 210mm; height: 297mm; page-break-after: always; padding: 2mm; box-sizing: border-box; }
+        .timetable-card { border: 1.5px solid #000; padding: 3mm; display: flex; flex-direction: column; box-sizing: border-box; background: #fff; height: 100%; }
+        .card-header { text-align: left; margin-bottom: 2mm; }
+        .school-name { font-size: 6.5pt; font-weight: bold; border-bottom: 0.5px solid #000; padding-bottom: 1px; text-transform: uppercase; }
+        .teacher-title, .class-title { text-align: center; font-size: 13pt; font-weight: bold; margin: 3mm 0; }
+        .timetable-table { width: 100%; border-collapse: collapse; table-layout: fixed; flex-grow: 1; empty-cells: show; border: 2px solid #000; }
+        .timetable-table th, .timetable-table td { border: 1px solid #000 !important; text-align: center; vertical-align: middle; padding: 1px; font-size: 7.5pt; height: 7mm; overflow: hidden; word-wrap: break-word; box-sizing: border-box; }
+        .time-row th { font-size: 5pt; font-weight: normal; height: 4.5mm !important; }
+        .v-break-head, .v-break-sub, .v-break-body { border-left: 2pt solid #000 !important; border-right: 2pt solid #000 !important; background: #fff; }
+        .v-break-head { font-size: 7.5pt; font-weight: bold; padding: 1px; }
+        .v-break-sub { font-size: 5pt !important; font-weight: normal; }
+        .v-break-body { writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); font-size: 8.5pt; font-weight: bold; padding: 0; text-align: center; }
+        .day-cell { font-weight: bold; font-size: 9pt; text-transform: uppercase; background: #fff; }
+        .tr-code { font-size: 6pt; color: #000; display: block; }
+        .block-badge { position: absolute; top: 0; right: 0; background: #000; color: #fff; font-size: 4.5pt; padding: 0 1px; font-weight: 900; line-height: 1; z-index: 5; }
+        .period-cell { position: relative; }
+        .card-footer { display: flex; justify-content: space-between; font-size: 6pt; margin-top: 2mm; border-top: 1px solid #000; padding-top: 1px; }
+    }
+    .print-preview { background: #1e293b; padding: 2rem; min-height: 100vh; }
+    .print-preview .page-container { background: white; margin: 0 auto 2rem auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+</style>
+`;
+
+export const generatePortraitPrintHTML = (cards, type = 'class', academicYear = '2026-2027', bellTimings) => {
+    const cardPages = [];
+    for (let i = 0; i < cards.length; i += 2) cardPages.push(cards.slice(i, i + 2));
+    const pagesHTML = cardPages.map(page => `
+        <div class="page-container">
+            ${page.join('')}
+        </div>
+    `).join('');
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>${type === 'teacher' ? 'Teacher' : 'Class'} Timetables - ${academicYear}</title>
+    ${generatePrintCSSPortrait(bellTimings)}
+</head>
+<body>
+    ${pagesHTML}
+    <script>window.onload = () => window.print();</script>
+</body>
+</html>`;
+};
