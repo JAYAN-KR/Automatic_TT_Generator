@@ -1,0 +1,92 @@
+/* class TT styling mirroring teacherTT tab format, plus print rules */
+
+/* cell styling identical to teacher tab, with class-specific selector */
+.class-tt-cell {
+    border-top: 1px solid black;
+    border-bottom: 1px solid black;
+    text-align: center;
+    height: 42px;
+    background: white;
+    padding: 1px;
+    color: black;
+    vertical-align: middle;
+}
+
+.class-tt-cell.merged-start > .cell-content {
+    width: 200%;
+}
+
+
+/* container & navigation styling */
+.class-tt-container {
+    color: black;
+    background: white;
+    padding: 0.5rem;
+    font-family: Arial, sans-serif;
+}
+
+.grade-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.grade-selector button {
+    background: white;
+    color: black;
+    border: 1px solid black;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.9rem;
+    font-weight: bold;
+    cursor: pointer;
+}
+.grade-selector button.active {
+    background: black;
+    color: white;
+}
+
+.nav-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+}
+.nav-row button {
+    background: white;
+    color: black;
+    border: 1px solid black;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+.nav-row button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.page-group {
+    /* two cards stacked vertically and then break the page */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+    page-break-after: always;
+}
+
+.class-card {
+    margin-bottom: 1rem;
+    flex: 1 1 auto;
+}
+
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 5mm;
+    }
+
+    .grade-selector,
+    .nav-row {
+        display: none;
+    }
+}
