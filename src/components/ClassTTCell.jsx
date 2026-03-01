@@ -40,13 +40,18 @@ const ClassTTCell = ({
 
     const sub = cell.subject.toUpperCase();
     const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
+    // convert a full name like "Alice Brown" to "Alice B" or just "Alice"
+    const abbreviateName = (name) => {
+        const parts = name.trim().split(/\s+/);
+        if (parts.length === 0) return '';
+        const first = parts[0][0].toUpperCase() + parts[0].slice(1).toLowerCase();
+        const second = parts[1] ? parts[1][0].toUpperCase() + '.' : '';
+        return second ? `${first} ${second}` : first;
+    };
+
+    // teacher field may contain multiple names separated by commas or slashes
     const teacherFirst = cell.teacher
-        ? (() => {
-            const pts = cell.teacher.trim().split(/\s+/);
-            const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : '';
-            const si = pts[1] ? pts[1][0].toUpperCase() : '';
-            return si ? `${fn} ${si}` : fn;
-        })()
+        ? cell.teacher.split(/[,/]+/).map(t => abbreviateName(t)).join(', ')
         : '';
 
     const indicator = getClubbingIndicator(cell, currentClass);

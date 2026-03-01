@@ -280,13 +280,22 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
             }
 
             const subject = cell.subject;
-            const teacher = cell.teacher;
+            const rawTeacher = cell.teacher || '';
             const badge = (cell.isBlock || cell.type === 'BLOCK') ? '<div class="block-badge">BLOCK</div>' : '';
             const indicator = getClubbingIndicator(cell, className);
             const withClasses = indicator
                 ? `<div style="font-size: 5.5pt; color: #475569; font-weight: 700; background: #f1f5f9; padding: 1px 2px; border-radius: 2px; margin-top: 2px;">${indicator.trim()}</div>`
                 : '';
-            return `${badge}${subject}${withClasses}<br><span class="tr-code">${teacher || ''}</span>`;
+            // helper to abbreviate teacher names (first name + initial of second name)
+            const abbreviatePrintName = (name) => {
+                const parts = name.trim().split(/\s+/);
+                if (parts.length === 0 || parts[0] === '') return '';
+                const first = parts[0][0].toUpperCase() + parts[0].slice(1).toLowerCase();
+                const second = parts[1] ? parts[1][0].toUpperCase() + '.' : '';
+                return second ? `${first} ${second}` : first;
+            };
+            const teacher = rawTeacher.split(/[,/]+/).map(abbreviatePrintName).join(', ');
+            return `${badge}${subject}${withClasses}<br><span class="tr-code">${teacher}</span>`;
         };
 
         const cells = [
