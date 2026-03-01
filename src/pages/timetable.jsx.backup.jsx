@@ -43,13 +43,10 @@ import { calculateTotalLoad } from '../utils/allotmentHelpers';
 
 // Components
 import TeacherGroupEditor from '../components/TeacherGroupEditor';
-// import { MultiClassSelector } from './modules/shared/components/MultiClassSelector';
+import { MultiClassSelector } from '../modules/shared/components/MultiClassSelector';
 import ClassTTCell from '../components/ClassTTCell';
 import ClassTTFooter from '../components/ClassTTFooter';
 import { getCombinedSubjectsForClass } from '../utils/classTTUtils';
-import TeacherTTTab from './TeacherTTTab';
-import { isDoublePeriodStart, isDoublePeriodEnd } from '../utils/teacherTTGenerator';
-import '../styles/teacherTT.css';
 
 // --- Constants ---
 const COMMON_SUBJECTS = [
@@ -6293,7 +6290,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         disabled={!chainValidation?.success}
                                                         style={{
                                                             background: chainValidation?.success ? '#f97316' : '#1e293b',
-                                                            color: 'white', padding: '0.8rem 2rem',
+                                                            color: 'white', border: 'none', padding: '0.8rem 2rem',
                                                             borderRadius: '0.7rem', fontSize: '1rem', fontWeight: 900,
                                                             cursor: chainValidation?.success ? 'pointer' : 'not-allowed',
                                                             transition: 'all 0.2s',
@@ -7891,20 +7888,25 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             }
                                                         }
 
-                                                        // look ahead one period to decide if we should merge cells
+                                                        // Detect if this is a double (lab) period by checking if next period has same content
                                                         const nextPeriodIdx = pi + 1;
                                                         const nextPeriod = nextPeriodIdx < PERIODS.length ? PERIODS[nextPeriodIdx] : null;
                                                         const currentSlot = tTT?.[day]?.[p];
                                                         const nextSlot = nextPeriod ? tTT?.[day]?.[nextPeriod] : null;
 
-                                                        // use helpers that understand both lab and block pairs
-                                                        const mergedStart = isDoublePeriodStart(currentSlot, nextSlot, p);
+                                                        // Check if current and next periods have same content (indicating a lab period pair)
+                                                        const isDoublePeriodStart = currentSlot && nextSlot &&
+                                                            JSON.stringify(currentSlot) === JSON.stringify(nextSlot) &&
+                                                            !(p === 'S2' || p === 'S5' || p === 'S9' || p === 'S11'); // Skip if this is the "end" of a pair
 
-                                                        let mergedEnd = false;
-                                                        if (['S2', 'S5', 'S9', 'S11'].includes(p)) {
+                                                        // Check if this is second period of a double (to handle border styling)
+                                                        let isDoublePeriodEnd = false;
+                                                        if (p === 'S2' || p === 'S5' || p === 'S9' || p === 'S11') {
                                                             const prevPeriod = PERIODS[pi - 1];
                                                             const prevSlot = tTT?.[day]?.[prevPeriod];
-                                                            mergedEnd = isDoublePeriodEnd(currentSlot, prevSlot, p);
+                                                            if (prevSlot && currentSlot && JSON.stringify(prevSlot) === JSON.stringify(currentSlot)) {
+                                                                isDoublePeriodEnd = true; // This is the end of a merged pair
+                                                            }
                                                         }
 
                                                         const slot = tTT?.[day]?.[p];
@@ -7928,14 +7930,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         // Determine border styling for merged periods
                                                         let cellBorderRight = '1px solid black';
                                                         let cellBorderLeft = '1px solid black';
-                                                        if (mergedStart) {
-                                                            cellBorderRight = 'none'; // hide right border on first cell
-                                                        } else if (mergedEnd) {
-                                                            cellBorderLeft = 'none'; // hide left border on second cell
+                                                        if (isDoublePeriodStart) {
+                                                            cellBorderRight = 'none'; // Hide right border for first of pair
+                                                        } else if (isDoublePeriodEnd) {
+                                                            cellBorderLeft = 'none'; // Hide left border for second of pair
                                                         }
 
-                                                        // second half of a merged pair is rendered empty
-                                                        if (mergedEnd) {
+                                                        // second half of a double should be empty
+                                                        if (isDoublePeriodEnd) {
                                                             return (
                                                                 <td key={p} style={{
                                                                     borderTop: '1px solid black',
@@ -7953,6 +7955,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 </td>
                                                             );
                                                         }
+
                                                         return (
                                                             <td key={p} style={{
                                                                 borderTop: '1px solid black',
@@ -7966,7 +7969,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 color: 'black',
                                                                 verticalAlign: 'middle'
                                                             }}>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px', height: '100%', width: mergedStart ? '200%' : '100%' }}>
+                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px', height: '100%', width: isDoublePeriodStart ? '200%' : '100%', justifyContent: 'center' }}>
                                                                     <div style={{ fontSize: '11.5px', color: 'black', lineHeight: '1.1' }}>
                                                                         <span style={{ fontWeight: 600 }}>{num}{div}</span>
                                                                     </div>

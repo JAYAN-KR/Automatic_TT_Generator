@@ -1,0 +1,27 @@
+/* Styles specific to the teacher timetable tab */
+
+/* base cell style; many inline styles still used for quick tuning but the
+   class is available for any future global adjustments */
+.teacher-tt-cell {
+    border-top: 1px solid black;
+    border-bottom: 1px solid black;
+    text-align: center;
+    height: 42px;
+    background: white;
+    padding: 1px;
+    color: black;
+    vertical-align: middle;
+}
+
+/* when a cell begins a merged pair (lab or block) we expand its
+   internal content container to 200% width so it visually spans the
+   following column.  the following cell is rendered empty and borderless
+   so the effect is a single wide cell. */
+.teacher-tt-cell.merged-start > .cell-content {
+    width: 200%;
+}
+
+/* placeholder class in case we want to hide text or adjust the ending
+   cell style later on. currently the second half just remains blank. */
+.teacher-tt-cell.merged-end {
+}
