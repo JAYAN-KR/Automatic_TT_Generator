@@ -64,7 +64,7 @@ const ClassTTCell = ({
                     </span>
                 )}
             </span>
-            {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1 }}>{teacherFirst}</span>}
+            {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#000000', lineHeight: 1 }}>{teacherFirst}</span>}
 
             {isChanged && change && (
                 <>
