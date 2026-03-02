@@ -8758,15 +8758,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; e.target.style.borderColor = '#475569'; }}
                                 >Cancel</button>
                                 <button
-                                    onClick={async () => {
-                                        const savedStream = handleSaveStream();
-                                        if (savedStream) {
-                                            // Automatically trigger placement (deployment) into the timetable.
-                                            // supply existing timetable if available so fixed/blocks remain intact
-                                            await handleCreateStreamSpecific(savedStream, generatedTimetable || null);
-                                        }
+                                    onClick={() => {
+                                        handleSaveStream();
+                                        addToast('✅ Stream saved. Use Generate Timetable to place periods according to priority.', 'success');
                                     }}
-                                    title={editingStreamId ? "Save changes and regenerate this parallel stream in the timetable" : "Save the new parallel stream and automatically place it in the timetable"}
+                                    title={editingStreamId ? "Save changes to this parallel stream (periods will be placed during Generate Timetable)" : "Save the new parallel stream (periods will be placed during Generate Timetable according to priority)"}
                                     style={{
                                         padding: '0.85rem 2rem',
                                         background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
