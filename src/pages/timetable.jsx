@@ -207,8 +207,8 @@ const CLASSROOMS = [
     '8A', '8B', '8C', '8D', '8E', '8F', '8G',
     '9A', '9B', '9C', '9D', '9E', '9F', '9G',
     '10A', '10B', '10C', '10D', '10E', '10F', '10G',
-    '11A', '11B', '11C', '11D', '11E', '11F',
-    '12A', '12B', '12C', '12D', '12E', '12F'
+    '11A', '11B', '11C', '11D', '11E', '11F', '11G',
+    '12A', '12B', '12C', '12D', '12E', '12F', '12G'
 ];
 
 // --- Timetable Cell Styles for 6A Template ---
@@ -943,8 +943,8 @@ export default function TimetablePage() {
         '8A', '8B', '8C', '8D', '8E', '8F', '8G',
         '9A', '9B', '9C', '9D', '9E', '9F', '9G',
         '10A', '10B', '10C', '10D', '10E', '10F', '10G',
-        '11A', '11B', '11C', '11D', '11E', '11F',
-        '12A', '12B', '12C', '12D', '12E', '12F'
+        '11A', '11B', '11C', '11D', '11E', '11F', '11G',
+        '12A', '12B', '12C', '12D', '12E', '12F', '12G'
     ];
     const PERIOD_OPTIONS = Array.from({ length: 11 }, (_, i) => i);
 
@@ -2022,7 +2022,7 @@ export default function TimetablePage() {
     const [newSubjectName, setNewSubjectName] = useState('');
     const [activeSubjectMappingId, setActiveSubjectMappingId] = useState(null);
 
-    // Tab 4 (Distribution) State - 47 COLUMN VERSION
+    // Tab 4 (Distribution) State - 49 COLUMN VERSION
     const [distribution47, setDistribution47] = useState(loadDistribution());
     const [editingCell, setEditingCell] = useState(null);
     const [editValue, setEditValue] = useState('');
@@ -2573,7 +2573,7 @@ export default function TimetablePage() {
 Academic Year: ${academicYear}
 Version: ${currentVersion.version}
 Teachers: ${Object.keys(generatedTimetable.teacherTimetables).length}
-Classes: 47
+Classes: 49
 
 This will:
 • Set as ACTIVE timetable
@@ -2610,7 +2610,7 @@ Proceed?`)) {
 📅 Academic Year: ${academicYear}
 🏷️ Version: ${currentVersion.version}
 👩‍🏫 Teachers: ${result.teacherCount}
-🏫 Classes: 47
+🏫 Classes: 49
 📱 Push notifications: SENT to all teachers
 
 Teachers can now see their timetable in the AutoSubs app.`, 'success');
@@ -5385,8 +5385,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             '8': ['8A', '8B', '8C', '8D', '8E', '8F', '8G'],
                             '9': ['9A', '9B', '9C', '9D', '9E', '9F', '9G'],
                             '10': ['10A', '10B', '10C', '10D', '10E', '10F', '10G'],
-                            '11': ['11A', '11B', '11C', '11D', '11E', '11F'],
-                            '12': ['12A', '12B', '12C', '12D', '12E', '12F'],
+                            '11': ['11A', '11B', '11C', '11D', '11E', '11F', '11G'],
+                            '12': ['12A', '12B', '12C', '12D', '12E', '12F', '12G'],
                         };
                         const gradeClassList = GRADE_CLASSES[activeGradeSubTab] || [];
                         const DAYS = [['MON', 'Monday'], ['TUE', 'Tuesday'], ['WED', 'Wednesday'], ['THU', 'Thursday'], ['FRI', 'Friday'], ['SAT', 'Saturday']];
@@ -6473,7 +6473,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             }}>
                                 <div>
                                     <h3 style={{ fontSize: '1.3rem', fontWeight: '600', color: '#f1f5f9' }}>
-                                        📊 Subject Period Distribution - 47 Classrooms
+                                        📊 Subject Period Distribution - 49 Classrooms
                                     </h3>
                                     <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>
                                         Click any cell to edit • Bulk select with checkboxes • Shift+click for range
@@ -6529,7 +6529,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     <button
                                         onClick={() => {
                                             saveDistribution(distribution47);
-                                            addToast('✅ Period distribution saved for 47 classrooms!', 'success');
+                                            addToast('✅ Period distribution saved for 49 classrooms!', 'success');
                                         }}
                                         style={{
                                             padding: '0.75rem 1.5rem',
@@ -8468,8 +8468,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 '8A', '8B', '8C', '8D', '8E', '8F', '8G',
                                                 '9A', '9B', '9C', '9D', '9E', '9F', '9G',
                                                 '10A', '10B', '10C', '10D', '10E', '10F', '10G',
-                                                '11A', '11B', '11C', '11D', '11E', '11F',
-                                                '12A', '12B', '12C', '12D', '12E', '12F'
+                                                '11A', '11B', '11C', '11D', '11E', '11F', '11G',
+                                                '12A', '12B', '12C', '12D', '12E', '12F', '12G'
                                             ];
                                             const classCards = classList
                                                 .filter(cn => generatedTimetable.classTimetables[cn])
