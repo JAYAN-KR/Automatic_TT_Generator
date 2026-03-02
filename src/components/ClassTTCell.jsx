@@ -29,7 +29,7 @@ const ClassTTCell = ({
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', justifyContent: 'center', maxWidth: '100%' }}>
                     {(cell.subjects || []).map((s, idx) => (
                         <span key={idx} style={{ fontSize: '0.55em', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                            {s.subject}{s.isLabPeriod ? ' [LAB]' : (s.labGroup && s.labGroup !== 'None' ? ' [TH]' : '')}{idx < (cell.subjects.length - 1) ? ',' : ''}
+                            {s.subject}{s.isLabPeriod ? '(L)' : (s.labGroup && s.labGroup !== 'None' ? ' [TH]' : '')}{idx < (cell.subjects.length - 1) ? ',' : ''}
                         </span>
                     ))}
                 </div>
@@ -56,13 +56,16 @@ const ClassTTCell = ({
 
     const indicator = getClubbingIndicator(cell, currentClass);
 
+    // determine how the subject should appear in the cell
+    const displaySubj = abbr + (cell.isLabPeriod ? '(L)' : '');
+
     return (
         <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
             height: '100%', width: '100%', minHeight: '40px'
         }}>
             <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>
-                {abbr}{cell.isLabPeriod ? ' [LAB]' : (cell.labGroup && cell.labGroup !== 'None' ? ' [TH]' : '')}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}
+                {displaySubj}{cell.isLabPeriod ? '' : (cell.labGroup && cell.labGroup !== 'None' ? ' [TH]' : '')}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}
                 {indicator && (
                     <span style={{ fontSize: '0.7em', color: '#fbbf24', fontWeight: 900, marginLeft: '2px' }}>
                         {indicator}

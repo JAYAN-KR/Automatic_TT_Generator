@@ -7937,6 +7937,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         }
 
                                                         displaySub = getSubAbbr(displaySub);
+                                                        if (isObj && slot.isLabPeriod) {
+                                                            displaySub = displaySub ? `${displaySub}(L)` : '(L)';
+                                                        }
 
                                                         const { num, div } = getFormattedClass(displayClass);
                                                         const typeIndicator = slot?.isTBlock ? 'T' : (slot?.isLBlock ? 'L' : '');

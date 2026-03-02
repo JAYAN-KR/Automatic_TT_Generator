@@ -113,10 +113,12 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
             const subjectOrig = isObj ? (entry.subject || '') : '';
             if (!classNameVal || classNameVal === '-') return '&nbsp;';
 
-            const subject = getSubAbbr(subjectOrig);
+            let subject = getSubAbbr(subjectOrig);
+            if (isObj && entry.isLabPeriod) {
+                subject = subject ? `${subject}(L)` : '(L)';
+            }
             const isBlock = isObj && (entry.isBlock || entry.type === 'BLOCK');
-            const badge = isBlock ? '<div class="block-badge">BLOCK</div>' : '';
-            const groupSuffix = (isObj && entry.isStream && entry.groupName) ? `-${entry.groupName}` : '';
+            const badge = isBlock ? '<div class="block-badge">BLOCK</div>' : '';            const groupSuffix = (isObj && entry.isStream && entry.groupName) ? `-${entry.groupName}` : '';
 
             const { num, div } = getFormattedClass(classNameVal + groupSuffix);
             const isCombined = div && div.length <= 3;

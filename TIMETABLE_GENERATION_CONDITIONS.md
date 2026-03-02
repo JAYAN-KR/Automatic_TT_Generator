@@ -365,6 +365,12 @@ SCIENCE LABS:
 
 ### 6.2 Lab Conflict Detection
 
+*Display Note:* In teacher/individual timetables the subject abbreviation for a lab period
+is suffixed with `(L)` (e.g. `Mat(L)`), matching the logic applied in the UI and
+print layouts.
+
+### 6.2 Lab Conflict Detection
+
 ```javascript
 RULE: No two classes can use SAME lab at SAME time
   (EXCEPT if both in same Lab Group)
