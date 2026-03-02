@@ -1264,7 +1264,7 @@ export default function TimetablePage() {
     const addSubjectToStream = () => {
         setStreamForm(prev => ({
             ...prev,
-            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '', labGroup: 'None', targetLabCount: 2 }]
+            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '', clubPeriods: false, labGroup: 'None', targetLabCount: 2 }]
         }));
     };
 
@@ -8696,6 +8696,16 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     placeholder="Group Name (e.g. Hindi)"
                                                     style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
                                                 />
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={sub.clubPeriods || false}
+                                                    onChange={e => updateStreamSubject(idx, 'clubPeriods', e.target.checked)}
+                                                    title="Club these periods (merge consecutive periods together)"
+                                                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10b981' }}
+                                                />
+                                                <span style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 700 }}>CLUB</span>
                                             </div>
                                             <div>
                                                 <select

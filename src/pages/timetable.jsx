@@ -1216,7 +1216,7 @@ export default function TimetablePage() {
         setDeletePopup({ row, classGroups, checked, expanded: new Set() });
     };
 
-    const handleSaveStream = () => {
+    const handleSaveStream = async () => {
         // construct a string for classes, falling back to existing className if selector empty
         const classesString = streamSelectedClasses.length ? streamSelectedClasses.join('/') : streamForm.className;
         if (!streamForm.name || !classesString || !streamForm.periods || streamForm.subjects.some(s => !s.teacher || !s.subject)) {
@@ -1225,6 +1225,17 @@ export default function TimetablePage() {
         }
 
         const updatedStream = { ...streamForm, id: editingStreamId || Date.now(), className: classesString, forceCount, forceDay };
+        // run validations (blocks and labs)
+        try {
+            const { validateStream } = await import('../utils/parallelStreamProcessor');
+            const result = validateStream(updatedStream, generatedTimetable?.classTimetables || {}, generatedTimetable?.teacherTimetables || {});
+            if (!result.ok) {
+                result.messages.forEach(m => addToast(m, 'error'));
+                return;
+            }
+        } catch (e) {
+            console.warn('Validation util load failed', e);
+        }
         let updated;
         if (editingStreamId) {
             updated = subjectStreams.map(s => s.id === editingStreamId ? updatedStream : s);
@@ -1236,9 +1247,13 @@ export default function TimetablePage() {
         saveStreams(updated);
         setShowStreamModal(false);
         setEditingStreamId(null);
-        setStreamForm({ name: '', abbreviation: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '', groupName: '' }] });
+        setStreamForm({
+            name: '', abbreviation: '', className: '6A', periods: 4,
+            subjects: [{ teacher: '', subject: '' }],
+            tBlock: 0, tbDay: 'Any', lBlock: 0, lbDay: 'Any'
+        });
         setStreamSelectedClasses([]);
-        setForceCount(1);
+        setForceCount(0);
         setForceDay('Saturday');
         addToast('✅ Stream saved successfully', 'success');
         return updatedStream;
@@ -1259,15 +1274,23 @@ export default function TimetablePage() {
         const classes = stream.className ? stream.className.split('/').map(s => s.trim()).filter(Boolean) : [];
         setStreamSelectedClasses(classes);
         // load forced day settings if available
-        setForceCount(stream.forceCount || 1);
+        setForceCount(stream.forceCount ?? 0);
         setForceDay(stream.forceDay || 'Saturday');
+        // load stream-level block settings
+        setStreamForm(prev => ({
+            ...prev,
+            tBlock: stream.tBlock || 0,
+            tbDay: stream.tbDay || 'Any',
+            lBlock: stream.lBlock || 0,
+            lbDay: stream.lbDay || 'Any'
+        }));
         setShowStreamModal(true);
     };
 
     const addSubjectToStream = () => {
         setStreamForm(prev => ({
             ...prev,
-            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '', labGroup: 'None', targetLabCount: 2 }]
+            subjects: [...prev.subjects, { teacher: '', subject: '' }]
         }));
     };
 
@@ -2068,11 +2091,16 @@ export default function TimetablePage() {
         abbreviation: '',
         className: '6A',
         periods: 4,
-        subjects: [{ teacher: '', subject: '', groupName: '', labGroup: 'None', targetLabCount: 2 }]
+        subjects: [{ teacher: '', subject: '' }],
+        // stream-level block settings
+        tBlock: 0,
+        tbDay: 'Any',
+        lBlock: 0,
+        lbDay: 'Any'
     });
     // classes chosen via the MultiClassSelector within the stream modal
     const [streamSelectedClasses, setStreamSelectedClasses] = useState([]);
-    const [forceCount, setForceCount] = useState(1);
+    const [forceCount, setForceCount] = useState(0);
     const [forceDay, setForceDay] = useState('Saturday');
 
     // toast messages
@@ -2668,6 +2696,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 ? ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S10', 'S11']
                 : ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S11'];
 
+            // if any stream subject is marked as a club, the entire stream period
+            // must occupy a two‑period block (first & second periods of the day)
+            const hasClubPeriod = stream.subjects.some(s => s.clubPeriods);
+            // restrict candidate slots accordingly; club periods always start at S1
+            const ALLOWED_SLOTS = hasClubPeriod ? ['S1'] : AVAILABLE_SLOTS;   
+            const CLUB_BLOCK_PAIR = ['S1', 'S2']; // fixed block for club periods
+
             const tFree = (teacherInput, d, p) => {
                 const teacher = teacherInput?.trim();
                 if (!tt.teacherTimetables[teacher]) {
@@ -2698,7 +2733,29 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     }
                 }
 
-                return classFree && teachersFree && !labConflict;
+                let free = classFree && teachersFree && !labConflict;
+                // if a club period is required, the slot is only valid when the immediately
+                // following period (always 'S2') is also free for both classes and teachers
+                if (hasClubPeriod && free) {
+                    const p2 = CLUB_BLOCK_PAIR[1];
+                    const classFree2 = classNames.every(cn => (tt.classTimetables[cn]?.[d]?.[p2]?.subject ?? '') === '');
+                    const teachersFree2 = stream.subjects.every(s => tFree(s.teacher, d, p2));
+                    let labConflict2 = false;
+                    for (const s of stream.subjects) {
+                        if (s.labGroup && s.labGroup !== 'None') {
+                            for (const cn of classNames) {
+                                if (detectLabConflict(tt.classTimetables, cn, d, p2, s.labGroup)) {
+                                    labConflict2 = true;
+                                    break;
+                                }
+                            }
+                            if (labConflict2) break;
+                        }
+                    }
+                    free = classFree2 && teachersFree2 && !labConflict2;
+                }
+
+                return free;
             };
 
             const periodsToPlace = Number(stream.periods) || 0;
@@ -2767,7 +2824,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             }
 
             const D_LEN = ROTATED_DAYS.length;
-            const P_LEN = AVAILABLE_SLOTS.length;
+            const P_LEN = ALLOWED_SLOTS.length;  // use filtered slots when club periods are required
 
             // Extract forced day settings
             const forceCount = stream.forceCount || 0;
@@ -2779,52 +2836,63 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 let pick = null;
                 const shouldBeForcedDay = forcedPlaced < forceCount;
 
+                // helper to test a candidate slot (and its partner if club)
+                const testSlot = (d, p) => {
+                    if (!streamFree(d, p)) return false;
+                    if (hasClubPeriod) {
+                        const partner = CLUB_BLOCK_PAIR[1];
+                        // partner may not be in AVAILABLE_SLOTS but we always check S2
+                        return streamFree(d, partner);
+                    }
+                    return true;
+                };
+
                 if (shouldBeForcedDay) {
                     // Try to place on the forced day
-                    for (let attempt = 0; attempt < P_LEN; attempt++) {
-                        const p = AVAILABLE_SLOTS[attempt];
-                        if (streamFree(forceDay, p)) {
-                            pick = { d: forceDay, p };
+                    for (let attempt = 0; attempt < ALLOWED_SLOTS.length; attempt++) {
+                        const p = ALLOWED_SLOTS[attempt];
+                        if (testSlot(forceDay, p)) {
+                            pick = { d: forceDay, p1: p, p2: hasClubPeriod ? CLUB_BLOCK_PAIR[1] : null };
                             forcedPlaced++;
                             break;
                         }
                     }
                     // If forced day has no slots, try any day (but don't count it as forcedPlaced)
                     if (!pick) {
-                        for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
+                        for (let attempt = 0; attempt < D_LEN * ALLOWED_SLOTS.length; attempt++) {
                             const walkIdx = existingStreamCount + i + attempt;
                             const d = ROTATED_DAYS[walkIdx % D_LEN];
-                            const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
-                            if (streamFree(d, p)) {
-                                pick = { d, p };
+                            const p = ALLOWED_SLOTS[walkIdx % ALLOWED_SLOTS.length];
+                            if (testSlot(d, p)) {
+                                pick = { d, p1: p, p2: hasClubPeriod ? CLUB_BLOCK_PAIR[1] : null };
                                 break;
                             }
                         }
                     }
                 } else {
                     // Normal diagonal walk, but avoid forced day if possible
-                    for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
+                    for (let attempt = 0; attempt < D_LEN * ALLOWED_SLOTS.length; attempt++) {
                         const walkIdx = existingStreamCount + i + attempt;
                         const d = ROTATED_DAYS[walkIdx % D_LEN];
-                        const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
+                        const p = ALLOWED_SLOTS[walkIdx % ALLOWED_SLOTS.length];
 
                         // Skip forced day unless we have no choice
                         if (d === forceDay && (periodsToPlace - placed) > (D_LEN - 1)) continue;
 
-                        if (streamFree(d, p)) {
-                            pick = { d, p };
+                        if (testSlot(d, p)) {
+                            pick = { d, p1: p, p2: hasClubPeriod ? CLUB_BLOCK_PAIR[1] : null };
                             break;
                         }
                     }
 
                     if (!pick) {
                         // Fallback: ignore forced day constraint but keep diagonal walk
-                        for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
+                        for (let attempt = 0; attempt < D_LEN * ALLOWED_SLOTS.length; attempt++) {
                             const walkIdx = existingStreamCount + i + attempt;
                             const d = ROTATED_DAYS[walkIdx % D_LEN];
-                            const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
-                            if (streamFree(d, p)) {
-                                pick = { d, p };
+                            const p = ALLOWED_SLOTS[walkIdx % ALLOWED_SLOTS.length];
+                            if (testSlot(d, p)) {
+                                pick = { d, p1: p, p2: hasClubPeriod ? CLUB_BLOCK_PAIR[1] : null };
                                 break;
                             }
                         }
@@ -2833,16 +2901,31 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                 if (pick) {
                     const abbr = stream.abbreviation || getAbbreviation(stream.name);
-                    // assign the slot for every class in the club
+                    const p1 = pick.p1 || pick.p;
+                    const p2 = pick.p2 || null;
+
+                    // assign the slot(s) for every class in the club
                     classNames.forEach(cn => {
-                        tt.classTimetables[cn][pick.d][pick.p] = {
+                        tt.classTimetables[cn][pick.d][p1] = {
                             subject: abbr,
                             isStream: true,
                             streamName: stream.name,
                             subjects: stream.subjects,
-                            // keep full slash‑separated class list for later reconstruction
-                            streamClasses: stream.className
+                            streamClasses: stream.className,
+                            isBlock: !!p2,
+                            isClubBlock: !!p2
                         };
+                        if (p2) {
+                            tt.classTimetables[cn][pick.d][p2] = {
+                                subject: abbr,
+                                isStream: true,
+                                streamName: stream.name,
+                                subjects: stream.subjects,
+                                streamClasses: stream.className,
+                                isBlock: true,
+                                isClubBlock: true
+                            };
+                        }
                     });
                     placed++;
 
@@ -2858,12 +2941,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 labGroup: s.labGroup || 'None',
                                 targetLabCount: s.targetLabCount
                             };
-                            if (determineLabStatus(tt.classTimetables, labStatusData, pick.d, pick.p)) {
+                            if (determineLabStatus(tt.classTimetables, labStatusData, pick.d, p1)) {
                                 isLab = true;
                             }
                         });
 
-                        tt.teacherTimetables[trimmedT][pick.d][pick.p] = {
+                        // assign teacher slots for both periods (second only if block)
+                        tt.teacherTimetables[trimmedT][pick.d][p1] = {
                             className: stream.className,
                             subject: s.subject,
                             fullSubject: s.subject,
@@ -2872,27 +2956,53 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             streamName: stream.name,
                             labGroup: s.labGroup || 'None',
                             targetLabCount: s.targetLabCount,
-                            isLabPeriod: isLab
+                            isLabPeriod: isLab,
+                            isBlock: !!p2,
+                            isClubBlock: !!p2
                         };
+                        if (p2) {
+                            tt.teacherTimetables[trimmedT][pick.d][p2] = {
+                                className: stream.className,
+                                subject: s.subject,
+                                fullSubject: s.subject,
+                                groupName: s.groupName,
+                                isStream: true,
+                                streamName: stream.name,
+                                labGroup: s.labGroup || 'None',
+                                targetLabCount: s.targetLabCount,
+                                isLabPeriod: isLab,
+                                isBlock: true,
+                                isClubBlock: true
+                            };
+                        }
 
                         // Also update class timetable slot with the first subject's lab info for display
                         // apply to every class in the club
                         classNames.forEach(cn => {
-                            if (!tt.classTimetables[cn][pick.d][pick.p].labGroup) {
-                                tt.classTimetables[cn][pick.d][pick.p].labGroup = s.labGroup || 'None';
+                            if (!tt.classTimetables[cn][pick.d][p1].labGroup) {
+                                tt.classTimetables[cn][pick.d][p1].labGroup = s.labGroup || 'None';
                             }
                             if (isLab) {
-                                tt.classTimetables[cn][pick.d][pick.p].isLabPeriod = true;
+                                tt.classTimetables[cn][pick.d][p1].isLabPeriod = true;
+                            }
+                            if (p2) {
+                                if (!tt.classTimetables[cn][pick.d][p2].labGroup) {
+                                    tt.classTimetables[cn][pick.d][p2].labGroup = s.labGroup || 'None';
+                                }
+                                if (isLab) {
+                                    tt.classTimetables[cn][pick.d][p2].isLabPeriod = true;
+                                }
                             }
                         });
 
-                        // update teacher load once per period
-                        tt.teacherTimetables[trimmedT][pick.d].periodCount++;
-                        tt.teacherTimetables[trimmedT].weeklyPeriods++;
+                        // update teacher load: increment by 1 for each assigned period
+                        tt.teacherTimetables[trimmedT][pick.d].periodCount += p2 ? 2 : 1;
+                        tt.teacherTimetables[trimmedT].weeklyPeriods += p2 ? 2 : 1;
                     });
 
                     placements.push(pick);
-                    addMessage(`✅ Placed ${placed}/${periodsToPlace}: ${pick.d} ${pick.p}`);
+                    const slotText = p2 ? `${pick.d} ${p1}-${p2}` : `${pick.d} ${p1}`;
+                    addMessage(`✅ Placed ${placed}/${periodsToPlace}: ${slotText}`);
                     await sleep(100);
                 } else {
                     addMessage(`❌ Failed to find slot for period ${i + 1}`);
@@ -4219,7 +4329,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 <button
                                     onClick={() => {
                                         setEditingStreamId(null);
-                                        setStreamForm({ name: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '', groupName: '' }] });
+                                        setStreamForm({ name: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '' }] });
                                         setSelectedClasses([]);
                                         setShowStreamModal(true);
                                     }}
@@ -8637,8 +8747,79 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     </select>
 
                                     <label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
-                                        Remaining: {streamForm.periods - forceCount} on Any Other Days
+                                        Remaining: {Math.max(0, (streamForm.periods || 0) - (streamForm.tBlock || 0) - (streamForm.lBlock || 0) - forceCount)} on Any Other Days
                                     </label>
+                                </div>
+                            </div>
+
+                            {/* Stream‑level block settings */}
+                            <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(31,41,55,0.3)', border: '1px solid #334155', borderRadius: '0.75rem' }}>
+                                <h3 style={{ margin: '0 0 0.5rem 0', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase' }}>STREAM BLOCK SETTINGS</h3>
+                                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                    <div style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid #78350f', borderRadius: '0.6rem', padding: '0.8rem', minWidth: '200px' }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 900, color: '#f59e0b', textTransform: 'uppercase' }}>Theory Block (TB)</div>
+                                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
+                                            {(() => {
+                                                const max = Number(streamForm.periods) || 0;
+                                                const other = Number(streamForm.lBlock) || 0;
+                                                const limit = Math.max(0, max - other);
+                                                const opts = [];
+                                                for (let n = 0; n <= limit; n += 2) opts.push(n);
+                                                return (
+                                                    <select value={streamForm.tBlock} onChange={e => {
+                                                            const val = Number(e.target.value);
+                                                            const max = Number(streamForm.periods) || 0;
+                                                            const newMaxL = Math.max(0, max - val);
+                                                            setStreamForm(prev => ({
+                                                                ...prev,
+                                                                tBlock: val,
+                                                                lBlock: Math.min(prev.lBlock || 0, newMaxL)
+                                                            }));
+                                                        }} style={{ flex: 1, padding: '4px 8px', borderRadius: '4px' }}>
+                                                        {opts.map(n => <option key={n} value={n}>{n} periods</option>)}
+                                                    </select>
+                                                );
+                                            })()}
+                                            <select value={streamForm.tbDay} onChange={e => setStreamForm({ ...streamForm, tbDay: e.target.value })} style={{ flex: 1, padding: '4px 8px', borderRadius: '4px' }}>
+                                                {['Any','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <option key={d} value={d}>{d}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid #064e3b', borderRadius: '0.6rem', padding: '0.8rem', minWidth: '200px' }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 900, color: '#10b981', textTransform: 'uppercase' }}>Lab Block (LB)</div>
+                                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
+                                            {(() => {
+                                                const max = Number(streamForm.periods) || 0;
+                                                const other = Number(streamForm.tBlock) || 0;
+                                                const limit = Math.max(0, max - other);
+                                                const opts = [];
+                                                for (let n = 0; n <= limit; n += 2) opts.push(n);
+                                                return (
+                                                    <select value={streamForm.lBlock} onChange={e => {
+                                                            const val = Number(e.target.value);
+                                                            const max = Number(streamForm.periods) || 0;
+                                                            const newMaxT = Math.max(0, max - val);
+                                                            setStreamForm(prev => ({
+                                                                ...prev,
+                                                                lBlock: val,
+                                                                tBlock: Math.min(prev.tBlock || 0, newMaxT)
+                                                            }));
+                                                        }} style={{ flex: 1, padding: '4px 8px', borderRadius: '4px' }}>
+                                                        {opts.map(n => <option key={n} value={n}>{n} periods</option>)}
+                                                    </select>
+                                                );
+                                            })()}
+                                            <select value={streamForm.lbDay} onChange={e => setStreamForm({ ...streamForm, lbDay: e.target.value })} style={{ flex: 1, padding: '4px 8px', borderRadius: '4px' }}>
+                                                {['Any','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <option key={d} value={d}>{d}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid #1e3a8a', borderRadius: '0.6rem', padding: '0.8rem', minWidth: '200px' }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 900, color: '#3b82f6', textTransform: 'uppercase' }}>Normal Periods</div>
+                                        <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#94a3b8' }}>
+                                            {Math.max(0, (streamForm.periods || 0) - (streamForm.tBlock || 0) - (streamForm.lBlock || 0))} remaining
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -8670,7 +8851,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     {streamForm.subjects.map((sub, idx) => (
                                         <div key={idx} style={{
                                             display: 'grid',
-                                            gridTemplateColumns: '1.2fr 1fr 1fr 100px 60px 40px',
+                                            gridTemplateColumns: '1.5fr 1.5fr 40px',
                                             gap: '0.6rem',
                                             alignItems: 'center',
                                             background: 'rgba(30, 41, 59, 0.5)',
@@ -8705,37 +8886,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         );
                                                     }).sort().map(t => <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>{t}</option>)}
                                                 </select>
-                                            </div>
-                                            <div>
-                                                <input
-                                                    type="text"
-                                                    value={sub.groupName}
-                                                    onChange={e => updateStreamSubject(idx, 'groupName', e.target.value)}
-                                                    placeholder="Group Name (e.g. Hindi)"
-                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
-                                                />
-                                            </div>
-                                            <div>
-                                                <select
-                                                    value={sub.labGroup || 'None'}
-                                                    onChange={e => updateStreamSubject(idx, 'labGroup', e.target.value)}
-                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#333333', fontSize: '0.8rem', fontWeight: 800 }}
-                                                >
-                                                    <option value="None">No Lab</option>
-                                                    <option value="CSc Lab Group">CSc Group</option>
-                                                    <option value="DS/AI Lab Group">DS/AI Group</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <input
-                                                    type="number"
-                                                    value={sub.targetLabCount || 0}
-                                                    onChange={e => updateStreamSubject(idx, 'targetLabCount', Number(e.target.value))}
-                                                    title="Lab Periods (LP)"
-                                                    min="0"
-                                                    max={streamForm.periods}
-                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#333333', fontSize: '0.85rem', fontWeight: 900, textAlign: 'center' }}
-                                                />
                                             </div>
                                             <button
                                                 onClick={() => removeSubjectFromStream(idx)}

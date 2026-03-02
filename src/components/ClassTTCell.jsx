@@ -65,7 +65,7 @@ const ClassTTCell = ({
             height: '100%', width: '100%', minHeight: '40px'
         }}>
             <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>
-                {displaySubj}{cell.isLabPeriod ? '' : (cell.labGroup && cell.labGroup !== 'None' ? ' [TH]' : '')}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}
+                {displaySubj}{cell.isLabPeriod ? '' : (cell.labGroup && cell.labGroup !== 'None' ? ' [TH]' : '')}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}{cell.isClubBlock ? ' [C]' : ''}
                 {indicator && (
                     <span style={{ fontSize: '0.7em', color: '#fbbf24', fontWeight: 900, marginLeft: '2px' }}>
                         {indicator}

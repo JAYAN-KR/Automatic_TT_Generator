@@ -557,6 +557,10 @@ All three teachers teach at the SAME TIME to the SAME class
 
 ### 9.2 Stream Placement Requirements
 
+* **Club periods:** if any subject in a stream is marked as a club period, the
+  stream slot must occupy a two‑period block (P1+P2) on that day.  All teachers in
+  the stream are considered busy during both periods.
+
 ```javascript
 FOR each stream period to place:
   
