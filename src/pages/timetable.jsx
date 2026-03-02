@@ -7170,8 +7170,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             <th style={{ border: '1px solid #e2e8f0', padding: '4px' }}>DAY</th>
                                                             {['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S10', 'S11'].map(p => {
                                                                 const map = { S1: 'P1', S2: 'P2', S4: 'P3', S5: 'P4', S6: 'P5', S8: 'P6', S9: 'P7', S10: 'P7', S11: 'P8' };
-                                                                // Show appropriate P7 for MS/Senior
-                                                                const isMS = labName === LAB_SYSTEM.MS_COMP;
+                                                                // Show appropriate P7 for MS/Senior & math lab
+                                                                const isMS = labName === LAB_SYSTEM.MS_COMP || labName === LAB_SYSTEM.MAT_LAB;
                                                                 if (isMS && p === 'S9') return null; // MS Lunch
                                                                 if (!isMS && p === 'S10') return null; // Senior Lunch
                                                                 return <th key={p} style={{ border: '1px solid #e2e8f0', padding: '4px' }}>{map[p]}</th>;
