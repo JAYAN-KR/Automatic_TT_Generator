@@ -269,6 +269,10 @@ export default function TeacherTTTab({
                                     }
 
                                     displaySub = getSubAbbr(displaySub);
+                                    if (isObj && slot.isLabPeriod) {
+                                        // show the lab indicator directly on the subject abbreviation
+                                        displaySub = displaySub ? `${displaySub}(L)` : '(L)';
+                                    }
 
                                     const { num, div } = getFormattedClass(displayClass);
                                     const typeIndicator = slot?.isTBlock ? 'T' : (slot?.isLBlock ? 'L' : '');

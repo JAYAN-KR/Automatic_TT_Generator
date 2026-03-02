@@ -1264,7 +1264,7 @@ export default function TimetablePage() {
     const addSubjectToStream = () => {
         setStreamForm(prev => ({
             ...prev,
-            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '', labGroup: 'None', targetLabCount: 2 }]
+            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '', clubPeriods: false, labGroup: 'None', targetLabCount: 2 }]
         }));
     };
 
@@ -8697,6 +8697,16 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
                                                 />
                                             </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={sub.clubPeriods || false}
+                                                    onChange={e => updateStreamSubject(idx, 'clubPeriods', e.target.checked)}
+                                                    title="Club these periods (merge consecutive periods together)"
+                                                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10b981' }}
+                                                />
+                                                <span style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 700 }}>CLUB</span>
+                                            </div>
                                             <div>
                                                 <select
                                                     value={sub.labGroup || 'None'}
@@ -8740,15 +8750,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; e.target.style.borderColor = '#475569'; }}
                                 >Cancel</button>
                                 <button
-                                    onClick={async () => {
-                                        const savedStream = handleSaveStream();
-                                        if (savedStream) {
-                                            // Automatically trigger placement (deployment) into the timetable.
-                                            // supply existing timetable if available so fixed/blocks remain intact
-                                            await handleCreateStreamSpecific(savedStream, generatedTimetable || null);
-                                        }
+                                    onClick={() => {
+                                        handleSaveStream();
+                                        addToast('✅ Stream saved. Use Generate Timetable to place periods according to priority.', 'success');
                                     }}
-                                    title={editingStreamId ? "Save changes and regenerate this parallel stream in the timetable" : "Save the new parallel stream and automatically place it in the timetable"}
+                                    title={editingStreamId ? "Save changes to this parallel stream (periods will be placed during Generate Timetable)" : "Save the new parallel stream (periods will be placed during Generate Timetable according to priority)"}
                                     style={{
                                         padding: '0.85rem 2rem',
                                         background: 'linear-gradient(135deg, #4f46e5, #4338ca)',

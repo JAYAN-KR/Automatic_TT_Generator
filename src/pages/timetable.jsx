@@ -4,7 +4,8 @@ import { extractSubjectsFromPDF } from '../utils/pdfExtractor';
 import {
     generateTeacherTimetableHTML,
     generateClassTimetableHTML,
-    generateFullPrintHTML
+    generateFullPrintHTML,
+    generatePortraitPrintHTML
 } from '../utils/timetablePrintLayout';
 import { generateTimetable } from '../utils/timetableGenerator';
 import { detectLabConflict, determineLabStatus, LAB_GROUPS, getLabForSubject, LAB_SYSTEM } from '../utils/labSharingValidation';
@@ -44,7 +45,7 @@ import { calculateTotalLoad } from '../utils/allotmentHelpers';
 // Components
 import TeacherGroupEditor from '../components/TeacherGroupEditor';
 import ClassTTTab from './ClassTTTab';
-// import { MultiClassSelector } from './modules/shared/components/MultiClassSelector';
+import MultiClassSelector from '../components/MultiClassSelector';
 import ClassTTCell from '../components/ClassTTCell';
 import ClassTTFooter from '../components/ClassTTFooter';
 import { getCombinedSubjectsForClass } from '../utils/classTTUtils';
@@ -207,8 +208,8 @@ const CLASSROOMS = [
     '8A', '8B', '8C', '8D', '8E', '8F', '8G',
     '9A', '9B', '9C', '9D', '9E', '9F', '9G',
     '10A', '10B', '10C', '10D', '10E', '10F', '10G',
-    '11A', '11B', '11C', '11D', '11E', '11F',
-    '12A', '12B', '12C', '12D', '12E', '12F'
+    '11A', '11B', '11C', '11D', '11E', '11F', '11G',
+    '12A', '12B', '12C', '12D', '12E', '12F', '12G'
 ];
 
 // --- Timetable Cell Styles for 6A Template ---
@@ -226,9 +227,9 @@ function ttCellHeader(extra = {}) {
 }
 function ttCell(extra = {}) {
     return {
-        border: '1px solid #64748b',
-        background: '#1e293b',
-        color: '#f1f5f9',
+        border: '1px solid #000000',
+        background: '#ffffff',
+        color: '#000000',
         fontWeight: 500,
         fontSize: '1.1em',
         textAlign: 'center',
@@ -241,9 +242,9 @@ function ttCell(extra = {}) {
 }
 function ttCellDay(extra = {}) {
     return {
-        border: '1px solid #64748b',
-        background: '#0f172a',
-        color: '#fbbf24',
+        border: '1px solid #000000',
+        background: '#f5f5f5',
+        color: '#000000',
         fontWeight: 900,
         fontSize: '1.1em',
         textAlign: 'center',
@@ -254,16 +255,15 @@ function ttCellDay(extra = {}) {
 }
 function ttCellBreak(label, rowSpan) {
     return {
-        border: '1px solid #64748b',
-        background: '#1e293b',
-        color: '#fbbf24',
+        border: '1px solid #000000',
+        background: '#f5f5f5',
+        color: '#000000',
         fontWeight: 900,
         fontSize: '1.1em',
         textAlign: 'center',
         minWidth: 40,
         height: 44 * rowSpan,
-        verticalAlign: 'middle',
-        ...(label.includes('LUNCH') ? { color: '#38bdf8' } : {})
+        verticalAlign: 'middle'
     };
 }
 
@@ -920,7 +920,7 @@ export default function TimetablePage() {
                         id: `${p.teacher}||${p.subject}`,
                         teacher: p.teacher,
                         subject: p.subject,
-                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, blockPeriods: 0, preferredDay: 'Any', isMerged: false, labGroup: 'None' }],
+                        allotments: [{ id: Date.now() + Math.random(), classes: [], periods: 0, blockPeriods: 0, preferredDay: 'Any', isMerged: false, labGroup: 'None' }],
                         total: 0
                     }));
                 }
@@ -932,7 +932,7 @@ export default function TimetablePage() {
             id: Date.now(),
             teacher: '',
             subject: '',
-            allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false, labGroup: 'None' }],
+            allotments: [{ id: Date.now() + Math.random(), classes: [], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false, labGroup: 'None' }],
             total: 0
         }];
     });
@@ -944,8 +944,8 @@ export default function TimetablePage() {
         '8A', '8B', '8C', '8D', '8E', '8F', '8G',
         '9A', '9B', '9C', '9D', '9E', '9F', '9G',
         '10A', '10B', '10C', '10D', '10E', '10F', '10G',
-        '11A', '11B', '11C', '11D', '11E', '11F',
-        '12A', '12B', '12C', '12D', '12E', '12F'
+        '11A', '11B', '11C', '11D', '11E', '11F', '11G',
+        '12A', '12B', '12C', '12D', '12E', '12F', '12G'
     ];
     const PERIOD_OPTIONS = Array.from({ length: 11 }, (_, i) => i);
 
@@ -956,7 +956,7 @@ export default function TimetablePage() {
             allotments: [{
                 id: Date.now() + Math.random(),
                 subject: '',
-                classes: ['6A'],
+                classes: [],
                 periods: 0,
                 tBlock: 0,
                 tbDay: 'Any',
@@ -1046,7 +1046,7 @@ export default function TimetablePage() {
             const newGroups = [...r.allotments, {
                 id: Date.now() + Math.random(),
                 subject: '',
-                classes: ['6A'],
+                classes: [],
                 periods: 0,
                 tBlock: 0,
                 tbDay: 'Any',
@@ -1217,7 +1217,7 @@ export default function TimetablePage() {
         setDeletePopup({ row, classGroups, checked, expanded: new Set() });
     };
 
-    const handleSaveStream = () => {
+    const handleSaveStream = async () => {
         // construct a string for classes, falling back to existing className if selector empty
         const classesString = streamSelectedClasses.length ? streamSelectedClasses.join('/') : streamForm.className;
         if (!streamForm.name || !classesString || !streamForm.periods || streamForm.subjects.some(s => !s.teacher || !s.subject)) {
@@ -1226,6 +1226,17 @@ export default function TimetablePage() {
         }
 
         const updatedStream = { ...streamForm, id: editingStreamId || Date.now(), className: classesString, forceCount, forceDay };
+        // run validations (blocks and labs)
+        try {
+            const { validateStream } = await import('../utils/parallelStreamProcessor');
+            const result = validateStream(updatedStream, generatedTimetable?.classTimetables || {}, generatedTimetable?.teacherTimetables || {});
+            if (!result.ok) {
+                result.messages.forEach(m => addToast(m, 'error'));
+                return;
+            }
+        } catch (e) {
+            console.warn('Validation util load failed', e);
+        }
         let updated;
         if (editingStreamId) {
             updated = subjectStreams.map(s => s.id === editingStreamId ? updatedStream : s);
@@ -1237,9 +1248,13 @@ export default function TimetablePage() {
         saveStreams(updated);
         setShowStreamModal(false);
         setEditingStreamId(null);
-        setStreamForm({ name: '', abbreviation: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '', groupName: '' }] });
+        setStreamForm({
+            name: '', abbreviation: '', className: '6A', periods: 4,
+            subjects: [{ teacher: '', subject: '' }],
+            tBlock: 0, tbDay: 'Any', lBlock: 0, lbDay: 'Any'
+        });
         setStreamSelectedClasses([]);
-        setForceCount(1);
+        setForceCount(0);
         setForceDay('Saturday');
         addToast('✅ Stream saved successfully', 'success');
         return updatedStream;
@@ -1260,15 +1275,23 @@ export default function TimetablePage() {
         const classes = stream.className ? stream.className.split('/').map(s => s.trim()).filter(Boolean) : [];
         setStreamSelectedClasses(classes);
         // load forced day settings if available
-        setForceCount(stream.forceCount || 1);
+        setForceCount(stream.forceCount ?? 0);
         setForceDay(stream.forceDay || 'Saturday');
+        // load stream-level block settings
+        setStreamForm(prev => ({
+            ...prev,
+            tBlock: stream.tBlock || 0,
+            tbDay: stream.tbDay || 'Any',
+            lBlock: stream.lBlock || 0,
+            lbDay: stream.lbDay || 'Any'
+        }));
         setShowStreamModal(true);
     };
 
     const addSubjectToStream = () => {
         setStreamForm(prev => ({
             ...prev,
-            subjects: [...prev.subjects, { teacher: '', subject: '', groupName: '', labGroup: 'None', targetLabCount: 2 }]
+            subjects: [...prev.subjects, { teacher: '', subject: '' }]
         }));
     };
 
@@ -1759,7 +1782,7 @@ export default function TimetablePage() {
                         id: `${p.teacher}||${p.subject}`,
                         teacher: p.teacher,
                         subject: p.subject,
-                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
+                        allotments: [{ id: Date.now() + Math.random(), classes: [], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
                         total: 0
                     }));
                     setAllotmentRows(resetRows);
@@ -1768,7 +1791,7 @@ export default function TimetablePage() {
                         id: Date.now(),
                         teacher: '',
                         subject: '',
-                        allotments: [{ id: Date.now() + Math.random(), classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
+                        allotments: [{ id: Date.now() + Math.random(), classes: [], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
                         total: 0
                     }]);
                 }
@@ -2000,7 +2023,7 @@ export default function TimetablePage() {
     const [newSubjectName, setNewSubjectName] = useState('');
     const [activeSubjectMappingId, setActiveSubjectMappingId] = useState(null);
 
-    // Tab 4 (Distribution) State - 47 COLUMN VERSION
+    // Tab 4 (Distribution) State - 49 COLUMN VERSION
     const [distribution47, setDistribution47] = useState(loadDistribution());
     const [editingCell, setEditingCell] = useState(null);
     const [editValue, setEditValue] = useState('');
@@ -2069,11 +2092,16 @@ export default function TimetablePage() {
         abbreviation: '',
         className: '6A',
         periods: 4,
-        subjects: [{ teacher: '', subject: '', groupName: '', labGroup: 'None', targetLabCount: 2 }]
+        subjects: [{ teacher: '', subject: '' }],
+        // stream-level block settings
+        tBlock: 0,
+        tbDay: 'Any',
+        lBlock: 0,
+        lbDay: 'Any'
     });
     // classes chosen via the MultiClassSelector within the stream modal
     const [streamSelectedClasses, setStreamSelectedClasses] = useState([]);
-    const [forceCount, setForceCount] = useState(1);
+    const [forceCount, setForceCount] = useState(0);
     const [forceDay, setForceDay] = useState('Saturday');
 
     // toast messages
@@ -2546,7 +2574,7 @@ export default function TimetablePage() {
 Academic Year: ${academicYear}
 Version: ${currentVersion.version}
 Teachers: ${Object.keys(generatedTimetable.teacherTimetables).length}
-Classes: 47
+Classes: 49
 
 This will:
 • Set as ACTIVE timetable
@@ -2583,7 +2611,7 @@ Proceed?`)) {
 📅 Academic Year: ${academicYear}
 🏷️ Version: ${currentVersion.version}
 👩‍🏫 Teachers: ${result.teacherCount}
-🏫 Classes: 47
+🏫 Classes: 49
 📱 Push notifications: SENT to all teachers
 
 Teachers can now see their timetable in the AutoSubs app.`, 'success');
@@ -2669,6 +2697,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 ? ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S10', 'S11']
                 : ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S11'];
 
+            // if any stream subject is marked as a club, the entire stream period
+            // must occupy a two‑period block (first & second periods of the day)
+            const hasClubPeriod = stream.subjects.some(s => s.clubPeriods);
+            // restrict candidate slots accordingly; club periods always start at S1
+            const ALLOWED_SLOTS = hasClubPeriod ? ['S1'] : AVAILABLE_SLOTS;   
+            const CLUB_BLOCK_PAIR = ['S1', 'S2']; // fixed block for club periods
+
             const tFree = (teacherInput, d, p) => {
                 const teacher = teacherInput?.trim();
                 if (!tt.teacherTimetables[teacher]) {
@@ -2699,7 +2734,29 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     }
                 }
 
-                return classFree && teachersFree && !labConflict;
+                let free = classFree && teachersFree && !labConflict;
+                // if a club period is required, the slot is only valid when the immediately
+                // following period (always 'S2') is also free for both classes and teachers
+                if (hasClubPeriod && free) {
+                    const p2 = CLUB_BLOCK_PAIR[1];
+                    const classFree2 = classNames.every(cn => (tt.classTimetables[cn]?.[d]?.[p2]?.subject ?? '') === '');
+                    const teachersFree2 = stream.subjects.every(s => tFree(s.teacher, d, p2));
+                    let labConflict2 = false;
+                    for (const s of stream.subjects) {
+                        if (s.labGroup && s.labGroup !== 'None') {
+                            for (const cn of classNames) {
+                                if (detectLabConflict(tt.classTimetables, cn, d, p2, s.labGroup)) {
+                                    labConflict2 = true;
+                                    break;
+                                }
+                            }
+                            if (labConflict2) break;
+                        }
+                    }
+                    free = classFree2 && teachersFree2 && !labConflict2;
+                }
+
+                return free;
             };
 
             const periodsToPlace = Number(stream.periods) || 0;
@@ -2768,7 +2825,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             }
 
             const D_LEN = ROTATED_DAYS.length;
-            const P_LEN = AVAILABLE_SLOTS.length;
+            const P_LEN = ALLOWED_SLOTS.length;  // use filtered slots when club periods are required
 
             // Extract forced day settings
             const forceCount = stream.forceCount || 0;
@@ -2780,52 +2837,63 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 let pick = null;
                 const shouldBeForcedDay = forcedPlaced < forceCount;
 
+                // helper to test a candidate slot (and its partner if club)
+                const testSlot = (d, p) => {
+                    if (!streamFree(d, p)) return false;
+                    if (hasClubPeriod) {
+                        const partner = CLUB_BLOCK_PAIR[1];
+                        // partner may not be in AVAILABLE_SLOTS but we always check S2
+                        return streamFree(d, partner);
+                    }
+                    return true;
+                };
+
                 if (shouldBeForcedDay) {
                     // Try to place on the forced day
-                    for (let attempt = 0; attempt < P_LEN; attempt++) {
-                        const p = AVAILABLE_SLOTS[attempt];
-                        if (streamFree(forceDay, p)) {
-                            pick = { d: forceDay, p };
+                    for (let attempt = 0; attempt < ALLOWED_SLOTS.length; attempt++) {
+                        const p = ALLOWED_SLOTS[attempt];
+                        if (testSlot(forceDay, p)) {
+                            pick = { d: forceDay, p1: p, p2: hasClubPeriod ? CLUB_BLOCK_PAIR[1] : null };
                             forcedPlaced++;
                             break;
                         }
                     }
                     // If forced day has no slots, try any day (but don't count it as forcedPlaced)
                     if (!pick) {
-                        for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
+                        for (let attempt = 0; attempt < D_LEN * ALLOWED_SLOTS.length; attempt++) {
                             const walkIdx = existingStreamCount + i + attempt;
                             const d = ROTATED_DAYS[walkIdx % D_LEN];
-                            const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
-                            if (streamFree(d, p)) {
-                                pick = { d, p };
+                            const p = ALLOWED_SLOTS[walkIdx % ALLOWED_SLOTS.length];
+                            if (testSlot(d, p)) {
+                                pick = { d, p1: p, p2: hasClubPeriod ? CLUB_BLOCK_PAIR[1] : null };
                                 break;
                             }
                         }
                     }
                 } else {
                     // Normal diagonal walk, but avoid forced day if possible
-                    for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
+                    for (let attempt = 0; attempt < D_LEN * ALLOWED_SLOTS.length; attempt++) {
                         const walkIdx = existingStreamCount + i + attempt;
                         const d = ROTATED_DAYS[walkIdx % D_LEN];
-                        const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
+                        const p = ALLOWED_SLOTS[walkIdx % ALLOWED_SLOTS.length];
 
                         // Skip forced day unless we have no choice
                         if (d === forceDay && (periodsToPlace - placed) > (D_LEN - 1)) continue;
 
-                        if (streamFree(d, p)) {
-                            pick = { d, p };
+                        if (testSlot(d, p)) {
+                            pick = { d, p1: p, p2: hasClubPeriod ? CLUB_BLOCK_PAIR[1] : null };
                             break;
                         }
                     }
 
                     if (!pick) {
                         // Fallback: ignore forced day constraint but keep diagonal walk
-                        for (let attempt = 0; attempt < D_LEN * P_LEN; attempt++) {
+                        for (let attempt = 0; attempt < D_LEN * ALLOWED_SLOTS.length; attempt++) {
                             const walkIdx = existingStreamCount + i + attempt;
                             const d = ROTATED_DAYS[walkIdx % D_LEN];
-                            const p = AVAILABLE_SLOTS[walkIdx % P_LEN];
-                            if (streamFree(d, p)) {
-                                pick = { d, p };
+                            const p = ALLOWED_SLOTS[walkIdx % ALLOWED_SLOTS.length];
+                            if (testSlot(d, p)) {
+                                pick = { d, p1: p, p2: hasClubPeriod ? CLUB_BLOCK_PAIR[1] : null };
                                 break;
                             }
                         }
@@ -2834,16 +2902,31 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                 if (pick) {
                     const abbr = stream.abbreviation || getAbbreviation(stream.name);
-                    // assign the slot for every class in the club
+                    const p1 = pick.p1 || pick.p;
+                    const p2 = pick.p2 || null;
+
+                    // assign the slot(s) for every class in the club
                     classNames.forEach(cn => {
-                        tt.classTimetables[cn][pick.d][pick.p] = {
+                        tt.classTimetables[cn][pick.d][p1] = {
                             subject: abbr,
                             isStream: true,
                             streamName: stream.name,
                             subjects: stream.subjects,
-                            // keep full slash‑separated class list for later reconstruction
-                            streamClasses: stream.className
+                            streamClasses: stream.className,
+                            isBlock: !!p2,
+                            isClubBlock: !!p2
                         };
+                        if (p2) {
+                            tt.classTimetables[cn][pick.d][p2] = {
+                                subject: abbr,
+                                isStream: true,
+                                streamName: stream.name,
+                                subjects: stream.subjects,
+                                streamClasses: stream.className,
+                                isBlock: true,
+                                isClubBlock: true
+                            };
+                        }
                     });
                     placed++;
 
@@ -2859,12 +2942,13 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 labGroup: s.labGroup || 'None',
                                 targetLabCount: s.targetLabCount
                             };
-                            if (determineLabStatus(tt.classTimetables, labStatusData, pick.d, pick.p)) {
+                            if (determineLabStatus(tt.classTimetables, labStatusData, pick.d, p1)) {
                                 isLab = true;
                             }
                         });
 
-                        tt.teacherTimetables[trimmedT][pick.d][pick.p] = {
+                        // assign teacher slots for both periods (second only if block)
+                        tt.teacherTimetables[trimmedT][pick.d][p1] = {
                             className: stream.className,
                             subject: s.subject,
                             fullSubject: s.subject,
@@ -2873,27 +2957,53 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             streamName: stream.name,
                             labGroup: s.labGroup || 'None',
                             targetLabCount: s.targetLabCount,
-                            isLabPeriod: isLab
+                            isLabPeriod: isLab,
+                            isBlock: !!p2,
+                            isClubBlock: !!p2
                         };
+                        if (p2) {
+                            tt.teacherTimetables[trimmedT][pick.d][p2] = {
+                                className: stream.className,
+                                subject: s.subject,
+                                fullSubject: s.subject,
+                                groupName: s.groupName,
+                                isStream: true,
+                                streamName: stream.name,
+                                labGroup: s.labGroup || 'None',
+                                targetLabCount: s.targetLabCount,
+                                isLabPeriod: isLab,
+                                isBlock: true,
+                                isClubBlock: true
+                            };
+                        }
 
                         // Also update class timetable slot with the first subject's lab info for display
                         // apply to every class in the club
                         classNames.forEach(cn => {
-                            if (!tt.classTimetables[cn][pick.d][pick.p].labGroup) {
-                                tt.classTimetables[cn][pick.d][pick.p].labGroup = s.labGroup || 'None';
+                            if (!tt.classTimetables[cn][pick.d][p1].labGroup) {
+                                tt.classTimetables[cn][pick.d][p1].labGroup = s.labGroup || 'None';
                             }
                             if (isLab) {
-                                tt.classTimetables[cn][pick.d][pick.p].isLabPeriod = true;
+                                tt.classTimetables[cn][pick.d][p1].isLabPeriod = true;
+                            }
+                            if (p2) {
+                                if (!tt.classTimetables[cn][pick.d][p2].labGroup) {
+                                    tt.classTimetables[cn][pick.d][p2].labGroup = s.labGroup || 'None';
+                                }
+                                if (isLab) {
+                                    tt.classTimetables[cn][pick.d][p2].isLabPeriod = true;
+                                }
                             }
                         });
 
-                        // update teacher load once per period
-                        tt.teacherTimetables[trimmedT][pick.d].periodCount++;
-                        tt.teacherTimetables[trimmedT].weeklyPeriods++;
+                        // update teacher load: increment by 1 for each assigned period
+                        tt.teacherTimetables[trimmedT][pick.d].periodCount += p2 ? 2 : 1;
+                        tt.teacherTimetables[trimmedT].weeklyPeriods += p2 ? 2 : 1;
                     });
 
                     placements.push(pick);
-                    addMessage(`✅ Placed ${placed}/${periodsToPlace}: ${pick.d} ${pick.p}`);
+                    const slotText = p2 ? `${pick.d} ${p1}-${p2}` : `${pick.d} ${p1}`;
+                    addMessage(`✅ Placed ${placed}/${periodsToPlace}: ${slotText}`);
                     await sleep(100);
                 } else {
                     addMessage(`❌ Failed to find slot for period ${i + 1}`);
@@ -3888,7 +3998,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     top: '1rem',
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    background: t.type === 'error' ? '#dc2626' : t.type === 'warning' ? '#fbbf24' : '#10b981',
+                    background: t.type === 'error' ? '#dc2626' : t.type === 'warning' ? '#fbbf24' : '#333333',
                     color: 'white',
                     padding: '0.75rem 1.5rem',
                     borderRadius: '0.5rem',
@@ -4032,7 +4142,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             return {
                                                 id: t,
                                                 teacher: t,
-                                                allotments: [{ id: Date.now() + Math.random(), subject: defaultSub, classes: ['6A'], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
+                                                allotments: [{ id: Date.now() + Math.random(), subject: defaultSub, classes: [], periods: 0, tBlock: 0, lBlock: 0, preferredDay: 'Any', isMerged: false }],
                                                 total: 0
                                             };
                                         }
@@ -4054,7 +4164,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 }}
                                 style={{
                                     padding: '0.75rem 1.5rem',
-                                    background: isSaving ? '#64748b' : 'linear-gradient(135deg, #10b981, #059669)',
+                                    background: isSaving ? '#000000' : 'linear-gradient(135deg, #10b981, #059669)',
                                     color: 'white', border: 'none', borderRadius: '0.75rem', cursor: 'pointer', fontWeight: 'bold'
                                 }}
                             >
@@ -4099,7 +4209,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             value={newTeacherValue}
                                                             onChange={e => setNewTeacherValue(e.target.value)}
                                                             placeholder="Enter name..."
-                                                            style={{ padding: '0.5rem', background: '#1e293b', color: '#fff', border: '1px solid #10b981', borderRadius: '0.5rem', flex: 1 }}
+                                                            style={{ padding: '0.5rem', background: '#1e293b', color: '#fff', border: '1px solid #333333', borderRadius: '0.5rem', flex: 1 }}
                                                         />
                                                         <button onClick={() => {
                                                             if (newTeacherValue.trim()) {
@@ -4107,7 +4217,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 const r = [...mappingRows]; r[idx].teacher = newTeacherValue.trim();
                                                                 setMappingRows(r); setNewTeacherValue(''); setAddingTeacherRowId(null);
                                                             }
-                                                        }} style={{ padding: '0.5rem', background: '#10b981', color: '#fff', border: 'none', borderRadius: '0.5rem' }}>✓</button>
+                                                        }} style={{ padding: '0.5rem', background: '#333333', color: '#fff', border: 'none', borderRadius: '0.5rem' }}>✓</button>
                                                     </div>
                                                 ) : (
                                                     <select
@@ -4147,7 +4257,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 </div>
                                                 {addingSubjectRowId === row.id && (
                                                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                                                        <input autoFocus value={newSubjectValue} onChange={e => setNewSubjectValue(e.target.value)} style={{ padding: '0.4rem', background: '#1e293b', color: '#fff', border: '1px solid #10b981', borderRadius: '0.4rem', flex: 1 }} />
+                                                        <input autoFocus value={newSubjectValue} onChange={e => setNewSubjectValue(e.target.value)} style={{ padding: '0.4rem', background: '#1e293b', color: '#fff', border: '1px solid #333333', borderRadius: '0.4rem', flex: 1 }} />
                                                         <button onClick={() => {
                                                             if (newSubjectValue.trim()) {
                                                                 setSubjects(p => Array.from(new Set([...p, newSubjectValue.trim()])).sort());
@@ -4155,7 +4265,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 r[idx].subjects.push(newSubjectValue.trim()); setMappingRows(r);
                                                                 setNewSubjectValue(''); setAddingSubjectRowId(null);
                                                             }
-                                                        }} style={{ padding: '0.4rem', background: '#10b981', color: '#fff', border: 'none', borderRadius: '0.4rem' }}>✓</button>
+                                                        }} style={{ padding: '0.4rem', background: '#333333', color: '#fff', border: 'none', borderRadius: '0.4rem' }}>✓</button>
                                                     </div>
                                                 )}
                                             </td>
@@ -4221,7 +4331,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 <button
                                     onClick={() => {
                                         setEditingStreamId(null);
-                                        setStreamForm({ name: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '', groupName: '' }] });
+                                        setStreamForm({ name: '', className: '6A', periods: 4, subjects: [{ teacher: '', subject: '' }] });
                                         setSelectedClasses([]);
                                         setShowStreamModal(true);
                                     }}
@@ -4247,7 +4357,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             </div>
 
                             {subjectStreams.length === 0 ? (
-                                <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b', border: '2px dashed #334155', borderRadius: '0.75rem' }}>
+                                <div style={{ textAlign: 'center', padding: '2rem', color: '#000000', border: '2px dashed #334155', borderRadius: '0.75rem' }}>
                                     No parallel streams defined yet. Use streams for subjects like "2nd Language" or "Electives".
                                 </div>
                             ) : (
@@ -4272,7 +4382,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         onClick={() => handleCreateStreamSpecific(stream)}
                                                         style={{
                                                             padding: '0.3rem 0.6rem',
-                                                            background: completedCreations.has(stream.id) ? '#10b981' : '#3b82f6',
+                                                            background: completedCreations.has(stream.id) ? '#333333' : '#666666',
                                                             color: 'white',
                                                             border: 'none',
                                                             borderRadius: '0.4rem',
@@ -4313,7 +4423,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 title="Save all teacher allotments and timetable data to cloud storage"
                                 style={{
                                     padding: '0.75rem 1.5rem',
-                                    background: '#10b981',
+                                    background: '#333333',
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '0.75rem',
@@ -4373,7 +4483,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             border: '1px solid #334155',
                             alignItems: 'center'
                         }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 900, color: '#64748b', marginRight: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>⚡ Batch Gen:</span>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 900, color: '#ffffff', marginRight: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>⚡ Batch Gen:</span>
                             {['6', '7', '8', '9', '10', '11', '12'].map(g => (
                                 <button key={g} onClick={() => handleBatchGenerate(`Grade ${g}`, g)} title={`Generate timetable for Grade ${g} automatically`} style={{ padding: '0.4rem 0.8rem', background: '#334155', color: '#e2e8f0', border: '1px solid #475569', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }} onMouseOver={e => e.currentTarget.style.background = '#475569'} onMouseOut={e => e.currentTarget.style.background = '#334155'}>
                                     Gen{g}
@@ -4419,11 +4529,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 color: '#f1f5f9'
                             }}>
                                 <thead>
-                                    <tr style={{ background: '#0f172a', borderBottom: '2px solid #334155' }}>
-                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Dept / Subject</th>
-                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Teacher Name</th>
-                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Total Load (Weekly)</th>
-                                        <th style={{ padding: '1rem', textAlign: 'right', fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Actions / Management</th>
+                                        <tr style={{ background: '#0f172a', borderBottom: '2px solid #334155' }}>
+                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.7rem', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Dept / Subject</th>
+                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.7rem', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Teacher Name</th>
+                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.7rem', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Total Load (Weekly)</th>
+                                        <th style={{ padding: '1rem', textAlign: 'right', fontSize: '0.7rem', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Actions / Management</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -4563,7 +4673,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                     padding: '0.2rem 0.4rem',
                                                                                     fontSize: '0.8rem',
                                                                                     fontWeight: 700,
-                                                                                    color: isGenerated ? '#a7f3d0' : '#94a3b8',
+                                                                                    color: '#94a3b8',
                                                                                     fontFamily: 'monospace'
                                                                                 }}>
                                                                                     <span>{label}</span>
@@ -4599,7 +4709,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Total Load:</span>
                                                                 <span style={{
                                                                     background: grandTotal > 0 ? '#0ea5e9' : 'rgba(255,255,255,0.03)',
-                                                                    color: grandTotal > 0 ? 'white' : '#64748b',
+                                                                    color: grandTotal > 0 ? 'white' : '#000000',
                                                                     border: grandTotal > 0 ? 'none' : '1px solid #334155',
                                                                     padding: '2px 10px',
                                                                     borderRadius: '6px',
@@ -4642,7 +4752,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     disabled={creationStatus}
                                                                     style={{
                                                                         padding: '0.4rem 1rem',
-                                                                        background: completedCreations.has(row.id) ? '#10b981' : '#3b82f6',
+                                                                        background: completedCreations.has(row.id) ? '#333333' : '#666666',
                                                                         color: 'white',
                                                                         border: 'none',
                                                                         borderRadius: '0.4rem',
@@ -4841,7 +4951,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     </div>
                                                                     <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
                                                                         <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Direct Clashes</div>
-                                                                        <div style={{ fontSize: '1.5rem', fontWeight: 900, color: analysis.clashes.length > 0 ? '#ef4444' : '#10b981' }}>{analysis.clashes.length}</div>
+                                                                        <div style={{ fontSize: '1.5rem', fontWeight: 900, color: analysis.clashes.length > 0 ? '#ef4444' : '#333333' }}>{analysis.clashes.length}</div>
                                                                     </div>
                                                                     <div style={{ padding: '1rem', background: '#1e293b', borderRadius: '0.8rem', border: '1px solid #334155', textAlign: 'center' }}>
                                                                         <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.3rem' }}>Total Weekly</div>
@@ -4851,12 +4961,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                                                                 {/* Daily Workload Indicator */}
                                                                 <div style={{ background: '#0f172a', padding: '1.2rem', borderRadius: '1rem', border: '1px solid #334155', marginBottom: '1.5rem' }}>
-                                                                    <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.8rem', letterSpacing: '0.05em' }}>Daily Period Distribution (Max 6)</div>
+                                                                    <div style={{ fontSize: '0.75rem', color: '#000000', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.8rem', letterSpacing: '0.05em' }}>Daily Period Distribution (Max 6)</div>
                                                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '0.5rem' }}>
                                                                         {Object.entries(analysis.dailyWorkload).map(([day, stats]) => (
                                                                             <div key={day} style={{ textAlign: 'center', padding: '0.5rem', borderRadius: '0.6rem', background: stats.total > 6 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(30, 41, 59, 0.5)', border: `1px solid ${stats.total > 6 ? '#ef4444' : '#334155'}` }}>
                                                                                 <div style={{ fontSize: '0.65rem', color: stats.total > 6 ? '#f87171' : '#94a3b8', fontWeight: 700 }}>{day.substring(0, 3)}</div>
-                                                                                <div style={{ fontSize: '1.1rem', fontWeight: 900, color: stats.total > 6 ? '#ef4444' : (stats.extra > 0 ? '#3b82f6' : 'white') }}>
+                                                                                <div style={{ fontSize: '1.1rem', fontWeight: 900, color: stats.total > 6 ? '#ef4444' : (stats.extra > 0 ? '#666666' : 'white') }}>
                                                                                     {stats.total}
                                                                                 </div>
                                                                             </div>
@@ -4883,8 +4993,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         </p>
                                                                     </div>
                                                                 ) : (
-                                                                    <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
-                                                                        <h4 style={{ margin: 0, color: '#10b981', fontSize: '0.95rem' }}>✅ Target teacher is fully available and within workload limits!</h4>
+                                                                    <div style={{ background: '#e6e6e6', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '1.2rem', borderRadius: '0.8rem' }}>
+                                                                        <h4 style={{ margin: 0, color: '#333333', fontSize: '0.95rem' }}>✅ Target teacher is fully available and within workload limits!</h4>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -4901,12 +5011,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'DIRECT' }))}
                                                             disabled={analysis.clashes.length > 0}
                                                             style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: analysis.clashes.length > 0 ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: analysis.clashes.length > 0 ? 0.5 : 1 }}
-                                                            onMouseOver={e => !analysis.clashes.length && (e.currentTarget.style.borderColor = '#10b981')}
+                                                            onMouseOver={e => !analysis.clashes.length && (e.currentTarget.style.borderColor = '#333333')}
                                                             onMouseOut={e => e.currentTarget.style.borderColor = '#334155'}
                                                         >
                                                             <div style={{ fontSize: '2rem' }}>🔄</div>
                                                             <div>
-                                                                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#10b981' }}>Option A: Full Swap</div>
+                                                                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#333333' }}>Option A: Full Swap</div>
                                                                 <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Complete replacement. All classes move from <b>{row.teacher}</b> to <b>{newTeacher}</b>.</div>
                                                             </div>
                                                         </button>
@@ -4915,12 +5025,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         <button
                                                             onClick={() => setReassignWizard(prev => ({ ...prev, step: 3, strategy: 'SELECTIVE', selectedGroups: new Set() }))}
                                                             style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '1.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '1rem', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s' }}
-                                                            onMouseOver={e => (e.currentTarget.style.borderColor = '#3b82f6')}
+                                                            onMouseOver={e => (e.currentTarget.style.borderColor = '#666666')}
                                                             onMouseOut={e => (e.currentTarget.style.borderColor = '#334155')}
                                                         >
                                                             <div style={{ fontSize: '2rem' }}>✂️</div>
                                                             <div>
-                                                                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#3b82f6' }}>Option B: Partial Swap</div>
+                                                                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#666666' }}>Option B: Partial Swap</div>
                                                                 <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Selective transfer. Choose specific classes/divisions to move.</div>
                                                             </div>
                                                         </button>
@@ -4975,7 +5085,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                                                         <div>
                                                             <label style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600 }}>3. SELECT CLASSES TO TRANSFER</label>
-                                                            <p style={{ color: '#64748b', fontSize: '0.8rem', margin: '0.4rem 0 1.25rem 0' }}>From <b>{row.teacher}</b> to <b>{newTeacher}</b></p>
+                                                            <p style={{ color: '#000000', fontSize: '0.8rem', margin: '0.4rem 0 1.25rem 0' }}>From <b>{row.teacher}</b> to <b>{newTeacher}</b></p>
                                                         </div>
 
                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', background: '#0f172a', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #334155' }}>
@@ -5036,7 +5146,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         </div>
 
                                                         <div style={{ background: '#0f172a', padding: '1rem', borderRadius: '0.8rem', border: '1px solid #334155' }}>
-                                                            <h5 style={{ margin: '0 0 0.5rem 0', color: '#64748b', fontSize: '0.8rem', textTransform: 'uppercase' }}>Preview of First 3 Changes</h5>
+                                                            <h5 style={{ margin: '0 0 0.5rem 0', color: '#000000', fontSize: '0.8rem', textTransform: 'uppercase' }}>Preview of First 3 Changes</h5>
                                                             {analysis.assignments.slice(0, 3).map((a, ai) => (
                                                                 <div key={ai} style={{ display: 'flex', gap: '0.5rem', fontSize: '0.85rem', marginBottom: '0.3rem', color: '#cbd5e1' }}>
                                                                     <span style={{ color: '#f59e0b' }}>•</span> {a.day} {a.period} in {a.className}: {row.teacher} ➔ <b>{newTeacher}</b>
@@ -5147,7 +5257,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             </div>
                                             {/* Bulk actions bar */}
                                             <div style={{ padding: '0.6rem 1.5rem', background: '#1e293b', borderBottom: '1px solid #0f172a', display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}>
-                                                <span style={{ fontSize: '0.78rem', color: '#64748b', flexGrow: 1 }}>Select periods to remove:</span>
+                                                <span style={{ fontSize: '0.78rem', color: '#000000', flexGrow: 1 }}>Select periods to remove:</span>
                                                 <button onClick={selectAll} title="Check all periods for deletion" style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Select All</button>
                                                 <button onClick={deselectAll} title="Uncheck all periods" style={{ padding: '0.28rem 0.7rem', background: '#334155', border: 'none', borderRadius: '0.35rem', color: '#cbd5e1', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}>Deselect All</button>
                                             </div>
@@ -5175,12 +5285,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     style={{ width: 16, height: 16, accentColor: '#dc2626', cursor: 'pointer', flexShrink: 0 }} />
                                                                 <span onClick={() => toggleClass(className, periods)}
                                                                     style={{ fontWeight: 700, color: '#f1f5f9', fontSize: '0.92rem', flexGrow: 1, cursor: 'pointer' }}>{className}</span>
-                                                                <span style={{ fontSize: '0.73rem', color: '#64748b' }}>{periods.length} period{periods.length !== 1 ? 's' : ''}</span>
+                                                                <span style={{ fontSize: '0.73rem', color: '#000000' }}>{periods.length} period{periods.length !== 1 ? 's' : ''}</span>
                                                                 {anyChecked && !allChecked && (
                                                                     <span style={{ fontSize: '0.68rem', color: '#f87171', background: 'rgba(220,38,38,0.18)', padding: '0.12rem 0.4rem', borderRadius: '0.3rem' }}>{sel.size} sel</span>
                                                                 )}
                                                                 <button onClick={() => toggleExpand(className)}
-                                                                    style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.75rem', padding: '0 0.15rem', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>&#9660;</button>
+                                                                    style={{ background: 'none', border: 'none', color: '#000000', cursor: 'pointer', fontSize: '0.75rem', padding: '0 0.15rem', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>&#9660;</button>
                                                             </div>
                                                             {isExpanded && (
                                                                 <div style={{ marginLeft: '1.8rem', marginTop: '0.2rem', display: 'flex', flexDirection: 'column', gap: '0.18rem' }}>
@@ -5255,7 +5365,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 title="Save all changes to teacher allotments"
                                 style={{
                                     padding: '0.75rem 1.5rem',
-                                    background: '#10b981',
+                                    background: '#333333',
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '0.75rem',
@@ -5277,8 +5387,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             '8': ['8A', '8B', '8C', '8D', '8E', '8F', '8G'],
                             '9': ['9A', '9B', '9C', '9D', '9E', '9F', '9G'],
                             '10': ['10A', '10B', '10C', '10D', '10E', '10F', '10G'],
-                            '11': ['11A', '11B', '11C', '11D', '11E', '11F'],
-                            '12': ['12A', '12B', '12C', '12D', '12E', '12F'],
+                            '11': ['11A', '11B', '11C', '11D', '11E', '11F', '11G'],
+                            '12': ['12A', '12B', '12C', '12D', '12E', '12F', '12G'],
                         };
                         const gradeClassList = GRADE_CLASSES[activeGradeSubTab] || [];
                         const DAYS = [['MON', 'Monday'], ['TUE', 'Tuesday'], ['WED', 'Wednesday'], ['THU', 'Thursday'], ['FRI', 'Friday'], ['SAT', 'Saturday']];
@@ -5344,7 +5454,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         onClick={() => saveAllotments()}
                                         disabled={isSaving}
                                         style={{
-                                            padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none',
+                                            padding: '0.5rem 1rem', background: '#333333', color: 'white', border: 'none',
                                             borderRadius: '0.5rem', cursor: isSaving ? 'not-allowed' : 'pointer', fontWeight: 700,
                                             fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: isSaving ? 0.7 : 1
                                         }}
@@ -5479,6 +5589,27 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     >
                                         {chainSwapMode ? '🚫 Cancel Chain' : '🔗 Start Chain'}
                                     </button>
+                                    {/* PRINT FOR FORMAT TT: portrait A4 2-up */}
+                                    <button
+                                        onClick={() => {
+                                            if (!generatedTimetable) { addToast('Please generate timetable first', 'warning'); return; }
+                                            // Build class cards for current grade
+                                            const classList = (GRADE_CLASSES[activeGradeSubTab] || []).filter(cn => generatedTimetable.classTimetables[cn]);
+                                            const cards = classList.map(className => generateClassTimetableHTML(
+                                                generatedTimetable.classTimetables,
+                                                className,
+                                                academicYear,
+                                                bellTimings
+                                            ));
+                                            const printHTML = generatePortraitPrintHTML(cards, 'class', academicYear, bellTimings);
+                                            const win = window.open('', '_blank');
+                                            win.document.write(printHTML);
+                                            win.document.close();
+                                        }}
+                                        disabled={!generatedTimetable}
+                                        title="Print current grade Class Timetables (A4 portrait, 2 per page)"
+                                        style={{ marginLeft: '0.5rem', padding: '0.5rem 0.9rem', background: '#059669', color: 'white', border: 'none', borderRadius: '0.5rem', cursor: generatedTimetable ? 'pointer' : 'not-allowed', fontWeight: 700 }}
+                                    >🖨️ Print Grade (2 per A4)</button>
                                     {chainSwapMode && (
                                         <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
                                             {isChainComplete
@@ -5520,23 +5651,23 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         }
 
                                         return (
-                                            <div key={cls} id={`class-card-${cls}`} style={{ background: '#1e293b', borderRadius: '1rem', padding: '1.5rem 2rem', border: '1px solid #334155' }}>
+                                            <div key={cls} id={`class-card-${cls}`} style={{ background: '#ffffff', borderRadius: '1rem', padding: '1.5rem 2rem', border: '1px solid #000000' }}>
                                                 {/* Class header */}
                                                 <div style={{ textAlign: 'center', marginBottom: '1.2rem' }}>
-                                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em' }}>
+                                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#000000', letterSpacing: '0.04em' }}>
                                                         THE CHOICE SCHOOL, Tripunithura &nbsp;·&nbsp; {academicYear || '2026-27'}
                                                     </div>
-                                                    <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#0ea5e9', marginTop: '0.25rem', letterSpacing: '0.06em' }}>
+                                                    <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#000000', marginTop: '0.25rem', letterSpacing: '0.06em' }}>
                                                         {cls}
                                                     </div>
                                                 </div>
 
                                                 {/* Timetable grid */}
                                                 <div style={{ overflowX: 'auto', width: '100%', maxWidth: 1200, margin: '0 auto' }}>
-                                                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '1100px', background: 'transparent', color: '#f1f5f9', fontFamily: 'inherit' }}>
+                                                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '1100px', background: 'transparent', color: '#000000', fontFamily: 'inherit' }}>
                                                         <thead>
                                                             <tr>
-                                                                <th style={ttCellHeader({})}></th>
+                                                                <th style={{...ttCellHeader({}), background: '#ffffff', color: '#000000', border: '1px solid #000000'}}></th>
                                                                 {(() => {
                                                                     const isMiddle = ['6', '7', '8'].includes(activeGradeSubTab);
                                                                     const bell = bellTimings[isMiddle ? 'middleSchool' : 'seniorSchool'];
@@ -5555,11 +5686,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                         { label: 'P8', time: bell?.S11 || '14:05-14:55' }
                                                                     ];
                                                                     return headers.map((h, hi) => (
-                                                                        <th key={hi} style={ttCellHeader({
-                                                                            background: h.label === 'BRK' ? 'rgba(251,191,36,0.1)' : (h.label === 'LUNCH' ? 'rgba(56,189,248,0.1)' : 'transparent'),
-                                                                            color: h.label === 'BRK' ? '#fbbf24' : (h.label === 'LUNCH' ? '#38bdf8' : '#f1f5f9')
-                                                                        })}>
-                                                                            {h.label}<br /><span style={{ fontWeight: 400, fontSize: '0.8em', color: '#94a3b8' }}>{h.time}</span>
+                                                                        <th key={hi} style={{...ttCellHeader(), background: '#ffffff', color: '#000000', border: '1px solid #000000'}}>
+                                                                            {h.label}<br /><span style={{ fontWeight: 400, fontSize: '0.8em', color: '#000000' }}>{h.time}</span>
                                                                         </th>
                                                                     ));
                                                                 })()}
@@ -5572,18 +5700,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     <td style={ttCell({
                                                                         background: (() => {
                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'CT') ? idx : -1).filter(i => i !== -1);
-                                                                            if (indices.length === 0) return '#1e293b';
-                                                                            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
-                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
-                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
-                                                                            return 'rgba(251, 191, 36, 0.4)';
+                                                                            if (indices.length === 0) return '#ffffff';
+                                                                            if (isChainComplete) return '#cccccc';
+                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return '#e6e6e6';
+                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return '#f0f0f0';
+                                                                            return '#d9d9d9';
                                                                         })(),
                                                                         border: (() => {
-                                                                            if (swapChain.length === 0) return '1px solid #64748b';
+                                                                            if (swapChain.length === 0) return '1px solid #000000';
                                                                             const last = swapChain[swapChain.length - 1];
                                                                             // Dest check: does this period match the block of the last item in chain?
                                                                             const isDest = getBlockEntries(cls, day[1], 'CT').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
-                                                                            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+                                                                            if (isDest && swapChain.length >= 2) return '3px solid #333333';
 
                                                                             // Source check: find the boundary where the previous block selection ended
                                                                             // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
@@ -5604,18 +5732,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                             if (sourceIndex !== -1) {
                                                                                 const source = swapChain[sourceIndex];
                                                                                 const isSource = getBlockEntries(cls, day[1], 'CT').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
-                                                                                if (isSource) return '3px solid #3b82f6';
+                                                                                if (isSource) return '3px solid #666666';
                                                                             } else if (swapChain.length > 0) {
                                                                                 const source = swapChain[0];
                                                                                 const isSource = getBlockEntries(cls, day[1], 'CT').some(e => e.cls === source.cls && e.day === source.day && e.period === source.period);
-                                                                                if (isSource) return '3px solid #3b82f6';
+                                                                                if (isSource) return '3px solid #666666';
                                                                             }
 
                                                                             if (availableDestinations.some(d => d.cls === cls && d.day === day[1] && d.period === 'CT')) {
-                                                                                return '3px solid #90EE90';
+                                                                                return '3px solid #999999';
                                                                             }
 
-                                                                            return '1px solid #64748b';
+                                                                            return '1px solid #000000';
                                                                         })()
                                                                     })} id={`cell-${cls}-${day[1]}-${'CT'}`} onClick={() => {
                                                                         if (!chainSwapMode || isChainComplete) return; const entries = getBlockEntries(cls, day[1], 'CT'); setSwapChainSteps(prev_steps => [...prev_steps, entries.length]); setSwapChain(prev => {
@@ -5632,18 +5760,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     <td style={ttCell({
                                                                         background: (() => {
                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S1') ? idx : -1).filter(i => i !== -1);
-                                                                            if (indices.length === 0) return '#1e293b';
-                                                                            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
-                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
-                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
-                                                                            return 'rgba(251, 191, 36, 0.4)';
+                                                                            if (indices.length === 0) return '#ffffff';
+                                                                            if (isChainComplete) return '#cccccc';
+                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return '#e6e6e6';
+                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return '#f0f0f0';
+                                                                            return '#d9d9d9';
                                                                         })(),
                                                                         border: (() => {
                                                                             if (swapChain.length === 0) return '1px solid #64748b';
                                                                             const last = swapChain[swapChain.length - 1];
                                                                             // Dest check: does this period match the block of the last item in chain?
                                                                             const isDest = getBlockEntries(cls, day[1], 'S1').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
-                                                                            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+                                                                            if (isDest && swapChain.length >= 2) return '3px solid #333333';
 
                                                                             // Source check: find the boundary where the previous block selection ended
                                                                             // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
@@ -5692,18 +5820,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     <td style={ttCell({
                                                                         background: (() => {
                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S2') ? idx : -1).filter(i => i !== -1);
-                                                                            if (indices.length === 0) return '#1e293b';
-                                                                            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
-                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
-                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
-                                                                            return 'rgba(251, 191, 36, 0.4)';
+                                                                            if (indices.length === 0) return '#ffffff';
+                                                                            if (isChainComplete) return '#cccccc';
+                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return '#e6e6e6';
+                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return '#f0f0f0';
+                                                                            return '#d9d9d9';
                                                                         })(),
                                                                         border: (() => {
                                                                             if (swapChain.length === 0) return '1px solid #64748b';
                                                                             const last = swapChain[swapChain.length - 1];
                                                                             // Dest check: does this period match the block of the last item in chain?
                                                                             const isDest = getBlockEntries(cls, day[1], 'S2').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
-                                                                            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+                                                                            if (isDest && swapChain.length >= 2) return '3px solid #333333';
 
                                                                             // Source check: find the boundary where the previous block selection ended
                                                                             // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
@@ -5753,25 +5881,25 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     {/* S3: BREAK I merged vertically */}
                                                                     {i === 0 ? (
                                                                         <td rowSpan={DAYS.length} style={ttCellBreak('BREAK', DAYS.length)}>
-                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK</span>
+                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#000000', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK</span>
                                                                         </td>
                                                                     ) : null}
 
                                                                     <td style={ttCell({
                                                                         background: (() => {
                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S4') ? idx : -1).filter(i => i !== -1);
-                                                                            if (indices.length === 0) return '#1e293b';
-                                                                            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
-                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
-                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
-                                                                            return 'rgba(251, 191, 36, 0.4)';
+                                                                            if (indices.length === 0) return '#ffffff';
+                                                                            if (isChainComplete) return '#cccccc';
+                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return '#e6e6e6';
+                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return '#f0f0f0';
+                                                                            return '#d9d9d9';
                                                                         })(),
                                                                         border: (() => {
                                                                             if (swapChain.length === 0) return '1px solid #64748b';
                                                                             const last = swapChain[swapChain.length - 1];
                                                                             // Dest check: does this period match the block of the last item in chain?
                                                                             const isDest = getBlockEntries(cls, day[1], 'S4').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
-                                                                            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+                                                                            if (isDest && swapChain.length >= 2) return '3px solid #333333';
 
                                                                             // Source check: find the boundary where the previous block selection ended
                                                                             // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
@@ -5820,18 +5948,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     <td style={ttCell({
                                                                         background: (() => {
                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S5') ? idx : -1).filter(i => i !== -1);
-                                                                            if (indices.length === 0) return '#1e293b';
-                                                                            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
-                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
-                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
-                                                                            return 'rgba(251, 191, 36, 0.4)';
+                                                                            if (indices.length === 0) return '#ffffff';
+                                                                            if (isChainComplete) return '#cccccc';
+                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return '#e6e6e6';
+                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return '#f0f0f0';
+                                                                            return '#d9d9d9';
                                                                         })(),
                                                                         border: (() => {
                                                                             if (swapChain.length === 0) return '1px solid #64748b';
                                                                             const last = swapChain[swapChain.length - 1];
                                                                             // Dest check: does this period match the block of the last item in chain?
                                                                             const isDest = getBlockEntries(cls, day[1], 'S5').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
-                                                                            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+                                                                            if (isDest && swapChain.length >= 2) return '3px solid #333333';
 
                                                                             // Source check: find the boundary where the previous block selection ended
                                                                             // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
@@ -5880,18 +6008,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     <td style={ttCell({
                                                                         background: (() => {
                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S6') ? idx : -1).filter(i => i !== -1);
-                                                                            if (indices.length === 0) return '#1e293b';
-                                                                            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
-                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
-                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
-                                                                            return 'rgba(251, 191, 36, 0.4)';
+                                                                            if (indices.length === 0) return '#ffffff';
+                                                                            if (isChainComplete) return '#cccccc';
+                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return '#e6e6e6';
+                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return '#f0f0f0';
+                                                                            return '#d9d9d9';
                                                                         })(),
                                                                         border: (() => {
                                                                             if (swapChain.length === 0) return '1px solid #64748b';
                                                                             const last = swapChain[swapChain.length - 1];
                                                                             // Dest check: does this period match the block of the last item in chain?
                                                                             const isDest = getBlockEntries(cls, day[1], 'S6').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
-                                                                            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+                                                                            if (isDest && swapChain.length >= 2) return '3px solid #333333';
 
                                                                             // Source check: find the boundary where the previous block selection ended
                                                                             // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
@@ -5941,25 +6069,25 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     {/* S7: BREAK II merged vertically */}
                                                                     {i === 0 ? (
                                                                         <td rowSpan={DAYS.length} style={ttCellBreak('BREAK', DAYS.length)}>
-                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#fbbf24', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK</span>
+                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#000000', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>BREAK</span>
                                                                         </td>
                                                                     ) : null}
 
                                                                     <td style={ttCell({
                                                                         background: (() => {
                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S8') ? idx : -1).filter(i => i !== -1);
-                                                                            if (indices.length === 0) return '#1e293b';
-                                                                            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
-                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
-                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
-                                                                            return 'rgba(251, 191, 36, 0.4)';
+                                                                            if (indices.length === 0) return '#ffffff';
+                                                                            if (isChainComplete) return '#cccccc';
+                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return '#e6e6e6';
+                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return '#f0f0f0';
+                                                                            return '#d9d9d9';
                                                                         })(),
                                                                         border: (() => {
                                                                             if (swapChain.length === 0) return '1px solid #64748b';
                                                                             const last = swapChain[swapChain.length - 1];
                                                                             // Dest check: does this period match the block of the last item in chain?
                                                                             const isDest = getBlockEntries(cls, day[1], 'S8').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
-                                                                            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+                                                                            if (isDest && swapChain.length >= 2) return '3px solid #333333';
 
                                                                             // Source check: find the boundary where the previous block selection ended
                                                                             // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
@@ -6014,24 +6142,24 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                 <>
                                                                                     {i === 0 ? (
                                                                                         <td rowSpan={DAYS.length} style={ttCellBreak('LUNCH', DAYS.length)}>
-                                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
+                                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#000000', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
                                                                                         </td>
                                                                                     ) : null}
                                                                                     <td style={ttCell({
                                                                                         background: (() => {
                                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S10') ? idx : -1).filter(i => i !== -1);
-                                                                                            if (indices.length === 0) return '#1e293b';
-                                                                                            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
-                                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
-                                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
-                                                                                            return 'rgba(251, 191, 36, 0.4)';
+                                                                                            if (indices.length === 0) return '#ffffff';
+                                                                                            if (isChainComplete) return '#cccccc';
+                                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return '#e6e6e6';
+                                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return '#f0f0f0';
+                                                                                            return '#d9d9d9';
                                                                                         })(),
                                                                                         border: (() => {
                                                                                             if (swapChain.length === 0) return '1px solid #64748b';
                                                                                             const last = swapChain[swapChain.length - 1];
                                                                                             // Dest check: does this period match the block of the last item in chain?
                                                                                             const isDest = getBlockEntries(cls, day[1], 'S10').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
-                                                                                            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+                                                                                            if (isDest && swapChain.length >= 2) return '3px solid #333333';
 
                                                                                             // Source check: find the boundary where the previous block selection ended
                                                                                             // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
@@ -6085,18 +6213,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                     <td style={ttCell({
                                                                                         background: (() => {
                                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S9') ? idx : -1).filter(i => i !== -1);
-                                                                                            if (indices.length === 0) return '#1e293b';
-                                                                                            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
-                                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
-                                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
-                                                                                            return 'rgba(251, 191, 36, 0.4)';
+                                                                                            if (indices.length === 0) return '#ffffff';
+                                                                                            if (isChainComplete) return '#cccccc';
+                                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return '#e6e6e6';
+                                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return '#f0f0f0';
+                                                                                            return '#d9d9d9';
                                                                                         })(),
                                                                                         border: (() => {
                                                                                             if (swapChain.length === 0) return '1px solid #64748b';
                                                                                             const last = swapChain[swapChain.length - 1];
                                                                                             // Dest check: does this period match the block of the last item in chain?
                                                                                             const isDest = getBlockEntries(cls, day[1], 'S9').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
-                                                                                            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+                                                                                            if (isDest && swapChain.length >= 2) return '3px solid #333333';
 
                                                                                             // Source check: find the boundary where the previous block selection ended
                                                                                             // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
@@ -6144,7 +6272,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                                     }}>{renderCell(day[1], 'S9')}</td>
                                                                                     {i === 0 ? (
                                                                                         <td rowSpan={DAYS.length} style={ttCellBreak('LUNCH', DAYS.length)}>
-                                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#38bdf8', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
+                                                                                            <span style={{ fontStyle: 'italic', fontWeight: 700, fontSize: '1.2rem', color: '#000000', writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.05em' }}>LUNCH</span>
                                                                                         </td>
                                                                                     ) : null}
                                                                                 </>
@@ -6155,18 +6283,18 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                     <td style={ttCell({
                                                                         background: (() => {
                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S11') ? idx : -1).filter(i => i !== -1);
-                                                                            if (indices.length === 0) return '#1e293b';
-                                                                            if (isChainComplete) return 'rgba(16, 185, 129, 0.6)';
-                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return 'rgba(16, 185, 129, 0.25)';
-                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return 'rgba(59, 130, 246, 0.25)';
-                                                                            return 'rgba(251, 191, 36, 0.4)';
+                                                                            if (indices.length === 0) return '#ffffff';
+                                                                            if (isChainComplete) return '#cccccc';
+                                                                            if (indices.some(idx => idx > 0 && idx < swapChain.length - 1)) return '#e6e6e6';
+                                                                            if (indices.some(idx => idx < swapChain.length - 2)) return '#f0f0f0';
+                                                                            return '#d9d9d9';
                                                                         })(),
                                                                         border: (() => {
                                                                             if (swapChain.length === 0) return '1px solid #64748b';
                                                                             const last = swapChain[swapChain.length - 1];
                                                                             // Dest check: does this period match the block of the last item in chain?
                                                                             const isDest = getBlockEntries(cls, day[1], 'S11').some(e => e.cls === last.cls && e.day === last.day && e.period === last.period);
-                                                                            if (isDest && swapChain.length >= 2) return '3px solid #10b981';
+                                                                            if (isDest && swapChain.length >= 2) return '3px solid #333333';
 
                                                                             // Source check: find the boundary where the previous block selection ended
                                                                             // If the last selection was a block of 2, the source is at swapChain[length-3] etc.
@@ -6231,11 +6359,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 {
                                     isChainComplete && (
                                         <div style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.85)', backdropFilter: 'blur(12px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', animation: 'fadeIn 0.3s ease-out' }}>
-                                            <div style={{ background: '#1e293b', border: chainValidation?.success ? '2px solid #10b981' : '2px solid #ef4444', borderRadius: '1.5rem', padding: '2.5rem', maxWidth: '600px', width: '100%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', textAlign: 'center' }}>
+                                            <div style={{ background: '#1e293b', border: chainValidation?.success ? '2px solid #333333' : '2px solid #ef4444', borderRadius: '1.5rem', padding: '2.5rem', maxWidth: '600px', width: '100%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', textAlign: 'center' }}>
                                                 <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>{chainValidation?.success ? '✅' : '❌'}</div>
 
                                                 {chainValidation?.success ? (
-                                                    <h2 style={{ color: '#10b981', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Validation Passed</h2>
+                                                    <h2 style={{ color: '#333333', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Validation Passed</h2>
                                                 ) : (
                                                     <h2 style={{ color: '#ef4444', fontSize: '2rem', fontWeight: 900, marginBottom: '0.5rem' }}>Validation Failed</h2>
                                                 )}
@@ -6260,8 +6388,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 )}
 
                                                 {chainValidation?.success && (
-                                                    <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid #10b981', borderRadius: '1rem', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'left' }}>
-                                                        <div style={{ color: '#a7f3d0', fontSize: '0.9rem' }}>
+                                                    <div style={{ background: '#e6e6e6', border: '1px solid #333333', borderRadius: '1rem', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'left' }}>
+                                                        <div style={{ color: '#000000', fontSize: '0.9rem' }}>
                                                             <div style={{ marginBottom: '0.3rem' }}>✓ DPT Check: All teachers available</div>
                                                             <div style={{ marginBottom: '0.3rem' }}>✓ Lab Check: All resources available</div>
                                                             <div>✓ Class Check: All slots available</div>
@@ -6270,12 +6398,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 )}
 
                                                 <div style={{ background: '#0f172a', borderRadius: '1rem', padding: '1rem', marginBottom: '2rem', textAlign: 'left', border: '1px solid #334155', maxHeight: '150px', overflowY: 'auto' }}>
-                                                    <h4 style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Chain Sequence:</h4>
+                                                    <h4 style={{ color: '#000000', fontSize: '0.8rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Chain Sequence:</h4>
                                                     {swapChain.filter(p => p != null).map((p, i) => (
                                                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.4rem 0', borderBottom: i < swapChain.length - 1 ? '1px dashed #334155' : 'none' }}>
-                                                            <span style={{ color: '#10b981', fontWeight: 900, fontSize: '0.8rem', width: '20px' }}>{i + 1}.</span>
+                                                            <span style={{ color: '#333333', fontWeight: 900, fontSize: '0.8rem', width: '20px' }}>{i + 1}.</span>
                                                             <span style={{ color: '#f1f5f9', fontWeight: 700, fontSize: '0.9rem' }}>{p.cls}</span>
-                                                            <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{p.day}</span>
+                                                            <span style={{ color: '#000000', fontSize: '0.85rem' }}>{p.day}</span>
                                                             <span style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.85rem' }}>{getPeriodLabel(p.cls, p.period)}</span>
                                                         </div>
                                                     ))}
@@ -6325,7 +6453,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 }}
                                 style={{
                                     padding: '0.75rem 1.5rem',
-                                    background: '#10b981',
+                                    background: '#333333',
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '0.75rem',
@@ -6347,7 +6475,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             }}>
                                 <div>
                                     <h3 style={{ fontSize: '1.3rem', fontWeight: '600', color: '#f1f5f9' }}>
-                                        📊 Subject Period Distribution - 47 Classrooms
+                                        📊 Subject Period Distribution - 49 Classrooms
                                     </h3>
                                     <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>
                                         Click any cell to edit • Bulk select with checkboxes • Shift+click for range
@@ -6403,11 +6531,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     <button
                                         onClick={() => {
                                             saveDistribution(distribution47);
-                                            addToast('✅ Period distribution saved for 47 classrooms!', 'success');
+                                            addToast('✅ Period distribution saved for 49 classrooms!', 'success');
                                         }}
                                         style={{
                                             padding: '0.75rem 1.5rem',
-                                            background: '#10b981',
+                                            background: '#333333',
                                             color: 'white',
                                             border: 'none',
                                             borderRadius: '0.5rem',
@@ -6470,7 +6598,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             }}
                                             style={{
                                                 padding: '0.75rem 1.5rem',
-                                                background: '#10b981',
+                                                background: '#333333',
                                                 color: 'white',
                                                 border: 'none',
                                                 borderRadius: '0.5rem',
@@ -6487,7 +6615,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             }}
                                             style={{
                                                 padding: '0.75rem 1.5rem',
-                                                background: '#64748b',
+                                                background: '#000000',
                                                 color: 'white',
                                                 border: 'none',
                                                 borderRadius: '0.5rem',
@@ -6542,7 +6670,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         disabled={!currentBulkSubject || selectedClasses.length === 0}
                                         style={{
                                             padding: '0.5rem 1.25rem',
-                                            background: !currentBulkSubject || selectedClasses.length === 0 ? '#64748b' : '#10b981',
+                                            background: !currentBulkSubject || selectedClasses.length === 0 ? '#000000' : '#333333',
                                             color: 'white',
                                             border: 'none',
                                             borderRadius: '0.375rem',
@@ -6806,7 +6934,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 }}
                                                                 style={{
                                                                     padding: '0.4rem 0.8rem',
-                                                                    background: '#10b981',
+                                                                    background: '#333333',
                                                                     color: 'white',
                                                                     border: 'none',
                                                                     borderRadius: '0.375rem',
@@ -6822,7 +6950,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                 }}
                                                                 style={{
                                                                     padding: '0.4rem 0.8rem',
-                                                                    background: '#64748b',
+                                                                    background: '#000000',
                                                                     color: 'white',
                                                                     border: 'none',
                                                                     borderRadius: '0.375rem',
@@ -7154,8 +7282,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             <th style={{ border: '1px solid #e2e8f0', padding: '4px' }}>DAY</th>
                                                             {['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S10', 'S11'].map(p => {
                                                                 const map = { S1: 'P1', S2: 'P2', S4: 'P3', S5: 'P4', S6: 'P5', S8: 'P6', S9: 'P7', S10: 'P7', S11: 'P8' };
-                                                                // Show appropriate P7 for MS/Senior
-                                                                const isMS = labName === LAB_SYSTEM.MS_COMP;
+                                                                // Show appropriate P7 for MS/Senior & math lab
+                                                                const isMS = labName === LAB_SYSTEM.MS_COMP || labName === LAB_SYSTEM.MAT_LAB;
                                                                 if (isMS && p === 'S9') return null; // MS Lunch
                                                                 if (!isMS && p === 'S10') return null; // Senior Lunch
                                                                 return <th key={p} style={{ border: '1px solid #e2e8f0', padding: '4px' }}>{map[p]}</th>;
@@ -7179,7 +7307,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                             textAlign: 'center',
                                                                             fontWeight: val !== '-' ? 900 : 400,
                                                                             background: val !== '-' ? '#f0fdf4' : 'white',
-                                                                            color: val !== '-' ? '#166534' : '#64748b'
+                                                                            color: val !== '-' ? '#166534' : '#000000'
                                                                         }}>
                                                                             {val}
                                                                         </td>
@@ -7215,7 +7343,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     <span>📘 <span style={{ color: '#4f46e5' }}>Blue cells</span> = Subject taught</span>
                                     <span>📗 <span style={{ color: '#06b6d4' }}>Teal headers</span> = Grades 6-10</span>
                                     <span>📙 <span style={{ color: '#d97706' }}>Orange headers</span> = Grades 11-12</span>
-                                    <span>✅ <span style={{ color: '#10b981' }}>Bulk edit</span> = Select classes → Set value → Apply</span>
+                                    <span>✅ <span style={{ color: '#333333' }}>Bulk edit</span> = Select classes → Set value → Apply</span>
                                     <span>🔗 <span style={{ color: '#9333ea' }}>Purple cells</span> = Merged group</span>
                                 </div>
                                 <div>
@@ -7253,7 +7381,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                 <div style={{ animation: 'fadeIn 0.3s ease-out', textAlign: 'center', padding: '5rem 2rem' }}>
                                     <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🕒</div>
                                     <h2 style={{ color: '#f1f5f9', fontSize: '1.8rem', fontWeight: 800, marginBottom: '0.75rem' }}>DPT — Availability & Engagement</h2>
-                                    <p style={{ color: '#64748b', fontSize: '1rem' }}>Generate a timetable first to see the DPT view.</p>
+                                    <p style={{ color: '#000000', fontSize: '1rem' }}>Generate a timetable first to see the DPT view.</p>
                                 </div>
                             );
                         }
@@ -7372,7 +7500,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                                         <div>
                                             <h2 style={{ color: '#f1f5f9', fontSize: '1.4rem', fontWeight: 900, margin: 0 }}>🕒 DPT — {dptViewType} View</h2>
-                                            <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
+                                            <p style={{ color: '#000000', fontSize: '0.82rem', margin: '0.2rem 0 0 0' }}>
                                                 {dptViewType === 'Teachers' ? 'Showing class engagement per teacher.' : 'Showing subject engagement per class.'}
                                             </p>
                                         </div>
@@ -7380,7 +7508,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             onClick={() => saveAllotments()}
                                             disabled={isSaving}
                                             style={{
-                                                padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none',
+                                                padding: '0.5rem 1rem', background: '#333333', color: 'white', border: 'none',
                                                 borderRadius: '0.5rem', cursor: isSaving ? 'not-allowed' : 'pointer', fontWeight: 700,
                                                 fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: isSaving ? 0.7 : 1
                                             }}
@@ -7443,7 +7571,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     {dptViewType === 'Teachers' ? 'Teacher' : 'Class'}
                                                 </th>
                                                 <th rowSpan={2} style={{
-                                                    background: '#0f172a', color: '#64748b',
+                                                    background: '#0f172a', color: '#000000',
                                                     fontSize: '0.65rem', fontWeight: 700,
                                                     padding: '0.4rem 0.5rem', textAlign: 'center',
                                                     borderRight: '1px solid #334155', borderBottom: '2px solid #334155',
@@ -7510,7 +7638,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         }}>
                                                             {item}
                                                             {dptViewType === 'Teachers' && teacherSubjectMap[item.trim()] && (
-                                                                <div style={{ fontSize: '0.62rem', color: '#64748b', marginTop: '2px', fontWeight: 600, letterSpacing: '0.01em' }}>
+                                                                <div style={{ fontSize: '0.62rem', color: '#000000', marginTop: '2px', fontWeight: 600, letterSpacing: '0.01em' }}>
                                                                     {teacherSubjectMap[item.trim()]}
                                                                 </div>
                                                             )}
@@ -7932,6 +8060,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         }
 
                                                         displaySub = getSubAbbr(displaySub);
+                                                        if (isObj && slot.isLabPeriod) {
+                                                            displaySub = displaySub ? `${displaySub}(L)` : '(L)';
+                                                        }
 
                                                         const { num, div } = getFormattedClass(displayClass);
                                                         const typeIndicator = slot?.isTBlock ? 'T' : (slot?.isLBlock ? 'L' : '');
@@ -8038,7 +8169,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         onClick={() => saveAllotments()}
                                         disabled={isSaving}
                                         style={{
-                                            padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none',
+                                            padding: '0.5rem 1rem', background: '#333333', color: 'white', border: 'none',
                                             borderRadius: '0.5rem', cursor: isSaving ? 'not-allowed' : 'pointer', fontWeight: 700,
                                             fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: isSaving ? 0.7 : 1
                                         }}
@@ -8076,7 +8207,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             >Next</button>
                                         </div>
                                         <span style={{ width: '1px', height: '1rem', background: '#334155' }} />
-                                        <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found</span>
+                                        <span style={{ color: '#000000', fontSize: '0.85rem' }}>{categoryTeachers.length} teachers found</span>
                                         {emptyTeachers.length > 0 && (
                                             <button
                                                 onClick={removeEmptyTeachers}
@@ -8092,7 +8223,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         onClick={handlePrintAll}
                                         style={{
                                             padding: '0.7rem 1.5rem',
-                                            background: '#10b981',
+                                            background: '#333333',
                                             color: 'white',
                                             border: 'none',
                                             borderRadius: '0.75rem',
@@ -8147,7 +8278,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     }}
                                     style={{
                                         padding: '0.75rem 1.5rem',
-                                        background: '#10b981',
+                                        background: '#333333',
                                         color: 'white',
                                         border: 'none',
                                         borderRadius: '0.75rem',
@@ -8259,7 +8390,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         disabled={isGenerating}
                                         style={{
                                             padding: '1rem 2rem',
-                                            background: isGenerating ? '#64748b' : '#b91c1c',
+                                            background: isGenerating ? '#000000' : '#b91c1c',
                                             color: 'white',
                                             border: 'none',
                                             borderRadius: '0.75rem',
@@ -8321,7 +8452,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         title="Print individual timetables for all teachers (6 per page format suitable for A4 paper)"
                                         style={{
                                             padding: '1rem',
-                                            background: generatedTimetable ? '#4f46e5' : '#64748b',
+                                            background: generatedTimetable ? '#4f46e5' : '#000000',
                                             color: 'white',
                                             border: 'none',
                                             borderRadius: '0.75rem',
@@ -8350,8 +8481,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 '8A', '8B', '8C', '8D', '8E', '8F', '8G',
                                                 '9A', '9B', '9C', '9D', '9E', '9F', '9G',
                                                 '10A', '10B', '10C', '10D', '10E', '10F', '10G',
-                                                '11A', '11B', '11C', '11D', '11E', '11F',
-                                                '12A', '12B', '12C', '12D', '12E', '12F'
+                                                '11A', '11B', '11C', '11D', '11E', '11F', '11G',
+                                                '12A', '12B', '12C', '12D', '12E', '12F', '12G'
                                             ];
                                             const classCards = classList
                                                 .filter(cn => generatedTimetable.classTimetables[cn])
@@ -8372,7 +8503,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         title="Print timetables for all classes (6 per page format suitable for A4 paper)"
                                         style={{
                                             padding: '1rem',
-                                            background: generatedTimetable ? '#059669' : '#64748b',
+                                            background: generatedTimetable ? '#059669' : '#000000',
                                             color: 'white',
                                             border: 'none',
                                             borderRadius: '0.75rem',
@@ -8428,7 +8559,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         position: 'fixed', bottom: 0, left: 0, right: 0,
                         zIndex: 1000,
                         background: creationStatus.isError ? '#1a0a0a' : '#0d1117',
-                        borderTop: `3px solid ${creationStatus.isError ? '#ef4444' : '#3b82f6'}`,
+                        borderTop: `3px solid ${creationStatus.isError ? '#ef4444' : '#666666'}`,
                         boxShadow: '0 -4px 24px rgba(0,0,0,0.5)',
                         animation: 'slideUp 0.3s cubic-bezier(0.4,0,0.2,1)',
                         fontFamily: 'monospace',
@@ -8575,7 +8706,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         onChange={e => setStreamForm({ ...streamForm, abbreviation: e.target.value })}
                                         placeholder="e.g. 2ndLang"
                                         maxLength={8}
-                                        style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: '#10b981', fontSize: '0.95rem', fontWeight: 700 }}
+                                        style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: '#333333', fontSize: '0.95rem', fontWeight: 700 }}
                                     />
                                 </div>
                                 <div>
@@ -8583,8 +8714,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>TARGET CLASSES (CLUB):</label>
                                         <MultiClassSelector
                                             selectedClasses={streamSelectedClasses}
-                                            onClassesChange={setStreamSelectedClasses}
-                                            availableClasses={CLASS_OPTIONS}
+                                            options={CLASS_OPTIONS}
+                                            onChange={setStreamSelectedClasses}
                                         />
                                     </div>
                                 </div>
@@ -8629,8 +8760,79 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     </select>
 
                                     <label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
-                                        Remaining: {streamForm.periods - forceCount} on Any Other Days
+                                        Remaining: {Math.max(0, (streamForm.periods || 0) - (streamForm.tBlock || 0) - (streamForm.lBlock || 0) - forceCount)} on Any Other Days
                                     </label>
+                                </div>
+                            </div>
+
+                            {/* Stream‑level block settings */}
+                            <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(31,41,55,0.3)', border: '1px solid #334155', borderRadius: '0.75rem' }}>
+                                <h3 style={{ margin: '0 0 0.5rem 0', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase' }}>STREAM BLOCK SETTINGS</h3>
+                                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                    <div style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid #78350f', borderRadius: '0.6rem', padding: '0.8rem', minWidth: '200px' }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 900, color: '#f59e0b', textTransform: 'uppercase' }}>Theory Block (TB)</div>
+                                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
+                                            {(() => {
+                                                const max = Number(streamForm.periods) || 0;
+                                                const other = Number(streamForm.lBlock) || 0;
+                                                const limit = Math.max(0, max - other);
+                                                const opts = [];
+                                                for (let n = 0; n <= limit; n += 2) opts.push(n);
+                                                return (
+                                                    <select value={streamForm.tBlock} onChange={e => {
+                                                            const val = Number(e.target.value);
+                                                            const max = Number(streamForm.periods) || 0;
+                                                            const newMaxL = Math.max(0, max - val);
+                                                            setStreamForm(prev => ({
+                                                                ...prev,
+                                                                tBlock: val,
+                                                                lBlock: Math.min(prev.lBlock || 0, newMaxL)
+                                                            }));
+                                                        }} style={{ flex: 1, padding: '4px 8px', borderRadius: '4px' }}>
+                                                        {opts.map(n => <option key={n} value={n}>{n} periods</option>)}
+                                                    </select>
+                                                );
+                                            })()}
+                                            <select value={streamForm.tbDay} onChange={e => setStreamForm({ ...streamForm, tbDay: e.target.value })} style={{ flex: 1, padding: '4px 8px', borderRadius: '4px' }}>
+                                                {['Any','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <option key={d} value={d}>{d}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid #064e3b', borderRadius: '0.6rem', padding: '0.8rem', minWidth: '200px' }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 900, color: '#10b981', textTransform: 'uppercase' }}>Lab Block (LB)</div>
+                                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
+                                            {(() => {
+                                                const max = Number(streamForm.periods) || 0;
+                                                const other = Number(streamForm.tBlock) || 0;
+                                                const limit = Math.max(0, max - other);
+                                                const opts = [];
+                                                for (let n = 0; n <= limit; n += 2) opts.push(n);
+                                                return (
+                                                    <select value={streamForm.lBlock} onChange={e => {
+                                                            const val = Number(e.target.value);
+                                                            const max = Number(streamForm.periods) || 0;
+                                                            const newMaxT = Math.max(0, max - val);
+                                                            setStreamForm(prev => ({
+                                                                ...prev,
+                                                                lBlock: val,
+                                                                tBlock: Math.min(prev.tBlock || 0, newMaxT)
+                                                            }));
+                                                        }} style={{ flex: 1, padding: '4px 8px', borderRadius: '4px' }}>
+                                                        {opts.map(n => <option key={n} value={n}>{n} periods</option>)}
+                                                    </select>
+                                                );
+                                            })()}
+                                            <select value={streamForm.lbDay} onChange={e => setStreamForm({ ...streamForm, lbDay: e.target.value })} style={{ flex: 1, padding: '4px 8px', borderRadius: '4px' }}>
+                                                {['Any','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <option key={d} value={d}>{d}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid #1e3a8a', borderRadius: '0.6rem', padding: '0.8rem', minWidth: '200px' }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 900, color: '#3b82f6', textTransform: 'uppercase' }}>Normal Periods</div>
+                                        <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#94a3b8' }}>
+                                            {Math.max(0, (streamForm.periods || 0) - (streamForm.tBlock || 0) - (streamForm.lBlock || 0))} remaining
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -8662,7 +8864,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     {streamForm.subjects.map((sub, idx) => (
                                         <div key={idx} style={{
                                             display: 'grid',
-                                            gridTemplateColumns: '1.2fr 1fr 1fr 100px 60px 40px',
+                                            gridTemplateColumns: '1.5fr 1.5fr 40px',
                                             gap: '0.6rem',
                                             alignItems: 'center',
                                             background: 'rgba(30, 41, 59, 0.5)',
@@ -8698,37 +8900,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     }).sort().map(t => <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>{t}</option>)}
                                                 </select>
                                             </div>
-                                            <div>
-                                                <input
-                                                    type="text"
-                                                    value={sub.groupName}
-                                                    onChange={e => updateStreamSubject(idx, 'groupName', e.target.value)}
-                                                    placeholder="Group Name (e.g. Hindi)"
-                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: 'white', fontSize: '0.85rem' }}
-                                                />
-                                            </div>
-                                            <div>
-                                                <select
-                                                    value={sub.labGroup || 'None'}
-                                                    onChange={e => updateStreamSubject(idx, 'labGroup', e.target.value)}
-                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#10b981', fontSize: '0.8rem', fontWeight: 800 }}
-                                                >
-                                                    <option value="None">No Lab</option>
-                                                    <option value="CSc Lab Group">CSc Group</option>
-                                                    <option value="DS/AI Lab Group">DS/AI Group</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <input
-                                                    type="number"
-                                                    value={sub.targetLabCount || 0}
-                                                    onChange={e => updateStreamSubject(idx, 'targetLabCount', Number(e.target.value))}
-                                                    title="Lab Periods (LP)"
-                                                    min="0"
-                                                    max={streamForm.periods}
-                                                    style={{ width: '100%', padding: '0.65rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#10b981', fontSize: '0.85rem', fontWeight: 900, textAlign: 'center' }}
-                                                />
-                                            </div>
                                             <button
                                                 onClick={() => removeSubjectFromStream(idx)}
                                                 title="Remove this subject group from the stream"
@@ -8750,15 +8921,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                     onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; e.target.style.borderColor = '#475569'; }}
                                 >Cancel</button>
                                 <button
-                                    onClick={async () => {
-                                        const savedStream = handleSaveStream();
-                                        if (savedStream) {
-                                            // Automatically trigger placement (deployment) into the timetable.
-                                            // supply existing timetable if available so fixed/blocks remain intact
-                                            await handleCreateStreamSpecific(savedStream, generatedTimetable || null);
-                                        }
+                                    onClick={() => {
+                                        handleSaveStream();
+                                        addToast('✅ Stream saved. Use Generate Timetable to place periods according to priority.', 'success');
                                     }}
-                                    title={editingStreamId ? "Save changes and regenerate this parallel stream in the timetable" : "Save the new parallel stream and automatically place it in the timetable"}
+                                    title={editingStreamId ? "Save changes to this parallel stream (periods will be placed during Generate Timetable)" : "Save the new parallel stream (periods will be placed during Generate Timetable according to priority)"}
                                     style={{
                                         padding: '0.85rem 2rem',
                                         background: 'linear-gradient(135deg, #4f46e5, #4338ca)',

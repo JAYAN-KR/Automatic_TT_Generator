@@ -1,7 +1,7 @@
-// Period Distribution Store - 47 COLUMN VERSION
-// Tracks period counts for each subject for EACH of 47 classrooms
+// Period Distribution Store - 49 COLUMN VERSION
+// Tracks period counts for each subject for EACH of 49 classrooms
 
-// ============ ALL 47 CLASSROOMS ============
+// ============ ALL 49 CLASSROOMS ============
 export const ALL_CLASSES = [
     // Grade 6 (7 sections)
     '6A', '6B', '6C', '6D', '6E', '6F', '6G',
@@ -13,10 +13,10 @@ export const ALL_CLASSES = [
     '9A', '9B', '9C', '9D', '9E', '9F', '9G',
     // Grade 10 (7 sections)
     '10A', '10B', '10C', '10D', '10E', '10F', '10G',
-    // Grade 11 (6 sections)
-    '11A', '11B', '11C', '11D', '11E', '11F',
-    // Grade 12 (6 sections)
-    '12A', '12B', '12C', '12D', '12E', '12F'
+    // Grade 11 (7 sections)
+    '11A', '11B', '11C', '11D', '11E', '11F', '11G',
+    // Grade 12 (7 sections)
+    '12A', '12B', '12C', '12D', '12E', '12F', '12G'
 ];
 
 // ============ DEFAULT VALUES ============

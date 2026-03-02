@@ -23,7 +23,8 @@ export const LAB_SYSTEM = {
     SS_COMP: 'Senior School Computer Lab',
     PHY_LAB: 'Physics Lab',
     CHEM_LAB: 'Chemistry Lab',
-    BIO_LAB: 'Biology Lab'
+    BIO_LAB: 'Biology Lab',
+    MAT_LAB: 'Mathematics Lab'
 };
 
 /**
@@ -49,6 +50,11 @@ export const getLabForSubject = (className, subject) => {
     // Home Science logic
     if (sub.includes('HOME SCIENCE') || sub === 'HS' || sub === 'HSC') {
         if (grade >= 9 && grade <= 12) return LAB_SYSTEM.MAIN_HS;
+    }
+
+    // Mathematics lab should be available for any grade (subjects with lab component)
+    if (sub.includes('MATHEMATICS') || sub === 'MATH') {
+        return LAB_SYSTEM.MAT_LAB;
     }
 
     // Science Labs (Usually for Senior secondary)

@@ -29,7 +29,7 @@ const ClassTTCell = ({
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', justifyContent: 'center', maxWidth: '100%' }}>
                     {(cell.subjects || []).map((s, idx) => (
                         <span key={idx} style={{ fontSize: '0.55em', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                            {s.subject}{s.isLabPeriod ? ' [LAB]' : (s.labGroup && s.labGroup !== 'None' ? ' [TH]' : '')}{idx < (cell.subjects.length - 1) ? ',' : ''}
+                            {s.subject}{s.isLabPeriod ? '(L)' : (s.labGroup && s.labGroup !== 'None' ? ' [TH]' : '')}{idx < (cell.subjects.length - 1) ? ',' : ''}
                         </span>
                     ))}
                 </div>
@@ -40,16 +40,24 @@ const ClassTTCell = ({
 
     const sub = cell.subject.toUpperCase();
     const abbr = SUBJECT_ABBR[sub] || sub.slice(0, 5);
+    // convert a full name like "Alice Brown" to "Alice B" or just "Alice"
+    const abbreviateName = (name) => {
+        const parts = name.trim().split(/\s+/);
+        if (parts.length === 0) return '';
+        const first = parts[0][0].toUpperCase() + parts[0].slice(1).toLowerCase();
+        const second = parts[1] ? parts[1][0].toUpperCase() + '.' : '';
+        return second ? `${first} ${second}` : first;
+    };
+
+    // teacher field may contain multiple names separated by commas or slashes
     const teacherFirst = cell.teacher
-        ? (() => {
-            const pts = cell.teacher.trim().split(/\s+/);
-            const fn = pts[0] ? pts[0][0].toUpperCase() + pts[0].slice(1).toLowerCase() : '';
-            const si = pts[1] ? pts[1][0].toUpperCase() : '';
-            return si ? `${fn} ${si}` : fn;
-        })()
+        ? cell.teacher.split(/[,/]+/).map(t => abbreviateName(t)).join(', ')
         : '';
 
     const indicator = getClubbingIndicator(cell, currentClass);
+
+    // determine how the subject should appear in the cell
+    const displaySubj = abbr + (cell.isLabPeriod ? '(L)' : '');
 
     return (
         <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
@@ -57,14 +65,14 @@ const ClassTTCell = ({
             height: '100%', width: '100%', minHeight: '40px'
         }}>
             <span style={{ fontWeight: 700, fontSize: '1em', letterSpacing: '0.02em', lineHeight: 1.1 }}>
-                {abbr}{cell.isLabPeriod ? ' [LAB]' : (cell.labGroup && cell.labGroup !== 'None' ? ' [TH]' : '')}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}
+                {displaySubj}{cell.isLabPeriod ? '' : (cell.labGroup && cell.labGroup !== 'None' ? ' [TH]' : '')}{cell.isTBlock ? ' [T]' : (cell.isLBlock ? ' [L]' : '')}{cell.isClubBlock ? ' [C]' : ''}
                 {indicator && (
                     <span style={{ fontSize: '0.7em', color: '#fbbf24', fontWeight: 900, marginLeft: '2px' }}>
                         {indicator}
                     </span>
                 )}
             </span>
-            {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#94a3b8', lineHeight: 1 }}>{teacherFirst}</span>}
+            {teacherFirst && <span style={{ fontWeight: 400, fontSize: '0.65em', color: '#000000', lineHeight: 1 }}>{teacherFirst}</span>}
 
             {isChanged && change && (
                 <>
