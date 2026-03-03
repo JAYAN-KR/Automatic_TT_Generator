@@ -47,6 +47,8 @@ import TeacherGroupEditor from '../components/TeacherGroupEditor';
 import ClassTTTab from './ClassTTTab';
 import MultiClassSelector from '../components/MultiClassSelector';
 import ClassTTCell from '../components/ClassTTCell';
+import GenerationReport from '../components/GenerationReport';
+import { runValidationChecks } from '../utils/validationChecks';
 import ClassTTFooter from '../components/ClassTTFooter';
 import { getCombinedSubjectsForClass } from '../utils/classTTUtils';
 import TeacherTTTab from './TeacherTTTab';
@@ -224,6 +226,8 @@ function ttCellHeader(extra = {}) {
         padding: '0.7em 0.3em',
         ...extra
     };
+
+    const closeGenerationReport = () => setGenerationReport(null);
 }
 function ttCell(extra = {}) {
     return {
@@ -546,6 +550,10 @@ export default function TimetablePage() {
             return;
         }
         const lastStepLen = swapChainSteps[swapChainSteps.length - 1];
+                    {/* Generation Report Modal */}
+                    {generationReport && (
+                        <GenerationReport report={generationReport} onClose={() => setGenerationReport(null)} />
+                    )}
         const currentSource = swapChain[swapChain.length - lastStepLen];
         if (currentSource) {
             setAvailableDestinations(findAvailableDestinations(currentSource.cls, currentSource, generatedTimetable, swapChain));
@@ -1966,6 +1974,7 @@ export default function TimetablePage() {
         const saved = localStorage.getItem('tt_generated_timetable');
         return saved ? JSON.parse(saved) : null;
     });
+    const [generationReport, setGenerationReport] = useState(null);
     const [isGenerating, setIsGenerating] = useState(false);
 
     // --- Change Tracking State ---
@@ -3956,6 +3965,24 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 localStorage.setItem('tt_baseline_timetable', JSON.stringify(timetable));
             }
 
+            // run validations and prepare report
+            try {
+                const violations = runValidationChecks(finalTT);
+                const reportObj = {
+                    placedPeriods: timetable.report?.placedPeriods || 0,
+                    failedPeriods: timetable.report?.failedPeriods || 0,
+                    failedTasks: timetable.report?.failedTasks || [],
+                    violations: [
+                        ...(timetable.report?.preferenceViolations || []),
+                        ...violations
+                    ]
+                };
+                // always show report (even if clean) so user can export or review
+                setGenerationReport(reportObj);
+            } catch (e) {
+                console.error('Validation failed:', e);
+            }
+
             addToast(`✅ Timetable generated!
             
             ${Object.keys(timetable.classTimetables).length} Classes scheduled
@@ -3967,6 +3994,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             addToast(`❌ Failed: ${error.message}`, 'error');
         } finally {
             setIsGenerating(false);
+        }
+
+        // show report modal if present
+        if (generationReport) {
+            // small timeout to allow UI to settle
+            setTimeout(() => {
+                // modal rendered by JSX at bottom of component
+            }, 200);
         }
     };
 

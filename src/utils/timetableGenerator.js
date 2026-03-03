@@ -84,6 +84,12 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
     const classTimetables = {};
     const teacherTimetables = {};
 
+    // === report tracking ===
+    let placedPeriods = 0;
+    let failedPeriods = 0;
+    const failedTasks = [];
+    const preferenceViolations = [];
+
     finalDiscoveredClasses.forEach(className => { // Updated to use finalDiscoveredClasses
         classTimetables[className] = {};
         const level = getLevel(className);
@@ -310,6 +316,7 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                             placeTask(task, day, p1, true);
                             placeTask(task, day, p2, true);
                             placed = true;
+                            placedPeriods += 2; // block occupies two periods for the teacher
                             break;
                         }
                     }
@@ -332,6 +339,8 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                         if (teachersFree && !bConf && classFree && !labConflict) {
                             placeStreamTask(task, day, period);
                             placed = true;
+                            // count one period for each teacher in stream
+                            placedPeriods += task.subjects.length;
                             break;
                         }
                     }
@@ -352,6 +361,7 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                         if (teacherFree && !bConf && classesFree && labFree) {
                             placeTask(task, day, period, false);
                             placed = true;
+                            placedPeriods += 1;
                             break;
                         }
                     }
@@ -361,15 +371,55 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
 
         // Fallback for conflicts
         if (!placed) {
-            const day = days[taskIdx % days.length];
+            // record failure before forcing placement
+            const periodsForTask = task.type === 'BLOCK' ? 2 : (task.type === 'STREAM' ? task.subjects.length : 1);
+            failedPeriods += periodsForTask;
+            // choose a day respecting candidateDays if possible
+            let fdDay;
+            if (candidateDays && candidateDays.length > 0) {
+                fdDay = candidateDays[taskIdx % candidateDays.length];
+            } else {
+                fdDay = days[taskIdx % days.length];
+            }
             const availableSlots = getAvailableSlots(task.className);
-            const period = availableSlots[(taskIdx % availableSlots.length)];
-            if (task.type === 'STREAM') placeStreamTask(task, day, period);
-            else placeTask(task, day, period, task.type === 'BLOCK');
+            const fdPeriod = availableSlots[(taskIdx % availableSlots.length)];
+            failedTasks.push({
+                teacher: task.teacher || '',
+                subject: task.subject || task.name || '',
+                className: task.className,
+                periods: periodsForTask,
+                reason: `Fallback placement on ${fdDay} ${fdPeriod}`
+            });
+            if (task.type === 'STREAM') placeStreamTask(task, fdDay, fdPeriod);
+            else placeTask(task, fdDay, fdPeriod, task.type === 'BLOCK');
+            // preference violation on forced fallback
+            if (task.preferredDay && task.preferredDay !== 'Any' && task.preferredDay !== fdDay) {
+                preferenceViolations.push({
+                    teacher: task.teacher || '',
+                    subject: task.subject || task.name || '',
+                    className: task.className,
+                    violationType: 'Preferred Day',
+                    details: `Scheduled on ${fdDay} instead of preferred ${task.preferredDay}`
+                });
+            }
+            // still count periods as placed since we force-filled
+            if (task.type === 'BLOCK') placedPeriods += 2;
+            else if (task.type === 'STREAM') placedPeriods += task.subjects.length;
+            else placedPeriods += 1;
         }
     });
 
     function placeTask(task, day, period, isBlock) {
+        // log preference violation if day differs from preferred
+        if (task.preferredDay && task.preferredDay !== 'Any' && task.preferredDay !== day) {
+            preferenceViolations.push({
+                teacher: task.teacher || '',
+                subject: task.subject,
+                className: task.className,
+                violationType: 'Preferred Day',
+                details: `Scheduled on ${day} instead of preferred ${task.preferredDay}`
+            });
+        }
         const abbr = getAbbreviation(task.subject);
         const labStatusData = { className: task.classes[0], subject: task.subject, labGroup: task.labGroup || 'None', targetLabCount: task.targetLabCount };
         const isLab = determineLabStatus(classTimetables, labStatusData, day, period);
@@ -400,6 +450,18 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
     }
 
     function placeStreamTask(task, day, period) {
+        // each stream has multiple teachers; check each for preferred day
+        task.subjects.forEach(s => {
+            if (s.preferredDay && s.preferredDay !== 'Any' && s.preferredDay !== day) {
+                preferenceViolations.push({
+                    teacher: s.teacher || '',
+                    subject: s.subject,
+                    className: task.className,
+                    violationType: 'Preferred Day',
+                    details: `Scheduled on ${day} instead of preferred ${s.preferredDay}`
+                });
+            }
+        });
         const abbr = getAbbreviation(task.name);
         if (classTimetables[task.className]) {
             classTimetables[task.className][day][period] = {
@@ -473,5 +535,16 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         });
     });
 
-    return { teacherTimetables, classTimetables, labTimetables, errors: [] };
+    return {
+        teacherTimetables,
+        classTimetables,
+        labTimetables,
+        errors: [],
+        report: {
+            placedPeriods,
+            failedPeriods,
+            failedTasks,
+            preferenceViolations
+        }
+    };
 };
