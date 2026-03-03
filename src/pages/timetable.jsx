@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createRoot } from 'react-dom/client';
 import { useNavigate } from 'react-router-dom';
 import { extractSubjectsFromPDF } from '../utils/pdfExtractor';
 import {
@@ -1977,6 +1978,24 @@ export default function TimetablePage() {
     const [generationReport, setGenerationReport] = useState(null);
     const [isGenerating, setIsGenerating] = useState(false);
 
+    // Mount the GenerationReport as a portal when generationReport is set
+    useEffect(() => {
+        if (!generationReport) return;
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        const handleClose = () => {
+            setGenerationReport(null);
+            try { root.unmount(); } catch (e) { /* ignore */ }
+            if (container.parentNode) container.parentNode.removeChild(container);
+        };
+        root.render(<GenerationReport report={generationReport} onClose={handleClose} />);
+        return () => {
+            try { root.unmount(); } catch (e) { /* ignore */ }
+            if (container.parentNode) container.parentNode.removeChild(container);
+        };
+    }, [generationReport]);
+
     // --- Change Tracking State ---
     const [baselineTimetable, setBaselineTimetable] = useState(() => {
         const saved = localStorage.getItem('tt_baseline_timetable');
@@ -3045,6 +3064,57 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
         console.log('🟢 [CREATE] Clicked for:', row.teacher, row.allotments);
 
+        // ── REPORT TRACKING ─────────────────────────────────────────────────
+        // accumulate placed/failed counts and specific task details for the report
+        let placedCount = 0;
+        const reportData = { placedPeriods: 0, failedPeriods: 0, placedTasks: [], failedTasks: [], preferenceViolations: [] };
+        const pushFailure = (task, reason) => {
+            reportData.failedPeriods += 1;
+            reportData.failedTasks.push({
+                teacher: row.teacher,
+                subject: task?.subject || '',
+                className: (task?.classes || []).join('/'),
+                periods: task?.type === 'TBLOCK' || task?.type === 'LBLOCK' ? '2' : '1',
+                reason
+            });
+        };
+        const pushSuccess = (task, detailStr, count = 1) => {
+            reportData.placedTasks.push({
+                teacher: row.teacher,
+                subject: task?.subject || '',
+                className: (task?.classes || []).join('/'),
+                periods: count.toString(),
+                details: detailStr || ''
+            });
+        };
+        const buildReport = (finalTT) => {
+            reportData.placedPeriods = placedCount;
+            try {
+                const violations = runValidationChecks(finalTT);
+                return {
+                    placedPeriods: reportData.placedPeriods,
+                    placedTasks: reportData.placedTasks,
+                    failedPeriods: reportData.failedPeriods,
+                    failedTasks: reportData.failedTasks,
+                    violations: [...(reportData.preferenceViolations || []), ...violations]
+                };
+            } catch (e) {
+                console.error('Validation failed:', e);
+                return {
+                    placedPeriods: reportData.placedPeriods,
+                    placedTasks: reportData.placedTasks,
+                    failedPeriods: reportData.failedPeriods,
+                    failedTasks: reportData.failedTasks,
+                    violations: [...(reportData.preferenceViolations || [])]
+                };
+            }
+        };
+        const showReport = (finalTT) => {
+            const rep = buildReport(finalTT);
+            setGenerationReport(rep);
+            return rep;
+        };
+
         // ── Build or reuse working timetable ───────────────────────────────────
         let currentTT = baseTT || generatedTimetable;
         console.log('🟡 [CREATE] Existing generatedTimetable:', currentTT ? 'exists' : 'null - building fresh');
@@ -3203,7 +3273,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (tasks.length === 0) {
                 addMessage(`→ No periods set for ${row.teacher}. Skipping.`);
                 await sleep(500);
-                return currentTT; // Return existing TT to continue batch
+                let rpt = null;
+                if (!isBatch) {
+                    rpt = showReport(currentTT);
+                }
+                return { timetable: currentTT, report: rpt }; // Return existing TT to continue batch
             }
 
             const tBlockTasks = tasks.filter(t => t.type === 'TBLOCK');
@@ -3311,7 +3385,6 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 return Math.round(s1 + s2 + s3 + s4);
             };
 
-            let placedCount = 0;
             const placements = [];
 
             // ════════════════════════════════════════════════════════════════════
@@ -3334,8 +3407,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     const pEnd = getInternalSlot(task.fixedTo);
 
                     if (!pStart || !pEnd) {
-                        addMessage(`❌ Invalid slots for ${task.subject}: ${task.fixedFrom}-${task.fixedTo}`);
+                        const reason = `Invalid slots for ${task.subject}: ${task.fixedFrom}-${task.fixedTo}`;
+                        addMessage(`❌ ${reason}`);
                         setCreationStatus(prev => ({ ...prev, isError: true }));
+                        pushFailure(task, reason);
+                        if (!isBatch) showReport(tt || currentTT);
                         return;
                     }
 
@@ -3349,8 +3425,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     // 1. Validation: consecutive (no breaks/lunch)
                     const hasBreak = slotsInRange.some(p => !AVAILABLE_SLOTS.includes(p));
                     if (hasBreak) {
-                        addMessage(`❌ Fixed block ${task.fixedFrom}-${task.fixedTo} crosses a break/lunch!`);
+                        const reason = `Fixed block ${task.fixedFrom}-${task.fixedTo} crosses a break/lunch`;
+                        addMessage(`❌ ${reason}!`);
                         setCreationStatus(prev => ({ ...prev, isError: true }));
+                        pushFailure(task, reason);
+                        if (!isBatch) showReport(tt || currentTT);
                         return;
                     }
 
@@ -3361,8 +3440,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                             const availableIdx = AVAILABLE_SLOTS.indexOf(p);
                             return availableIdx !== -1 ? `P${availableIdx + 1}` : p;
                         });
-                        addMessage(`❌ Slot(s) ${conflictLabels.join(', ')} on ${task.preferredDay} not available for ${task.subject}.`);
+                        const reason = `Slot(s) ${conflictLabels.join(', ')} on ${task.preferredDay} not available for ${task.subject}`;
+                        addMessage(`❌ ${reason}.`);
                         setCreationStatus(prev => ({ ...prev, isError: true }));
+                        pushFailure(task, reason);
+                        if (!isBatch) showReport(tt || currentTT);
                         return;
                     }
 
@@ -3402,6 +3484,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     placements.push({ day: d, period: `${task.fixedFrom}-${task.fixedTo}`, type: 'FIXED' });
                     addMessage(`✅ Fixed Block placed: ${SHORT[d]} ${task.fixedFrom}-${task.fixedTo}`);
                     placedCount++;
+                    pushSuccess(task, `${SHORT[d]} ${task.fixedFrom}-${task.fixedTo}`, slotsInRange.length);
                     await sleep(150);
                 }
             }
@@ -3462,8 +3545,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     }
 
                     if (!best) {
-                        addMessage(`✗ No free slot for Theory Block ${bi + 1}!`);
+                        const reason = `No free slot for Theory Block ${bi + 1}`;
+                        addMessage(`✗ ${reason}!`);
                         setCreationStatus(prev => ({ ...prev, isError: true }));
+                        pushFailure(task, reason);
+                        if (!isBatch) showReport(tt || currentTT);
                         return;
                     }
 
@@ -3480,6 +3566,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     placements.push({ day: best.d, period: `${best.p1}-${best.p2}`, type: 'TBLOCK' });
                     addMessage(`✅ Theory Block placed: ${SHORT[best.d]} P${best.p1.replace('S', '')}-P${best.p2.replace('S', '')}`);
                     placedCount++; // One task completed
+                    pushSuccess(task, `${SHORT[best.d]} ${best.p1}-${best.p2}`, 2);
                     await sleep(150);
                 }
             }
@@ -3563,8 +3650,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     }
 
                     if (!best) {
-                        addMessage(`✗ No free slot for Lab Block ${bi + 1}!`);
+                        const reason = `No free slot for Lab Block ${bi + 1}`;
+                        addMessage(`✗ ${reason}!`);
                         setCreationStatus(prev => ({ ...prev, isError: true }));
+                        pushFailure(task, reason);
+                        if (!isBatch) showReport(tt || currentTT);
                         return;
                     }
 
@@ -3586,6 +3676,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     placements.push({ day: best.d, period: `${best.p1}-${best.p2}`, type: 'LBLOCK' });
                     addMessage(`✅ Lab Block placed: ${SHORT[best.d]} P${best.p1.replace('S', '')}-P${best.p2.replace('S', '')}`);
                     placedCount++;
+                    pushSuccess(task, `${SHORT[best.d]} ${best.p1}-${best.p2}`, 2);
                     await sleep(150);
                 }
             }
@@ -3696,8 +3787,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     }
 
                     if (!pick) {
-                        addMessage(`✗ No free slot for single period ${i + 1}!`);
+                        const reason = `No free slot for single period ${i + 1}`;
+                        addMessage(`✗ ${reason}!`);
                         setCreationStatus(prev => ({ ...prev, isError: true }));
+                        pushFailure(task, reason);
+                        if (!isBatch) showReport(tt || currentTT);
                         return;
                     }
 
@@ -3716,6 +3810,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     placements.push({ day: pick.d, period: pick.p, type: 'SINGLE' });
                     currentSlotIdx = (pick.slotIdx + 1) % orderedSlots.length;
                     placedCount++;
+                    pushSuccess(task, `${SHORT[pick.d]} ${pick.p}`, 1);
                     await sleep(80);
                 }
 
@@ -3734,13 +3829,23 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 const finalTT = syncLabTimetables(tt);
                 setGeneratedTimetable(finalTT);
                 setCompletedCreations(prev => new Set([...prev, row.id]));
+                let reportObj = null;
                 if (!isBatch) {
+                    reportObj = showReport(finalTT);
                     setTimeout(() => setCreationStatus(null), 5000);
+                } else {
+                    reportObj = buildReport(finalTT);
                 }
-                return tt;
+                return { timetable: finalTT, report: reportObj };
             } else {
                 setCreationStatus(prev => ({ ...prev, isError: true }));
                 addMessage(`❌ Only placed ${placedCount}/${tasks.length}. Check DPT for conflicts.`);
+                // record generic failure for remaining
+                const remaining = tasks.length - placedCount;
+                if (remaining > 0) {
+                    pushFailure({ subject: '', classes: [], type: '' }, `Only placed ${placedCount}/${tasks.length}`);
+                }
+                if (!isBatch) showReport(tt || currentTT);
                 return null;
             }
 
@@ -3748,6 +3853,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             console.error(err);
             addMessage(`❌ BUILD ERROR: ${err.message}`);
             setCreationStatus(prev => ({ ...prev, isError: true }));
+            if (!isBatch) showReport(currentTT || null);
             return null;
         }
     };
@@ -3825,9 +3931,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             }));
 
             const result = await handleCreateSpecific(row, currentTT, true);
-            if (result) {
-                currentTT = result;
+            if (result && result.timetable) {
+                currentTT = result.timetable;
                 generatedCount++;
+            } else if (result && !result.timetable) {
+                // Report error but continue batch
+                addToast(`${row.teacher} failed to generate. Report available.`, 'warning');
             } else {
                 addToast(`Batch stopped at ${row.teacher} due to an error.`, 'error');
                 break;

@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 
 const GenerationReport = ({ report, onClose }) => {
     if (!report) return null;
-    const { placedPeriods = 0, failedPeriods = 0, failedTasks = [], violations = [] } = report;
+    const { placedPeriods = 0, placedTasks = [], failedPeriods = 0, failedTasks = [], violations = [] } = report;
     const successCount = placedPeriods;
     const failureCount = failedPeriods;
     const issueCount = violations.length;
@@ -15,6 +15,11 @@ const GenerationReport = ({ report, onClose }) => {
         lines.push(["SUMMARY", successCount, failureCount, issueCount].map(v => `"${v}"`).join(','));
         lines.push('');
         lines.push('Type,Teacher,Subject,Class,Periods,Details');
+        placedTasks.forEach(p => {
+            lines.push(
+                [`PLACED`, p.teacher, p.subject, p.className, p.periods, p.details || ''].map(v => `"${v}"`).join(',')
+            );
+        });
         failedTasks.forEach(f => {
             lines.push(
                 [`FAILED`, f.teacher, f.subject, f.className, f.periods, f.reason].map(v => `"${v}"`).join(',')
@@ -44,6 +49,7 @@ const GenerationReport = ({ report, onClose }) => {
     const exportExcel = () => {
         const wsData = [];
         wsData.push(['Type','Teacher','Subject','Class','Periods','Details']);
+        placedTasks.forEach(p => wsData.push(['PLACED', p.teacher, p.subject, p.className, p.periods, p.details || '']));
         failedTasks.forEach(f => wsData.push(['FAILED', f.teacher, f.subject, f.className, f.periods, f.reason]));
         violations.forEach(v => wsData.push(['VIOLATION', v.teacher, v.subject, v.className, '', `${v.violationType}: ${v.details}`]));
         const wb = XLSX.utils.book_new();
@@ -69,6 +75,24 @@ const GenerationReport = ({ report, onClose }) => {
                 <p>✅ SUCCESSFULLY PLACED: {successCount} periods</p>
                 <p>❌ FAILED TO PLACE: {failureCount} periods</p>
                 <p>⚠️ RULE VIOLATIONS DETECTED: {issueCount} issues</p>
+
+                {placedTasks.length > 0 && (
+                    <>
+                        <h3>✅ PERIODS PLACED</h3>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1rem' }}>
+                            <thead>
+                                <tr><th>Teacher</th><th>Subject</th><th>Class</th><th>Periods</th><th>Details</th></tr>
+                            </thead>
+                            <tbody>
+                                {placedTasks.map((p,i) => (
+                                    <tr key={i} style={{ borderTop: '1px solid #ccc' }}>
+                                        <td>{p.teacher}</td><td>{p.subject}</td><td>{p.className}</td><td>{p.periods}</td><td>{p.details}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </>
+                )}
 
                 {failureCount > 0 && (
                     <>
