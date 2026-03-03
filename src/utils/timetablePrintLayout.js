@@ -1,6 +1,7 @@
 // Timetable Print Layout Generator
 // 6 timetables per A4 page, print-optimized
 import { getClubbingIndicator, getCombinedSubjectsForClass } from './classTTUtils';
+import { isDoublePeriodStart, MERGE_END_PERIODS } from './teacherTTGenerator';
 
 export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, academicYear, bellTimings, isMiddle) => {
     const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -54,6 +55,55 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
 
     const tableBody = dayKeys.map((dayKey, idx) => {
         const schedule = teacherTimetables[teacherName]?.[dayKey] || {};
+
+        // helper functions for merging double periods in print
+        const cellsToSkip = new Set(); // Track periods we've already rendered with colspan
+        
+        const isMergedEndPeriod = (period, schedule) => {
+            return cellsToSkip.has(period);
+        };
+
+        const getMergeColSpan = (period, schedule) => {
+            // Can only start a merge if in merge-end list
+            if (!MERGE_END_PERIODS.includes(period)) return 1;
+            
+            const order = ['CT','P1','P2','P4','P5','P6','P8', isMiddle ? 'P10' : 'P9', 'P11'];
+            const idxP = order.indexOf(period);
+            if (idxP === -1 || idxP >= order.length - 1) return 1;
+            
+            const next = order[idxP + 1];
+            const currCell = schedule[period];
+            const nextCell = schedule[next] || {};
+            
+            // Both must have content and be identical to form a merged block
+            if (!currCell || !nextCell) return 1;
+            
+            // If the rendered output is identical (what the user sees),
+            // treat as merged even when underlying objects differ.
+            try {
+                const renderedCurr = renderTeacherCell(period);
+                const renderedNext = renderTeacherCell(next);
+                if (renderedCurr && renderedCurr !== '&nbsp;' && renderedCurr === renderedNext) {
+                    cellsToSkip.add(next);
+                    return 2;
+                }
+            } catch (e) {
+                // ignore render errors
+            }
+            
+            // Check for explicit block merge
+            const isSameClass = currCell.className === nextCell.className;
+            const isNextBlock = nextCell.isBlock || nextCell.type === 'BLOCK';
+            const isCurrBlock = currCell.isBlock || currCell.type === 'BLOCK';
+            const sameSub = currCell.subject === nextCell.subject;
+            
+            if (isCurrBlock && isNextBlock && isSameClass && sameSub && !MERGE_END_PERIODS.includes(period)) {
+                cellsToSkip.add(next); // Mark next period to skip
+                return 2;
+            }
+            
+            return 1;
+        };
 
         const getSubAbbr = (sub) => {
             if (!sub) return '';
@@ -136,28 +186,41 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
             `;
         };
 
-        // Slots for the row
-        const cells = [
-            `<td class="day-cell">${days[idx]}</td>`,
-            `<td class="period-cell">${renderTeacherCell('CT')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P1')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P2')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P4')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P5')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P6')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('P8')}</td>`,
-            `<td class="period-cell">${renderTeacherCell(isMiddle ? 'P10' : 'P9')}</td>`, // This is P7
-            `<td class="period-cell">${renderTeacherCell('P11')}</td>`, // This is P8
-            (() => {
-                const lunchSlot = isMiddle ? 'P9' : 'P10';
-                const entry = teacherTimetables[teacherName]?.[dayKey]?.[lunchSlot];
-                const hasPeriod = entry && (typeof entry === 'object' ? entry.className : entry) && entry !== '-';
-                if (hasPeriod) {
-                    return `<td class="period-cell" style="background-color: #fff1f2;">${renderTeacherCell(lunchSlot)}</td>`;
-                }
-                return `<td class="v-break-body" style="background-color: #fef2f2;">LUNCH</td>`;
-            })()
-        ];
+        // Slots for the row - build with merge awareness to avoid duplication
+        const basePeriods = ['CT','P1','P2','P4','P5','P6','P8', isMiddle ? 'P10' : 'P9', 'P11'];
+        const cells = [`<td class="day-cell">${days[idx]}</td>`];
+        
+        for (let pi = 0; pi < basePeriods.length; pi++) {
+            const per = basePeriods[pi];
+
+            // If this period is the second half of a merged pair, push an
+            // empty placeholder so the indices in the final `cells` array
+            // remain consistent with the original layout.
+            if (isMergedEndPeriod(per, schedule)) {
+                cells.push('');
+                continue;
+            }
+
+            const colspan = getMergeColSpan(per, schedule);
+            cells.push(`<td class="period-cell"${colspan > 1 ? ` colspan="${colspan}"` : ''}>${renderTeacherCell(per)}</td>`);
+
+            // Note: `getMergeColSpan` will mark the next period in `cellsToSkip`
+            // (via the `cellsToSkip` set) when a merge is detected, so we don't
+            // manually increment `pi` here. The loop still advances normally and
+            // will insert a placeholder for the merged-end period when encountered.
+        }
+        
+        // Lunch slot handled separately  
+        cells.push((() => {
+            const lunchSlot = isMiddle ? 'P9' : 'P10';
+            const entry = teacherTimetables[teacherName]?.[dayKey]?.[lunchSlot];
+            const hasPeriod = entry && (typeof entry === 'object' ? entry.className : entry) && entry !== '-';
+            if (hasPeriod) {
+                const colspan = getMergeColSpan(lunchSlot, schedule);
+                return `<td class="period-cell" style="background-color: #fff1f2;"${colspan > 1 ? ` colspan="${colspan}"` : ''}>${renderTeacherCell(lunchSlot)}</td>`;
+            }
+            return `<td class="v-break-body" style="background-color: #fef2f2;">LUNCH</td>`;
+        })());
 
         // Combine with rowspan breaks (BREAK-I and BREAK-II remain rows spanned as they are fixed)
         if (idx === 0) {

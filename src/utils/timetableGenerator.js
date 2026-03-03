@@ -138,11 +138,12 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
             const labGroup = labInfo.labGroup || 'None';
             const targetLabCount = labInfo.targetLabCount !== undefined ? labInfo.targetLabCount : 3;
 
+            // carry total periods along with each task so we can enforce caps during placement
             for (let t = 0; t < blocks; t++) {
-                allTasks.push({ type: 'BLOCK', teacher, subject, className: c, classes: [c], preferredDay, labGroup, targetLabCount });
+                allTasks.push({ type: 'BLOCK', teacher, subject, className: c, classes: [c], preferredDay, labGroup, targetLabCount, totalPeriods: total });
             }
             for (let t = 0; t < singles; t++) {
-                allTasks.push({ type: 'SINGLE', teacher, subject, className: c, classes: [c], preferredDay, labGroup, targetLabCount });
+                allTasks.push({ type: 'SINGLE', teacher, subject, className: c, classes: [c], preferredDay, labGroup, targetLabCount, totalPeriods: total });
             }
         });
     });
@@ -290,7 +291,23 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
     };
 
     // ============ PLACEMENT ENGINE ============
+    // keep track of how many periods we've already placed per class+subject
+    const placedCountMap = {};
+
     allTasks.forEach((task, taskIdx) => {
+        const key = `${task.className}||${task.subject}`;
+        if (!placedCountMap[key]) placedCountMap[key] = 0;
+        const totalNeeded = task.totalPeriods || 0;
+        const remaining = totalNeeded - placedCountMap[key];
+        // if there isn't enough remaining room for this task, skip it
+        if (remaining <= 0) {
+            return;
+        }
+        if (task.type === 'BLOCK' && remaining < 2) {
+            // can't fit a two-period block when less than 2 remain
+            return;
+        }
+
         let placed = false;
         // by default, only weekdays are considered unless the task explicitly
         // requests a specific day (including Saturday).
@@ -355,6 +372,7 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                             placeTask(task, day, p2, true);
                             placed = true;
                             placedPeriods += 2; // block occupies two periods for the teacher
+                            placedCountMap[key] += 2;
                             break;
                         }
                     }
@@ -400,6 +418,7 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                             placeTask(task, day, period, false);
                             placed = true;
                             placedPeriods += 1;
+                            placedCountMap[key] += 1;
                             break;
                         }
                     }
@@ -444,9 +463,16 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                 });
             }
             // still count periods as placed since we force-filled
-            if (task.type === 'BLOCK') placedPeriods += 2;
-            else if (task.type === 'STREAM') placedPeriods += task.subjects.length;
-            else placedPeriods += 1;
+            if (task.type === 'BLOCK') {
+                placedPeriods += 2;
+                placedCountMap[key] += 2;
+            } else if (task.type === 'STREAM') {
+                placedPeriods += task.subjects.length;
+                placedCountMap[key] += task.subjects.length;
+            } else {
+                placedPeriods += 1;
+                placedCountMap[key] += 1;
+            }
         }
     });
 

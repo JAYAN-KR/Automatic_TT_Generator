@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DAYS, PERIODS, getSubAbbr, getFormattedClass, isDoublePeriodStart, isDoublePeriodEnd } from '../utils/teacherTTGenerator';
+import { DAYS, PERIODS, getSubAbbr, getFormattedClass } from '../utils/teacherTTGenerator';
 import { generateTeacherTimetableHTML, generateFullPrintHTML } from '../utils/timetablePrintLayout';
 import '../styles/teacherTT.css';
 
@@ -250,13 +250,9 @@ export default function TeacherTTTab({
                                     const currentSlot = tTT?.[day]?.[p];
                                     const nextSlot = nextPeriod ? tTT?.[day]?.[nextPeriod] : null;
 
-                                    const doubleStart = isDoublePeriodStart(currentSlot, nextSlot, p);
-                                    let doubleEnd = false;
-                                    if (MERGE_END_PERIODS.includes(p)) {
-                                        const prevPeriod = PERIODS[pi - 1];
-                                        const prevSlot = tTT?.[day]?.[prevPeriod];
-                                        doubleEnd = isDoublePeriodEnd(currentSlot, prevSlot, p);
-                                    }
+                                    // no merging: each slot renders in its own cell
+                                    const doubleStart = false;
+                                    const doubleEnd = false;
 
                                     const slot = tTT?.[day]?.[p];
                                     const isObj = slot && typeof slot === 'object';
@@ -279,26 +275,19 @@ export default function TeacherTTTab({
                                     const indicatorSpan = typeIndicator ? <sub style={{ fontSize: '0.55rem', verticalAlign: 'super', fontWeight: 500, marginLeft: '1px' }}>{typeIndicator}</sub> : null;
 
                                     const cellClass = ['teacher-tt-cell'];
-                                    if (doubleStart) cellClass.push('merged-start');
-                                    if (doubleEnd) cellClass.push('merged-end');
+                                    if (slot && slot.isBlock) cellClass.push('block-period');
 
-                                    if (doubleEnd) {
-                                        return (
-                                            <td key={p} className={cellClass.join(' ')} style={{
-                                                borderLeft: doubleEnd ? 'none' : '1px solid black',
-                                                borderRight: doubleStart ? 'none' : '1px solid black'
-                                            }}>
-                                                {/* blank */}
-                                            </td>
-                                        );
-                                    }
+                                    const cellStyle = {
+                                        borderLeft: '1px solid black',
+                                        borderRight: '1px solid black'
+                                    };
+                                    // do not override background when slot.isBlock so CSS shading applies
+                                    if (isLunch) cellStyle.background = '#fff1f2';
 
+                                    // If this is the start of a double period, render a single <td> that spans two columns
                                     return (
-                                        <td key={p} className={cellClass.join(' ')} style={{
-                                            borderLeft: doubleEnd ? 'none' : '1px solid black',
-                                            borderRight: doubleStart ? 'none' : '1px solid black'
-                                        }}>
-                                            <div className="cell-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px', height: '100%', width: doubleStart ? '200%' : '100%' }}>
+                                        <td key={p} className={cellClass.join(' ')} style={cellStyle}>
+                                            <div className="cell-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px', height: '100%', width: '100%' }}>
                                                 <div style={{ fontSize: '11.5px', color: 'black', lineHeight: '1.1' }}>
                                                     <span style={{ fontWeight: 600 }}>{num}{div}</span>
                                                 </div>

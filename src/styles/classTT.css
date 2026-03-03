@@ -12,8 +12,14 @@
     vertical-align: middle;
 }
 
-.class-tt-cell.merged-start > .cell-content {
-    width: 200%;
+.class-tt-cell.block-period {
+    background: #e0e0e0;
+    /* slightly darker gray for better contrast with black text */
+}
+
+.class-tt-cell.block-period div {
+    color: black !important;
+    font-weight: inherit;
 }
 
 

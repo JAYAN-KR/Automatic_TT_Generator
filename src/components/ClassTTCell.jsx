@@ -60,7 +60,7 @@ const ClassTTCell = ({
     const displaySubj = abbr + (cell.isLabPeriod ? '(L)' : '');
 
     return (
-        <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''}`} style={{
+        <div className={`tt-cell-parent ${isChanged ? 'tt-cell-changed' : ''} ${cell.isBlock ? 'block-period' : ''}`} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
             height: '100%', width: '100%', minHeight: '40px'
         }}>

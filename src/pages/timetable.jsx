@@ -53,7 +53,7 @@ import { runValidationChecks } from '../utils/validationChecks';
 import ClassTTFooter from '../components/ClassTTFooter';
 import { getCombinedSubjectsForClass } from '../utils/classTTUtils';
 import TeacherTTTab from './TeacherTTTab';
-import { isDoublePeriodStart, isDoublePeriodEnd } from '../utils/teacherTTGenerator';
+// import helper functions for merging no longer needed
 import '../styles/teacherTT.css';
 
 // --- Constants ---
@@ -3496,6 +3496,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             if (tBlockTasks.length > 0) {
                 const ALL_BLOCK_PAIRS = VALID_BLOCK_PAIRS;
                 const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+                let existingBlockPeriods = 0;
                 for (const tName of Object.keys(tt.teacherTimetables)) {
                     for (const d of DAYS) {
                         if (!tt.teacherTimetables[tName]?.[d]) continue;
@@ -5792,6 +5793,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                             const cell = generatedTimetable?.classTimetables?.[cls]?.[dayKey]?.[periodKey];
                                             if (!cell || !cell.subject) return null;
 
+
                                             // Change Tracking Logic
                                             const change = timetableChanges.diffs.find(d => d.class === cls && d.day === dayKey && d.period === periodKey);
                                             const isChanged = !!change;
@@ -5807,6 +5809,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                 />
                                             );
                                         };
+
+                                        // NOTE: block merging has been removed; periods are rendered independently.
+                                        // (background color will indicate a block via CSS)
 
                                         // Filter Logic: If "Show changes only" is ON, skip classes that have zero changes in the entire week
                                         if (showChangesOnly) {
@@ -6373,7 +6378,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                                             );
                                                                         } else {
                                                                             return (
-                                                                                <>
+                                                                                <> 
                                                                                     <td style={ttCell({
                                                                                         background: (() => {
                                                                                             const indices = swapChain.map((s, idx) => (s && s.cls === cls && s.day === day[1] && s.period === 'S9') ? idx : -1).filter(i => i !== -1);
@@ -8196,23 +8201,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                             }
                                                         }
 
-                                                        // look ahead one period to decide if we should merge cells
-                                                        const nextPeriodIdx = pi + 1;
-                                                        const nextPeriod = nextPeriodIdx < PERIODS.length ? PERIODS[nextPeriodIdx] : null;
-                                                        const currentSlot = tTT?.[day]?.[p];
-                                                        const nextSlot = nextPeriod ? tTT?.[day]?.[nextPeriod] : null;
-
-                                                        // use helpers that understand both lab and block pairs
-                                                        const mergedStart = isDoublePeriodStart(currentSlot, nextSlot, p);
-
-                                                        let mergedEnd = false;
-                                                        if (['S2', 'S5', 'S9', 'S11'].includes(p)) {
-                                                            const prevPeriod = PERIODS[pi - 1];
-                                                            const prevSlot = tTT?.[day]?.[prevPeriod];
-                                                            mergedEnd = isDoublePeriodEnd(currentSlot, prevSlot, p);
-                                                        }
-
                                                         const slot = tTT?.[day]?.[p];
+                                                        // Render every period cell in the UI (no colspan merging in-app)
                                                         const isObj = slot && typeof slot === 'object';
                                                         let displayClass = isObj ? slot.className : (slot || '-');
                                                         let displaySub = isObj ? (slot.subject || '') : '';
@@ -8233,48 +8223,31 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                         const indicatorSpan = typeIndicator ? <sub style={{ fontSize: '0.55rem', verticalAlign: 'super', fontWeight: 500, marginLeft: '1px' }}>{typeIndicator}</sub> : null;
                                                         const isCombined = div && div.length <= 3;
 
-                                                        // Determine border styling for merged periods
-                                                        let cellBorderRight = '1px solid black';
-                                                        let cellBorderLeft = '1px solid black';
-                                                        if (mergedStart) {
-                                                            cellBorderRight = 'none'; // hide right border on first cell
-                                                        } else if (mergedEnd) {
-                                                            cellBorderLeft = 'none'; // hide left border on second cell
+                                                        // determine classes for the cell (base style + optional block shading)
+                                                        const cellClassName = ['teacher-tt-cell'];
+                                                        if (isObj && slot.isBlock) {
+                                                            cellClassName.push('block-period');
                                                         }
+                                                        const cellClassStr = cellClassName.join(' ');
+                                                        // only apply an inline background when it's lunch or a non-block slot
+                                                        const cellBackground = isLunch ? '#fff1f2' : (!isObj || !slot.isBlock ? 'white' : undefined);
 
-                                                        // second half of a merged pair is rendered empty
-                                                        if (mergedEnd) {
-                                                            return (
-                                                                <td key={p} style={{
-                                                                    borderTop: '1px solid black',
-                                                                    borderBottom: '1px solid black',
-                                                                    borderLeft: cellBorderLeft,
-                                                                    borderRight: cellBorderRight,
-                                                                    textAlign: 'center',
-                                                                    height: '42px',
-                                                                    background: isLunch ? '#fff1f2' : 'white',
-                                                                    padding: '1px',
-                                                                    color: 'black',
-                                                                    verticalAlign: 'middle'
-                                                                }}>
-                                                                    {/* blank - merged with previous */}
-                                                                </td>
-                                                            );
-                                                        }
+                                                        const cellStyle = {
+                                                            borderTop: '1px solid black',
+                                                            borderBottom: '1px solid black',
+                                                            borderLeft: '1px solid black',
+                                                            borderRight: '1px solid black',
+                                                            textAlign: 'center',
+                                                            height: '42px',
+                                                            padding: '1px',
+                                                            color: 'black',
+                                                            verticalAlign: 'middle'
+                                                        };
+                                                        if (cellBackground !== undefined) cellStyle.background = cellBackground;
+
                                                         return (
-                                                            <td key={p} style={{
-                                                                borderTop: '1px solid black',
-                                                                borderBottom: '1px solid black',
-                                                                borderLeft: cellBorderLeft,
-                                                                borderRight: cellBorderRight,
-                                                                textAlign: 'center',
-                                                                height: '42px',
-                                                                background: isLunch ? '#fff1f2' : 'white',
-                                                                padding: '1px',
-                                                                color: 'black',
-                                                                verticalAlign: 'middle'
-                                                            }}>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px', height: '100%', width: mergedStart ? '200%' : '100%' }}>
+                                                            <td key={p} className={cellClassStr} style={cellStyle}>
+                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px', height: '100%', width: '100%' }}>
                                                                     <div style={{ fontSize: '11.5px', color: 'black', lineHeight: '1.1' }}>
                                                                         <span style={{ fontWeight: 600 }}>{num}{div}</span>
                                                                     </div>

@@ -4,8 +4,7 @@ import {
     PERIODS,
     MERGE_END_PERIODS,
     getSubAbbr,
-    isDoublePeriodStart,
-    isDoublePeriodEnd
+    
 } from '../utils/teacherTTGenerator';
 import '../styles/classTT.css';
 
@@ -196,48 +195,21 @@ export default function ClassTTTab({ generatedTimetable, bellTimings, academicYe
                                         }
                                     }
 
-                                    const nextPeriodIdx = pi + 1;
-                                    const nextPeriod = nextPeriodIdx < PERIODS.length ? PERIODS[nextPeriodIdx] : null;
                                     const currentSlot = schedule?.[day]?.[p];
-                                    const nextSlot = nextPeriod ? schedule?.[day]?.[nextPeriod] : null;
-
-                                    // only consider merge when at least one slot has meaningful content
-                                    const validCurrent = currentSlot && typeof currentSlot === 'object' && (currentSlot.subject || currentSlot.teacher || currentSlot.isBlock || currentSlot.isLabPeriod);
-                                    const validNext = nextSlot && typeof nextSlot === 'object' && (nextSlot.subject || nextSlot.teacher || nextSlot.isBlock || nextSlot.isLabPeriod);
-                                    const doubleStart = (validCurrent || validNext) && isDoublePeriodStart(currentSlot, nextSlot, p);
-                                    let doubleEnd = false;
-                                    if (MERGE_END_PERIODS.includes(p)) {
-                                        const prevPeriod = PERIODS[pi - 1];
-                                        const prevSlot = schedule?.[day]?.[prevPeriod];
-                                        doubleEnd = isDoublePeriodEnd(currentSlot, prevSlot, p);
-                                    }
-
                                     const slot = currentSlot;
                                     const isObj = slot && typeof slot === 'object';
                                     const displaySub = isObj ? getSubAbbr(slot.subject || '') : (slot || '');
                                     const displayTeacher = isObj ? slot.teacher || '' : '';
 
                                     const cellClass = ['class-tt-cell'];
-                                    if (doubleStart) cellClass.push('merged-start');
-                                    if (doubleEnd) cellClass.push('merged-end');
-
-                                    if (doubleEnd) {
-                                        return (
-                                            <td key={p} className={cellClass.join(' ')} style={{
-                                                borderLeft: doubleEnd ? 'none' : '1px solid black',
-                                                borderRight: doubleStart ? 'none' : '1px solid black'
-                                            }}>
-                                                {/* blank */}
-                                            </td>
-                                        );
-                                    }
+                                    if (isObj && slot.isBlock) cellClass.push('block-period');
 
                                     return (
                                         <td key={p} className={cellClass.join(' ')} style={{
-                                            borderLeft: doubleEnd ? 'none' : '1px solid black',
-                                            borderRight: doubleStart ? 'none' : '1px solid black'
+                                            borderLeft: '1px solid black',
+                                            borderRight: '1px solid black'
                                         }}>
-                                            <div className="cell-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px', height: '100%', width: doubleStart ? '200%' : '100%' }}>
+                                            <div className="cell-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0px', height: '100%', width: '100%' }}>
                                                 <div style={{ fontSize: '11.5px', color: 'black', lineHeight: '1.1' }}>
                                                     <span style={{ fontWeight: 600 }}>{displaySub}</span>
                                                 </div>
