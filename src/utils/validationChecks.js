@@ -158,21 +158,9 @@ export function runValidationChecks({ classTimetables, teacherTimetables, labTim
     }
 
     // I. Saturday Placement Check
-    // Report any period scheduled on Saturday (useful to flag unintended weekend assignments)
-    Object.entries(classTimetables).forEach(([className, ct]) => {
-        const slots = ct['Saturday'] || {};
-        Object.entries(slots).forEach(([p, slot]) => {
-            if (slot && slot.subject && slot.subject !== 'BREAK' && slot.subject !== 'LUNCH') {
-                violations.push({
-                    teacher: slot.teacher || '',
-                    subject: slot.subject,
-                    className,
-                    violationType: 'Saturday Placement',
-                    details: `Scheduled on Saturday period ${p}`
-                });
-            }
-        });
-    });
+    // NOTE: Saturday placements are NOT flagged as violations anymore.
+    // If a period is on Saturday, it means the user explicitly requested it or approved it via drag-drop.
+    // The system should not penalize intentional Saturday placement.
 
     // F. Teacher Availability (double assignment)
     // We treat a slash in className as a parallel-group assignment, which is allowed.
