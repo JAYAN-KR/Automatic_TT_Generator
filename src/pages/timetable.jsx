@@ -78,7 +78,7 @@ const syncLabTimetables = (tt) => {
     if (!tt) return tt;
     const labTimetables = {};
     const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const PRDS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+    const PRDS = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11'];
 
     Object.values(LAB_SYSTEM).forEach(name => {
         labTimetables[name] = {};
@@ -663,7 +663,7 @@ export default function TimetablePage() {
         affectedTeachers.forEach(teacher => {
             affectedDays.forEach(day => {
                 const dailySchedule = {};
-                const DAYS_PRDS = ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S10', 'S11'];
+                const DAYS_PRDS = ['P1', 'P2', 'P4', 'P5', 'P6', 'P8', 'P9', 'P10', 'P11'];
 
                 // Fill current schedule (excluding what's moving out)
                 Object.keys(generatedTimetable.classTimetables).forEach(cn => {
@@ -2729,15 +2729,15 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             // must occupy a two‑period block (first & second periods of the day)
             const hasClubPeriod = stream.subjects.some(s => s.clubPeriods);
             // restrict candidate slots accordingly; club periods always start at S1
-            const ALLOWED_SLOTS = hasClubPeriod ? ['S1'] : AVAILABLE_SLOTS;   
-            const CLUB_BLOCK_PAIR = ['S1', 'S2']; // fixed block for club periods
+            const ALLOWED_SLOTS = hasClubPeriod ? ['P1'] : AVAILABLE_SLOTS;   
+            const CLUB_BLOCK_PAIR = ['P1', 'P2']; // fixed block for club periods
 
             const tFree = (teacherInput, d, p) => {
                 const teacher = teacherInput?.trim();
                 if (!tt.teacherTimetables[teacher]) {
                     tt.teacherTimetables[teacher] = { weeklyPeriods: 0 };
                     DAYS.forEach(day => {
-                        tt.teacherTimetables[teacher][day] = { CT: 'CT', S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
+                        tt.teacherTimetables[teacher][day] = { CT: 'CT', P1: '', P2: '', P3: 'BREAK', P4: '', P5: '', P6: '', P7: 'BREAK', P8: '', P9: '', P10: '', P11: '', periodCount: 0 };
                     });
                 }
                 const sl = tt.teacherTimetables[teacher][d][p];
@@ -3120,7 +3120,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
         console.log('🟡 [CREATE] Existing generatedTimetable:', currentTT ? 'exists' : 'null - building fresh');
         if (!currentTT) {
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            const initPeriods = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+            const initPeriods = ['CT', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11'];
             const cTimetables = {};
             const tTimetables = {};
             const allTeachers = [...new Set(allotmentRows.map(r => r.teacher?.trim()).filter(Boolean))];
@@ -3137,7 +3137,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 const trimmedT = t.trim();
                 tTimetables[trimmedT] = {};
                 days.forEach(d => {
-                    tTimetables[trimmedT][d] = { CT: 'CT', S1: '', S2: '', S3: 'BREAK', S4: '', S5: '', S6: '', S7: 'BREAK', S8: '', S9: '', S10: '', S11: '', periodCount: 0 };
+                    tTimetables[trimmedT][d] = { CT: 'CT', P1: '', P2: '', P3: 'BREAK', P4: '', P5: '', P6: '', P7: 'BREAK', P8: '', P9: '', P10: '', P11: '', periodCount: 0 };
                 });
                 tTimetables[trimmedT].weeklyPeriods = 0;
             });

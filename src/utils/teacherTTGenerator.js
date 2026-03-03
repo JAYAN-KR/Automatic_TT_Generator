@@ -5,10 +5,10 @@
 
 // exported constants for reuse elsewhere if needed
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-export const PERIODS = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+export const PERIODS = ['CT', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11'];
 // periods that should never be treated as the start of a merged pair
 // they are the *second* element of the common two-slot pairs
-export const MERGE_END_PERIODS = ['S2', 'S5', 'S9', 'S11'];
+export const MERGE_END_PERIODS = ['P2', 'P5', 'P9', 'P11'];
 
 // abbreviated subject names shown in the teacher timetable grid
 export function getSubAbbr(sub) {

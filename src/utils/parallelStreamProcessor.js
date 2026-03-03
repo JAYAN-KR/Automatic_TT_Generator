@@ -1,8 +1,8 @@
 import { detectLabConflict, getLabForSubject } from './labSharingValidation';
 
 // Block pairs that do NOT cross breaks (middle vs senior are determined externally)
-const VALID_BLOCK_PAIRS_MIDDLE = [['S1','S2'], ['S4','S5'], ['S5','S6'], ['S10','S11']];
-const VALID_BLOCK_PAIRS_SENIOR = [['S1','S2'], ['S4','S5'], ['S5','S6'], ['S8','S9']];
+const VALID_BLOCK_PAIRS_MIDDLE = [['P1','P2'], ['P4','P5'], ['P5','P6'], ['P10','P11']];
+const VALID_BLOCK_PAIRS_SENIOR = [['P1','P2'], ['P4','P5'], ['P5','P6'], ['P8','P9']];
 
 function getValidPairs(isMiddle) {
     return isMiddle ? VALID_BLOCK_PAIRS_MIDDLE : VALID_BLOCK_PAIRS_SENIOR;

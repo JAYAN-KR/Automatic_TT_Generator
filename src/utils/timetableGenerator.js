@@ -10,7 +10,7 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
 
     // ============ CONSTANTS ============
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const allPeriods = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+    const allPeriods = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11'];
 
     // Level-aware slot logic
     // Level-aware slot logic
@@ -28,15 +28,15 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
     const getAvailableSlots = (className) => {
         const level = getLevel(className);
         return level === 'Senior'
-            ? ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S11']
-            : ['S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S10', 'S11'];
+            ? ['P1', 'P2', 'P4', 'P5', 'P6', 'P8', 'P9', 'P11']
+            : ['P1', 'P2', 'P4', 'P5', 'P6', 'P8', 'P10', 'P11'];
     };
 
     const getBlockPairs = (className) => {
         const level = getLevel(className);
         return level === 'Senior'
-            ? [['S1', 'S2'], ['S4', 'S5'], ['S5', 'S6'], ['S8', 'S9']]
-            : [['S1', 'S2'], ['S4', 'S5'], ['S5', 'S6'], ['S10', 'S11']];
+            ? [['P1', 'P2'], ['P4', 'P5'], ['P5', 'P6'], ['P8', 'P9']]
+            : [['P1', 'P2'], ['P4', 'P5'], ['P5', 'P6'], ['P10', 'P11']];
     };
 
     // ============ DISCOVER CLASSES & TEACHERS ============
@@ -96,8 +96,8 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         days.forEach(day => {
             classTimetables[className][day] = {};
             allPeriods.forEach(p => {
-                const isBreak = p === 'S3' || p === 'S7';
-                const isLunch = (level === 'Senior' && p === 'S10') || (level === 'Middle' && p === 'S9');
+                const isBreak = p === 'P3' || p === 'P7';
+                const isLunch = (level === 'Senior' && p === 'P10') || (level === 'Middle' && p === 'P9');
                 classTimetables[className][day][p] = {
                     subject: isBreak ? 'BREAK' : (isLunch ? 'LUNCH' : ''),
                     teacher: '',
@@ -225,35 +225,35 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
         };
 
         // Static adjacent pairs with no physical gaps
-        if (period === 'S1' && checkAdj('S2')) return true;
-        if (period === 'S2' && checkAdj('S1')) return true;
-        if (period === 'S4' && checkAdj('S5')) return true;
-        if (period === 'S5') { if (checkAdj('S4')) return true; if (checkAdj('S6')) return true; }
-        if (period === 'S6' && checkAdj('S5')) return true;
+        if (period === 'P1' && checkAdj('P2')) return true;
+        if (period === 'P2' && checkAdj('P1')) return true;
+        if (period === 'P4' && checkAdj('P5')) return true;
+        if (period === 'P5') { if (checkAdj('P4')) return true; if (checkAdj('P6')) return true; }
+        if (period === 'P6' && checkAdj('P5')) return true;
 
-        if (period === 'S8') {
-            const s9 = tTT['S9'];
-            if (s9 && typeof s9 === 'object' && getBuilding(s9.className) === 'Senior' && targetBuilding !== 'Senior') return true;
+        if (period === 'P8') {
+            const p9 = tTT['P9'];
+            if (p9 && typeof p9 === 'object' && getBuilding(p9.className) === 'Senior' && targetBuilding !== 'Senior') return true;
         }
-        if (period === 'S9') {
+        if (period === 'P9') {
             const level = getLevel(className);
             if (level === 'Senior') {
-                if (checkAdj('S8')) return true;
-                const s10 = tTT['S10'];
-                if (s10 && typeof s10 === 'object' && getBuilding(s10.className) === 'Main' && targetBuilding !== 'Main') return true;
+                if (checkAdj('P8')) return true;
+                const p10 = tTT['P10'];
+                if (p10 && typeof p10 === 'object' && getBuilding(p10.className) === 'Main' && targetBuilding !== 'Main') return true;
             }
         }
-        if (period === 'S10') {
+        if (period === 'P10') {
             const level = getLevel(className);
             if (level === 'Main') {
-                if (checkAdj('S11')) return true;
-                const s9 = tTT['S9'];
-                if (s9 && typeof s9 === 'object' && getBuilding(s9.className) === 'Senior' && targetBuilding !== 'Senior') return true;
+                if (checkAdj('P11')) return true;
+                const p9 = tTT['P9'];
+                if (p9 && typeof p9 === 'object' && getBuilding(p9.className) === 'Senior' && targetBuilding !== 'Senior') return true;
             }
         }
-        if (period === 'S11') {
-            const s10 = tTT['S10'];
-            if (s10 && typeof s10 === 'object' && getBuilding(s10.className) === 'Main' && targetBuilding !== 'Main') return true;
+        if (period === 'P11') {
+            const p10 = tTT['P10'];
+            if (p10 && typeof p10 === 'object' && getBuilding(p10.className) === 'Main' && targetBuilding !== 'Main') return true;
         }
         return false;
     };

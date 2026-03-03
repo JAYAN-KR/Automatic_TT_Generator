@@ -13,7 +13,7 @@ export const getBuilding = (className) => {
     return (grade >= 11) ? 'Senior' : 'Main';
 };
 
-const allPeriods = ['S1','S2','S3','S4','S5','S6','S7','S8','S9','S10','S11'];
+const allPeriods = ['P1','P2','P3','P4','P5','P6','P7','P8','P9','P10','P11'];
 const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 // run all checks and return an array of violation objects
@@ -157,24 +157,55 @@ export function runValidationChecks({ classTimetables, teacherTimetables, labTim
         });
     }
 
+    // I. Saturday Placement Check
+    // Report any period scheduled on Saturday (useful to flag unintended weekend assignments)
+    Object.entries(classTimetables).forEach(([className, ct]) => {
+        const slots = ct['Saturday'] || {};
+        Object.entries(slots).forEach(([p, slot]) => {
+            if (slot && slot.subject && slot.subject !== 'BREAK' && slot.subject !== 'LUNCH') {
+                violations.push({
+                    teacher: slot.teacher || '',
+                    subject: slot.subject,
+                    className,
+                    violationType: 'Saturday Placement',
+                    details: `Scheduled on Saturday period ${p}`
+                });
+            }
+        });
+    });
+
     // F. Teacher Availability (double assignment)
+    // We treat a slash in className as a parallel-group assignment, which is allowed.
+    // Instead, we scan the classTimetables to catch cases where the same teacher
+    // appears in more than one class at the same day/period but the teacher
+    // timetable slot does **not** show a parallel slash (i.e. one assignment
+    // overwrote another).
     Object.entries(teacherTimetables).forEach(([teacher, tt]) => {
         days.forEach(day => {
-            const slots = tt[day] || {};
             allPeriods.forEach(p => {
-                const slot = slots[p];
+                const slot = (tt[day] || {})[p];
+                // skip if this slot itself represents a deliberate parallel grouping
                 if (slot && slot.className && slot.className.includes('/')) {
-                    // if there are two different class names separated by slash
-                    const parts = slot.className.split('/').map(x=>x.trim()).filter(Boolean);
-                    if (parts.length > 1) {
-                        violations.push({
-                            teacher,
-                            subject: slot.subject || '',
-                            className: slot.className,
-                            violationType: 'Teacher Availability',
-                            details: `Assigned to multiple classes (${slot.className}) at ${day} ${p}`
-                        });
+                    return;
+                }
+                // count occurrences in classTimetables
+                let count = 0;
+                let classesList = [];
+                Object.entries(classTimetables).forEach(([cls, ct]) => {
+                    const cslot = ct[day]?.[p];
+                    if (cslot && cslot.teacher?.trim() === teacher) {
+                        count++;
+                        classesList.push(cls);
                     }
+                });
+                if (count > 1) {
+                    violations.push({
+                        teacher,
+                        subject: slot?.subject || '',
+                        className: classesList.join('/'),
+                        violationType: 'Teacher Availability',
+                        details: `Assigned to ${count} classes (${classesList.join(', ')}) at ${day} ${p}`
+                    });
                 }
             });
         });

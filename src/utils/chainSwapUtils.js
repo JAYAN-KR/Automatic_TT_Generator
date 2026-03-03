@@ -36,7 +36,7 @@ export const findAvailableDestinations = (cls, sourceItem, generatedTimetable, s
     const teacherName = sourceCell?.teacher;
 
     // Define the valid periods to check
-    const periods = ['CT', 'S1', 'S2', 'S4', 'S5', 'S6', 'S8', 'S9', 'S10', 'S11'];
+    const periods = ['CT', 'P1', 'P2', 'P4', 'P5', 'P6', 'P8', 'P9', 'P10', 'P11'];
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
     const isMiddle = ['6', '7', '8'].includes(activeGradeSubTab);
@@ -47,8 +47,8 @@ export const findAvailableDestinations = (cls, sourceItem, generatedTimetable, s
             if (day === sourceItem.day && p === sourceItem.period) return;
 
             // 2. Skip lunch periods
-            if (p === 'S9' && isMiddle) return;
-            if (p === 'S10' && !isMiddle) return;
+            if (p === 'P9' && isMiddle) return;
+            if (p === 'P10' && !isMiddle) return;
 
             // 3. Skip if current teacher is already assigned here (and not moving out)
             if (!isTeacherFreeInSlot(teacherName, day, p, generatedTimetable.classTimetables, movingOutCells)) {

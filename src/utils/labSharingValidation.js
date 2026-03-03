@@ -156,7 +156,7 @@ export const determineLabStatus = (classTimetables, taskData, day, period) => {
     // 2. Count existing lab periods already placed for this specific assignment (Class + Subject)
     let labCount = 0;
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const periods = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
+    const periods = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11'];
 
     if (classTimetables[className]) {
         days.forEach(d => {

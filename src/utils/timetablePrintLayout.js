@@ -28,17 +28,17 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
             </tr>
             <tr class="time-row">
                 <th>${mt.CT || '8:00-8:35'}</th>
-                <th>${mt.S1 || '8:35-9:15'}</th>
-                <th>${mt.S2 || '9:15-9:55'}</th>
+                <th>${mt.P1 || '8:35-9:15'}</th>
+                <th>${mt.P2 || '9:15-9:55'}</th>
                 <th class="v-break-sub">9:55-10:10</th>
-                <th>${mt.S4 || '10:10-10:50'}</th>
-                <th>${mt.S5 || '10:50-11:30'}</th>
-                <th>${mt.S6 || '11:30-12:10'}</th>
+                <th>${mt.P4 || '10:10-10:50'}</th>
+                <th>${mt.P5 || '10:50-11:30'}</th>
+                <th>${mt.P6 || '11:30-12:10'}</th>
                 <th class="v-break-sub">12:10-12:20</th>
-                <th>${mt.S8 || '12:20-13:00'}</th>
-                <th class="v-break-sub">${isMiddle ? (mt.S9 || '13:00-13:30') : (mt.S10 || '13:30-14:05')}</th>
-                <th>${isMiddle ? (mt.S10 || '13:30-14:05') : (mt.S9 || '13:00-13:30')}</th>
-                <th>${mt.S11 || '14:05-14:55'}</th>
+                <th>${mt.P8 || '12:20-13:00'}</th>
+                <th class="v-break-sub">${isMiddle ? (mt.P9 || '13:00-13:30') : (mt.P10 || '13:30-14:05')}</th>
+                <th>${isMiddle ? (mt.P10 || '13:30-14:05') : (mt.P9 || '13:00-13:30')}</th>
+                <th>${mt.P11 || '14:05-14:55'}</th>
             </tr>
         </thead>
     `;
@@ -140,16 +140,16 @@ export const generateTeacherTimetableHTML = (teacherTimetables, teacherName, aca
         const cells = [
             `<td class="day-cell">${days[idx]}</td>`,
             `<td class="period-cell">${renderTeacherCell('CT')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('S1')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('S2')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('S4')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('S5')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('S6')}</td>`,
-            `<td class="period-cell">${renderTeacherCell('S8')}</td>`,
-            `<td class="period-cell">${renderTeacherCell(isMiddle ? 'S10' : 'S9')}</td>`, // This is P7
-            `<td class="period-cell">${renderTeacherCell('S11')}</td>`, // This is P8
+            `<td class="period-cell">${renderTeacherCell('P1')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P2')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P4')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P5')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P6')}</td>`,
+            `<td class="period-cell">${renderTeacherCell('P8')}</td>`,
+            `<td class="period-cell">${renderTeacherCell(isMiddle ? 'P10' : 'P9')}</td>`, // This is P7
+            `<td class="period-cell">${renderTeacherCell('P11')}</td>`, // This is P8
             (() => {
-                const lunchSlot = isMiddle ? 'S9' : 'S10';
+                const lunchSlot = isMiddle ? 'P9' : 'P10';
                 const entry = teacherTimetables[teacherName]?.[dayKey]?.[lunchSlot];
                 const hasPeriod = entry && (typeof entry === 'object' ? entry.className : entry) && entry !== '-';
                 if (hasPeriod) {
@@ -303,14 +303,14 @@ export const generateClassTimetableHTML = (classTimetables, className, academicY
         const cells = [
             `<td class="day-cell">${days[idx]}</td>`,
             `<td class="period-cell">${renderCell('CT')}</td>`,
-            `<td class="period-cell">${renderCell('S1')}</td>`,
-            `<td class="period-cell">${renderCell('S2')}</td>`,
-            `<td class="period-cell">${renderCell('S4')}</td>`,
-            `<td class="period-cell">${renderCell('S5')}</td>`,
-            `<td class="period-cell">${renderCell('S6')}</td>`,
-            `<td class="period-cell">${renderCell('S8')}</td>`,
-            `<td class="period-cell">${renderCell('S9')}</td>`,
-            `<td class="period-cell">${renderCell('S11')}</td>`
+            `<td class="period-cell">${renderCell('P1')}</td>`,
+            `<td class="period-cell">${renderCell('P2')}</td>`,
+            `<td class="period-cell">${renderCell('P4')}</td>`,
+            `<td class="period-cell">${renderCell('P5')}</td>`,
+            `<td class="period-cell">${renderCell('P6')}</td>`,
+            `<td class="period-cell">${renderCell('P8')}</td>`,
+            `<td class="period-cell">${renderCell('P9')}</td>`,
+            `<td class="period-cell">${renderCell('P11')}</td>`
         ];
 
         if (idx === 0) {
