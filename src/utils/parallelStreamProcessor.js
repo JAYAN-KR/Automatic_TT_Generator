@@ -25,9 +25,20 @@ function checkBlockAvailability(stream, classTimetables, teacherTimetables, dayP
     const classNames = (stream.className || '').split('/').map(s => s.trim()).filter(Boolean);
     const isMiddle = classNames.length && parseInt(classNames[0]) < 11;
     const pairs = getValidPairs(isMiddle);
-    const daysToTry = dayPref === 'Any'
-        ? ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
-        : [dayPref];
+    // only allow Saturday if either the user explicitly asked for it as the
+    // preferred day, or if the stream has a nonzero forceCount with forceDay
+    // set to Saturday. Otherwise treat Saturday as a holiday in the validation
+    // so we don't give false-positive availability when only weekdays are
+    // permitted.
+    let daysToTry;
+    if (dayPref === 'Any') {
+        daysToTry = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+        if (stream.forceCount && stream.forceDay === 'Saturday') {
+            daysToTry.push('Saturday');
+        }
+    } else {
+        daysToTry = [dayPref];
+    }
 
     for (const day of daysToTry) {
         let found = 0;

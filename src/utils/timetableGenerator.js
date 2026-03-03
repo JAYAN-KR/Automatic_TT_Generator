@@ -1,5 +1,5 @@
-import { getAbbreviation } from './subjectAbbreviations';
-import { detectLabConflict, determineLabStatus, getLabForSubject, LAB_SYSTEM } from './labSharingValidation';
+import { getAbbreviation } from './subjectAbbreviations.js';
+import { detectLabConflict, determineLabStatus, getLabForSubject, LAB_SYSTEM } from './labSharingValidation.js';
 
 // Timetable Generation Engine
 export const generateTimetable = (mappings, distribution, bellTimings, streams = []) => {
@@ -10,6 +10,8 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
 
     // ============ CONSTANTS ============
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    // helper list that excludes Saturday since it's treated as a holiday by default
+    const WEEKDAYS = days.slice(0, 5);
     const allPeriods = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11'];
 
     // Level-aware slot logic
@@ -169,17 +171,46 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
     // STREAM processing
     streams.forEach(stream => {
         const total = Number(stream.periods) || 0;
+        // respect any forced count/day settings for streams; treat the first `forceCount`
+        // individual stream periods as having a hard preference for `forceDay` (usually Saturday).
+        const forceCount = Math.min(Number(stream.forceCount) || 0, total);
+        const forceDay = stream.forceDay || 'Saturday';
         for (let t = 0; t < total; t++) {
+            const isForced = t < forceCount;
             allTasks.push({
                 type: 'STREAM',
                 name: stream.name,
                 className: stream.className,
                 classes: [stream.className],
                 subjects: stream.subjects,
-                preferredDay: 'Any'
+                // if this particular stream slot is part of the forced quota we give it
+                // a target day; otherwise treat it as unconstrained ('Any') so the
+                // scheduler will never push it to Saturday.
+                preferredDay: isForced ? forceDay : 'Any'
             });
         }
     });
+
+    // Apply force instructions coming from the distribution (used for the
+    // batch/top‑level generator where allotment rows encode forced periods).
+    // `distribution.__forced` is an array of objects {teacher,subject,className,count,day}.
+    if (distribution && Array.isArray(distribution.__forced)) {
+        distribution.__forced.forEach(f => {
+            let remaining = f.count || 0;
+            for (const t of allTasks) {
+                if (remaining <= 0) break;
+                if (t.teacher === f.teacher && t.subject === f.subject && t.className === f.className) {
+                    // only touch tasks that don't already have a strict preferredDay
+                    if (!t.preferredDay || t.preferredDay === 'Any') {
+                        t.preferredDay = f.day;
+                        remaining--;
+                    }
+                }
+            }
+            // if we couldn't assign all forced slots we'll rely on normal failure
+            // reporting later; no extra action needed here.
+        });
+    }
 
     // ============ PRIORITY SORTING ============
     const getGradeNum = (className) => {
@@ -261,12 +292,19 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
     // ============ PLACEMENT ENGINE ============
     allTasks.forEach((task, taskIdx) => {
         let placed = false;
-        let candidateDays = [...days];
+        // by default, only weekdays are considered unless the task explicitly
+        // requests a specific day (including Saturday).
+        let candidateDays = [...WEEKDAYS];
         const dayMap = { 'Mon': 'Monday', 'Tue': 'Tuesday', 'Wed': 'Wednesday', 'Thu': 'Thursday', 'Fri': 'Friday', 'Sat': 'Saturday' };
 
         if (task.preferredDay && task.preferredDay !== 'Any') {
             const targetDay = dayMap[task.preferredDay] || task.preferredDay;
-            candidateDays = candidateDays.filter(d => d === targetDay);
+            // if preferred day is Saturday we must override the weekday restriction
+            if (targetDay === 'Saturday') {
+                candidateDays = ['Saturday'];
+            } else {
+                candidateDays = candidateDays.filter(d => d === targetDay);
+            }
         }
 
         const dayStart = candidateDays.length > 1 ? Math.floor(Math.random() * candidateDays.length) : 0;
@@ -383,12 +421,15 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
             }
             const availableSlots = getAvailableSlots(task.className);
             const fdPeriod = availableSlots[(taskIdx % availableSlots.length)];
+            const reasonMsg = (task.preferredDay === 'Saturday')
+                ? `Could not place forced Saturday; fallback on ${fdDay} ${fdPeriod}`
+                : `Fallback placement on ${fdDay} ${fdPeriod}`;
             failedTasks.push({
                 teacher: task.teacher || '',
                 subject: task.subject || task.name || '',
                 className: task.className,
                 periods: periodsForTask,
-                reason: `Fallback placement on ${fdDay} ${fdPeriod}`
+                reason: reasonMsg
             });
             if (task.type === 'STREAM') placeStreamTask(task, fdDay, fdPeriod);
             else placeTask(task, fdDay, fdPeriod, task.type === 'BLOCK');
@@ -420,6 +461,8 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                 details: `Scheduled on ${day} instead of preferred ${task.preferredDay}`
             });
         }
+        // mark slot as forced saturday if this task was directed there
+        const forcedSat = day === 'Saturday' && task.preferredDay === 'Saturday';
         const abbr = getAbbreviation(task.subject);
         const labStatusData = { className: task.classes[0], subject: task.subject, labGroup: task.labGroup || 'None', targetLabCount: task.targetLabCount };
         const isLab = determineLabStatus(classTimetables, labStatusData, day, period);
@@ -433,17 +476,18 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
                 labGroup: task.labGroup || 'None',
                 targetLabCount: task.targetLabCount,
                 isLabPeriod: isLab,
-                otherClasses: task.classes.filter(c => c !== cn)
+                otherClasses: task.classes.filter(c => c !== cn),
+                ...(forcedSat ? { isForcedSaturday: true } : {})
             };
         });
-
         teacherTimetables[task.teacher][day][period] = {
             className: task.classes.join('/'),
             subject: task.subject,
             isBlock: isBlock,
             labGroup: task.labGroup || 'None',
             targetLabCount: task.targetLabCount,
-            isLabPeriod: isLab
+            isLabPeriod: isLab,
+            ...(forcedSat ? { isForcedSaturday: true } : {})
         };
         teacherTimetables[task.teacher][day].periodCount += 1; // Fixed: Only 1 period for the teacher
         teacherTimetables[task.teacher].weeklyPeriods += 1;     // Fixed: Only 1 period for the teacher
@@ -463,12 +507,14 @@ export const generateTimetable = (mappings, distribution, bellTimings, streams =
             }
         });
         const abbr = getAbbreviation(task.name);
+        const forcedSat = day === 'Saturday' && task.preferredDay === 'Saturday';
         if (classTimetables[task.className]) {
             classTimetables[task.className][day][period] = {
                 subject: abbr,
                 isStream: true,
                 streamName: task.name,
-                subjects: task.subjects
+                subjects: task.subjects,
+                ...(forcedSat ? { isForcedSaturday: true } : {})
             };
         }
 

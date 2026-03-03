@@ -3607,8 +3607,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                     const subjectOnDay = (d) => getDaySubjectUnits(d).units > 0;
 
+                    const labDays = (task.preferredDay && (DMAP[task.preferredDay] || task.preferredDay) === 'Saturday')
+                        ? ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday', 'Saturday']
+                        : ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+
                     outer_l:
-                    for (const d of PRIORITY_DAYS_B) {
+                    for (const d of labDays) {
                         if (dayAlreadyHasBlock(d, task.classes)) continue;
                         if (subjectOnDay(d)) continue; // Prefer days with nothing for this subject
 
@@ -3687,13 +3691,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 await sleep(200);
 
                 const PRIORITY_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
+                const ALL_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday', 'Saturday'];
                 const PRIORITY_PRDS = AVAILABLE_SLOTS;
-                const TOTAL_PRIORITY_SLOTS = PRIORITY_DAYS.length * PRIORITY_PRDS.length;
+                const TOTAL_PRIORITY_SLOTS = ALL_DAYS.length * PRIORITY_PRDS.length;
 
                 const orderedSlots = [];
                 for (let oi = 0; oi < TOTAL_PRIORITY_SLOTS; oi++)
                     orderedSlots.push({
-                        d: PRIORITY_DAYS[oi % PRIORITY_DAYS.length],
+                        d: ALL_DAYS[oi % ALL_DAYS.length],
                         p: PRIORITY_PRDS[oi % PRIORITY_PRDS.length]
                     });
 
@@ -3711,9 +3716,11 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                 for (let i = 0; i < singleTasks.length; i++) {
                     const task = singleTasks[i];
-                    const taskDays = (task.preferredDay && task.preferredDay !== 'Any')
-                        ? PRIORITY_DAYS.filter(d => d === (DMAP[task.preferredDay] || task.preferredDay))
+                    // If Saturday is explicitly preferred, allow it; otherwise use weekday-only list
+                    const baseTaskDays = (task.preferredDay && task.preferredDay !== 'Any')
+                        ? [DMAP[task.preferredDay] || task.preferredDay]
                         : PRIORITY_DAYS;
+                    const taskDays = baseTaskDays;
 
                     let pick = null;
 
@@ -3743,11 +3750,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                         return tt.teacherTimetables[teacher][d]?.periodCount || 0;
                     };
 
-                    // First pass: prefer fresh days (0 periods of this subject)
+                    // First pass: prefer fresh days (0 periods of this subject) - weekdays only unless Saturday requested
                     for (let attempt = 0; attempt < 100 && !pick; attempt++) {
                         const slotIdx = (currentSlotIdx + attempt) % orderedSlots.length;
                         const { d, p } = orderedSlots[slotIdx];
-                        if (taskDays.length > 0 && !taskDays.includes(d)) continue;
+                        // If not requesting Saturday explicitly, skip Saturday slots
+                        if (d === 'Saturday' && !taskDays.includes('Saturday')) continue;
                         if (getDaySubjectUnits(d).units > 0) continue;
                         if (teacherDayLoad(d) >= 6) continue; // Enforce daily limit
                         if (slotFree(d, p, task.classes, task.labGroup)) {
@@ -3993,7 +4001,8 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
             // Convert new allotmentRows format to legacy format for the generator
             const legacyMappings = [];
-            const legacyDistribution = { __merged: {}, __blocks: {}, __days: {} };
+            // track forced normal periods separately; generator will consume this
+            const legacyDistribution = { __merged: {}, __blocks: {}, __days: {}, __forced: [] };
 
             allotmentRows.forEach(row => {
                 if (!row.teacher) return;
@@ -4024,6 +4033,19 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                             if (!legacyDistribution.__days[cls]) legacyDistribution.__days[cls] = {};
                             legacyDistribution.__days[cls][sub] = group.preferredDay || 'Any';
+
+                            // record any forced normal periods so the generator can later
+                            // bump them into the requested day (e.g. Saturday).
+                            if (Number(group.forceCount) > 0 && group.forceDay && group.forceDay !== 'Any') {
+                                if (!legacyDistribution.__forced) legacyDistribution.__forced = [];
+                                legacyDistribution.__forced.push({
+                                    teacher: row.teacher || '',
+                                    subject: sub,
+                                    className: cls,
+                                    count: Number(group.forceCount) || 0,
+                                    day: (group.forceDay === 'Sat' ? 'Saturday' : group.forceDay)
+                                });
+                            }
                         });
 
                         if (group.isMerged) {
