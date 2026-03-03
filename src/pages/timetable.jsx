@@ -3495,9 +3495,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             // ════════════════════════════════════════════════════════════════════
             if (tBlockTasks.length > 0) {
                 const ALL_BLOCK_PAIRS = VALID_BLOCK_PAIRS;
-                const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday', 'Saturday'];
-
-                let existingBlockPeriods = 0;
+                const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
                 for (const tName of Object.keys(tt.teacherTimetables)) {
                     for (const d of DAYS) {
                         if (!tt.teacherTimetables[tName]?.[d]) continue;
@@ -3577,7 +3575,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
             // ════════════════════════════════════════════════════════════════════
             if (lBlockTasks.length > 0) {
                 const ALL_BLOCK_PAIRS = VALID_BLOCK_PAIRS;
-                const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday', 'Saturday'];
+                const PRIORITY_DAYS_B = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
 
                 addMessage(`\n🔍 Phase 1B: Placing ${lBlockTasks.length} Lab Block(s)...`);
                 await sleep(200);
@@ -3688,7 +3686,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 addMessage(`\n🔍 Phase 2: Placing ${singleTasks.length} single period(s)...`);
                 await sleep(200);
 
-                const PRIORITY_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday', 'Saturday'];
+                const PRIORITY_DAYS = ['Monday', 'Wednesday', 'Friday', 'Tuesday', 'Thursday'];
                 const PRIORITY_PRDS = AVAILABLE_SLOTS;
                 const TOTAL_PRIORITY_SLOTS = PRIORITY_DAYS.length * PRIORITY_PRDS.length;
 
