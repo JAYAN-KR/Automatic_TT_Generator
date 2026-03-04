@@ -53,6 +53,7 @@ import { runValidationChecks } from '../utils/validationChecks';
 import ClassTTFooter from '../components/ClassTTFooter';
 import { getCombinedSubjectsForClass } from '../utils/classTTUtils';
 import TeacherTTTab from './TeacherTTTab';
+import ClassTeachersTab from './ClassTeachersTab';
 // import helper functions for merging no longer needed
 import '../styles/teacherTT.css';
 
@@ -66,12 +67,15 @@ const COMMON_SUBJECTS = [
 ];
 
 const TAB_GRADIENTS = [
-    'linear-gradient(135deg, #0891b2, #06b6d4)', // Tab 1 (Cyan)
-    'linear-gradient(135deg, #7e22ce, #9333ea)', // Tab 2 (Purple)
-    'linear-gradient(135deg, #b45309, #d97706)', // Tab 3 (Orange)
-    'linear-gradient(135deg, #2563eb, #3b82f6)', // Tab 4 (Blue) - DPT
-    'linear-gradient(135deg, #059669, #10b981)', // Tab 5 (Green)
-    'linear-gradient(135deg, #b91c1c, #dc2626)', // Tab 6 (Red)
+    'linear-gradient(135deg, #0891b2, #06b6d4)', // Tab 0 (Cyan)
+    'linear-gradient(135deg, #7e22ce, #9333ea)', // Tab 1 (Purple)
+    'linear-gradient(135deg, #b45309, #d97706)', // Tab 2 (Orange)
+    'linear-gradient(135deg, #2563eb, #3b82f6)', // Tab 3 (Blue)
+    'linear-gradient(135deg, #059669, #10b981)', // Tab 4 (Green)
+    'linear-gradient(135deg, #b91c1c, #dc2626)', // Tab 5 (Red)
+    'linear-gradient(135deg, #7c3aed, #a855f7)', // Tab 6 (Violet)
+    'linear-gradient(135deg, #db2777, #ec4899)', // Tab 7 (Pink)
+    'linear-gradient(135deg, #ea580c, #f97316)', // Tab 8 (Orange-Red)
 ];
 
 const syncLabTimetables = (tt) => {
@@ -2354,11 +2358,11 @@ export default function TimetablePage() {
         // 1. We are on the Mapping Tab
         // 2. We don't have newly extracted data (hasNewExtraction is false)
         // 3. The current list is empty
-        if (activeTab === 3 && !hasNewExtraction && teacherSubjectMappings.length === 0) {
+        if (activeTab === 4 && !hasNewExtraction && teacherSubjectMappings.length === 0) {
             // preserve previous behaviour: trigger when Format TT becomes active
             console.log(`[AutoLoad] Triggering load for ${academicYear} (Reason: Format TT tab active, List empty, No fresh extraction)`);
             loadMappingsForYear(academicYear);
-        } else if (activeTab === 2) {
+        } else if (activeTab === 3) {
             console.log(`[AutoLoad] Blocked. state: {hasNewExtraction: ${hasNewExtraction}, listLength: ${teacherSubjectMappings.length}}`);
         }
     }, [activeTab, academicYear, hasNewExtraction, teacherSubjectMappings.length]);
@@ -4137,13 +4141,14 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
     const tabs = [
         { id: 0, label: '🏫 Teachers & Subjects' },
-        { id: 1, label: '👥 Classes Alloted' },
-        { id: 2, label: '📊 Distribution' },
-        { id: 3, label: '🕒 DPT' },
-        { id: 4, label: '🎓 Format TT' },
-        { id: 5, label: '� Class TT' },
-        { id: 6, label: '👩‍🏫 TeacherTT' },
-        { id: 7, label: '⚙️ Generate' }
+        { id: 1, label: '�‍🏫 Class Teachers' },
+        { id: 2, label: '👥 Classes Alloted' },
+        { id: 3, label: '📊 Distribution' },
+        { id: 4, label: '🕒 DPT' },
+        { id: 5, label: '🎓 Format TT' },
+        { id: 6, label: '📋 Class TT' },
+        { id: 7, label: '👩‍🏫 TeacherTT' },
+        { id: 8, label: '⚙️ Generate' }
     ];
 
     return (
@@ -4468,7 +4473,12 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     </div>
                 )}
 
+                {/* Tab 1: Class Teachers */}
                 {activeTab === 1 && (
+                    <ClassTeachersTab teachers={teachers} />
+                )}
+
+                {activeTab === 2 && (
                     <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
 
                         {/* Status ribbon is now a fixed bottom ribbon — see below */}
@@ -5543,9 +5553,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                 )
                 }
 
-                {/* Tab 4: Format TT (moved down) */}
+                {/* Tab 5: Format TT */}
                 {
-                    activeTab === 4 && (() => {
+                    activeTab === 5 && (() => {
                         const GRADE_CLASSES = {
                             '6': ['6A', '6B', '6C', '6D', '6E', '6F', '6G'],
                             '7': ['7A', '7B', '7C', '7D', '7E', '7F', '7G'],
@@ -6611,9 +6621,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     })()
                 }
 
-                {/* Tab 4: Subject Period Distribution */}
+                {/* Tab 3: Subject Period Distribution */}
                 {
-                    activeTab === 2 && (
+                    activeTab === 3 && (
                         <div>
                             <button
                                 onClick={() => {
@@ -7540,7 +7550,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
 
                 {/* Tab 3: DPT (Day, Period, Time) */}
                 {
-                    activeTab === 3 && (() => {
+                    activeTab === 4 && (() => {
                         const DPT_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
                         const DPT_PERIODS = ['CT', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11'];
                         const DPT_DAY_SHORT = { Monday: 'MON', Tuesday: 'TUE', Wednesday: 'WED', Thursday: 'THU', Friday: 'FRI', Saturday: 'SAT' };
@@ -7884,9 +7894,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     })()
                 }
 
-                {/* Tab 5: Class TT (class timetables for A4 portrait) */}
+                {/* Tab 6: Class TT (class timetables for A4 portrait) */}
                 {
-                    activeTab === 5 && (
+                    activeTab === 6 && (
                         <ClassTTTab
                             generatedTimetable={generatedTimetable}
                             bellTimings={bellTimings}
@@ -7895,9 +7905,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     )
                 }
 
-                {/* Tab 6: TeacherTT (Teacher Timetables) */}
+                {/* Tab 7: TeacherTT (Teacher Timetables) */}
                 {
-                    activeTab === 6 && (() => {
+                    activeTab === 7 && (() => {
                         const teacherTTDict = generatedTimetable?.teacherTimetables || {};
 
                         // Comprehensive teacher discovery: include from TT, mappings, and allotments
@@ -8402,9 +8412,9 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                     })()
                 }
 
-                {/* Tab 6: Generate */}
+                {/* Tab 8: Generate */}
                 {
-                    activeTab === 7 && (
+                    activeTab === 8 && (
                         <div style={{ animation: 'fadeIn 0.3s ease-out', padding: '2rem 0' }}>
                             <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
                                 <button

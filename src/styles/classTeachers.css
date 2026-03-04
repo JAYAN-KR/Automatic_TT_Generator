@@ -1,0 +1,225 @@
+/* Class Teachers Tab Styling */
+
+.class-teachers-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.class-teachers-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 1.5rem;
+    border-radius: 0.75rem;
+    color: white;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.class-teachers-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.save-button {
+    padding: 0.7rem 1.5rem;
+    background: #10b981;
+    color: white;
+    border: none;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+.save-button:hover:not(:disabled) {
+    background: #059669;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.5);
+    transform: translateY(-1px);
+}
+
+.save-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.save-button:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.save-message {
+    padding: 1rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    text-align: center;
+    animation: slideDown 0.3s ease-out;
+}
+
+.save-message.success {
+    background: #d1fae5;
+    color: #047857;
+    border: 1px solid #6ee7b7;
+}
+
+.save-message.error {
+    background: #fee2e2;
+    color: #dc2626;
+    border: 1px solid #fca5a5;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.table-wrapper {
+    overflow-x: auto;
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.class-teachers-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+}
+
+.class-teachers-table thead {
+    background: linear-gradient(135deg, #1e293b, #334155);
+    color: white;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+}
+
+.class-teachers-table thead th {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 2px solid #0f172a;
+}
+
+.class-teachers-table tbody tr {
+    transition: background-color 0.2s ease;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.class-teachers-table tbody tr.even {
+    background: #f8fafc;
+}
+
+.class-teachers-table tbody tr.odd {
+    background: white;
+}
+
+.class-teachers-table tbody tr:hover {
+    background: #f1f5f9;
+}
+
+.class-teachers-table tbody td {
+    padding: 0.75rem 1rem;
+    color: #1e293b;
+}
+
+.class-name {
+    font-weight: 700;
+    color: #0f172a;
+    width: 100px;
+    min-width: 100px;
+}
+
+.teacher-dropdown {
+    width: 100%;
+    max-width: 300px;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.375rem;
+    font-size: 0.9rem;
+    color: #1e293b;
+    background: white;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.teacher-dropdown:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    background: #f8fafc;
+}
+
+.teacher-dropdown:hover {
+    border-color: #94a3b8;
+    background: #f8fafc;
+}
+
+.class-teachers-footer {
+    display: flex;
+    gap: 2rem;
+    padding: 1rem 1.5rem;
+    background: #f8fafc;
+    border-radius: 0.75rem;
+    border: 1px solid #e2e8f0;
+    font-size: 0.95rem;
+    color: #475569;
+    font-weight: 600;
+}
+
+.class-teachers-footer p {
+    margin: 0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .class-teachers-container {
+        padding: 1rem;
+        gap: 1rem;
+    }
+
+    .class-teachers-header {
+        flex-direction: column;
+        text-align: center;
+        gap: 0.75rem;
+    }
+
+    .class-teachers-header h2 {
+        font-size: 1.25rem;
+    }
+
+    .save-button {
+        width: 100%;
+    }
+
+    .teacher-dropdown {
+        max-width: 100%;
+    }
+
+    .class-teachers-footer {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
