@@ -876,6 +876,39 @@ export default function TimetablePage() {
         return saved ? JSON.parse(saved) : [];
     });
 
+    // Class teacher mappings (loaded from same place as ClassTeachersTab)
+    const [classTeacherMappings, setClassTeacherMappings] = useState([]);
+
+    useEffect(() => {
+        const loadClassTeachers = async () => {
+            let data = [];
+            try {
+                const local = localStorage.getItem('classTeachers_data');
+                if (local) {
+                    data = JSON.parse(local);
+                }
+            } catch {}
+
+            if ((!data || data.length === 0) && db) {
+                try {
+                    const docRef = doc(db, 'classTeachers', 'mappings');
+                    const snap = await getDoc(docRef);
+                    if (snap.exists()) {
+                        data = snap.data().data || [];
+                    }
+                } catch (e) {
+                    console.error('error loading class teachers', e);
+                }
+            }
+
+            setClassTeacherMappings(data || []);
+        };
+
+        if (activeTab === 5) {
+            loadClassTeachers();
+        }
+    }, [activeTab]);
+
     // -- Classes Alloted (new Tab 1) State --
     const [selectedGroups, setSelectedGroups] = useState([]); // Array of { rowId, groupIndex }
     const [mergePopup, setMergePopup] = useState(null); // { rowId, groupIndices, grade, rect }
@@ -5841,6 +5874,19 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                                     </div>
                                                 </div>
 
+                                                {/* class teacher / associate line */}
+                                                {(() => {
+                                                    const map = classTeacherMappings.find(c => c.className === cls) || {};
+                                                    const ct = map.classTeacher || '—';
+                                                    const at = map.associateTeacher || '—';
+                                                    return (
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '8px', color: '#000000', fontSize: '0.95rem' }}>
+                                                            <div className="class-teacher-label">Class Teacher: {ct}</div>
+                                                            <div className="associate-teacher-label">Associate: {at}</div>
+                                                        </div>
+                                                    );
+                                                })()}
+
                                                 {/* Timetable grid */}
                                                 <div style={{ overflowX: 'auto', width: '100%', maxWidth: 1200, margin: '0 auto' }}>
                                                     <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '1100px', background: 'transparent', color: '#000000', fontFamily: 'inherit' }}>
@@ -8853,7 +8899,7 @@ Teachers can now see their timetable in the AutoSubs app.`, 'success');
                                         onChange={e => setStreamForm({ ...streamForm, abbreviation: e.target.value })}
                                         placeholder="e.g. 2ndLang"
                                         maxLength={8}
-                                        style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: '#333333', fontSize: '0.95rem', fontWeight: 700 }}
+                                        style={{ width: '100%', padding: '0.85rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.75rem', color: 'white', fontSize: '0.95rem', fontWeight: 700 }}
                                     />
                                 </div>
                                 <div>

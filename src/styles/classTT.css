@@ -85,6 +85,17 @@
     flex: 1 1 auto;
 }
 
+/* Class teacher and associate teacher labels */
+.class-teacher-label {
+    text-align: left;
+    font-weight: normal;
+}
+
+.associate-teacher-label {
+    text-align: right;
+    font-weight: normal;
+}
+
 @media print {
     @page {
         size: A4 portrait;
